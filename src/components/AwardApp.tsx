@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AwardPanel from "./AwardPanel";
 import ExtractPanel from "./ExtractPanel";
 import FileDrop from "./FileDrop";
 import LetterPanel, { type LetterFields } from "./LetterPanel";
 import PreviewPanel from "./PreviewPanel";
+import HistoryRail from "./HistoryRail";
 import StepRail, { type Step } from "./StepRail";
 import {
   DEMO_SITE_COVERAGES,
@@ -17,6 +18,16 @@ import { coverageLabel, extract } from "@/lib/extract";
 import { buildCsv, buildScopeCsv, downloadCsv, summaryText } from "@/lib/export";
 import { parseWorkbook } from "@/lib/parse";
 import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
+import {
+  getServerSnapshot,
+  getSnapshot,
+  newId,
+  remove as removeRecord,
+  clear as clearHistory,
+  subscribe,
+  upsert,
+  type AwardRecord,
+} from "@/lib/history";
 import type { ParseResult } from "@/lib/types";
 
 type StepId = "upload" | "extract" | "preview" | "award" | "letter";
@@ -38,6 +49,14 @@ export default function AwardApp() {
   const [copied, setCopied] = useState(false);
 
   const [keptCoverages, setKeptCoverages] = useState<string[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
+
+  // localStorage is an external store, so it is read through the subscription
+  // API rather than an effect — that also keeps the server render empty and
+  // avoids a hydration mismatch.
+  const history = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [lessOandPOverride, setLessOandPOverride] = useState<number | null>(null);
   const [letter, setLetter] = useState<LetterFields>(EMPTY_LETTER);
 
@@ -96,6 +115,9 @@ export default function AwardApp() {
       setLessOandPOverride(null);
       setLetter(EMPTY_LETTER);
       setShowIgnored(false);
+      setActiveId(null);
+      setRestoredAt(null);
+      setSaveNote(null);
       setStep("extract");
     } catch (e) {
       setParsed(null);
@@ -118,6 +140,92 @@ export default function AwardApp() {
           result,
         }
       : null;
+
+  function saveAward() {
+    if (!parsed) return;
+    const chosen = result.tierRows.find((r) => r.selected);
+    const now = new Date().toISOString();
+    const existing = history.find((r) => r.id === activeId);
+
+    const record: AwardRecord = {
+      id: existing?.id ?? newId(),
+      savedAt: existing?.savedAt ?? now,
+      updatedAt: now,
+      fileName: fileName ?? "scope",
+      sheetName: parsed.sheetName,
+      headerRow: parsed.headerRow,
+      letter: { ...letter },
+      settings: {
+        basis,
+        keptCoverages: [...keptCoverages],
+        oandpPct,
+        lessOandPOverride,
+        tiers: [...tiers],
+        selectedTier,
+        hc,
+      },
+      totals: {
+        base: result.base,
+        lessOandP: result.lessOandP,
+        subsPct: chosen ? chosen.pct : null,
+        subsAmount: chosen ? chosen.amount : 0,
+        hc: result.hc,
+        award: result.award,
+      },
+      items: parsed.items,
+    };
+
+    const { evicted } = upsert(record);
+    setActiveId(record.id);
+    setRestoredAt(null);
+    setSaveNote(
+      evicted > 0
+        ? `Saved. ${evicted} older award${evicted === 1 ? "" : "s"} dropped to make room.`
+        : existing
+          ? "Award updated"
+          : "Award saved",
+    );
+    setTimeout(() => setSaveNote(null), 2600);
+  }
+
+  function openRecord(record: AwardRecord) {
+    setParsed({
+      sheetName: record.sheetName,
+      headerRow: record.headerRow,
+      items: record.items,
+      ignored: [],
+      mappedColumns: {},
+    });
+    setFileName(record.fileName);
+    setKeptCoverages([...record.settings.keptCoverages]);
+    setLessOandPOverride(record.settings.lessOandPOverride);
+    setLetter({ ...record.letter });
+
+    const restored: Prefs = {
+      basis: record.settings.basis,
+      oandpPct: record.settings.oandpPct,
+      tiers: [...record.settings.tiers],
+      selectedTier: record.settings.selectedTier,
+      hc: record.settings.hc,
+    };
+    prefsRef.current = restored;
+    setPrefsState(restored);
+
+    setActiveId(record.id);
+    setRestoredAt(record.updatedAt);
+    setSaveNote(null);
+    setError(null);
+    setShowIgnored(false);
+    setStep("award");
+  }
+
+  function deleteRecord(id: string) {
+    removeRecord(id);
+    if (id === activeId) {
+      setActiveId(null);
+      setRestoredAt(null);
+    }
+  }
 
   async function copySummary() {
     if (!ctx) return;
@@ -142,7 +250,21 @@ export default function AwardApp() {
   const base = fileName ? fileName.replace(/\.[^.]+$/, "") : "scope";
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+    <div className="mx-auto w-full max-w-[94rem] px-4 py-6 sm:px-6 lg:py-8">
+      <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-6">
+        <HistoryRail
+          records={history}
+          activeId={activeId}
+          onOpen={openRecord}
+          onDelete={deleteRecord}
+          onClear={() => {
+            clearHistory();
+            setActiveId(null);
+            setRestoredAt(null);
+          }}
+        />
+
+        <div className="min-w-0">
       <StepRail steps={steps} current={step} onSelect={(id) => setStep(id as StepId)} />
 
       {loaded && parsed && extraction && ctx && (
@@ -170,6 +292,20 @@ export default function AwardApp() {
                   </button>
                 </>
               )}
+              {restoredAt && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-navy-700">
+                    restored from history
+                  </span>
+                </>
+              )}
+              {saveNote && (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-brand-red">{saveNote}</span>
+                </>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -185,6 +321,9 @@ export default function AwardApp() {
               Download CSV
             </Button>
             <Button onClick={() => window.print()}>Print</Button>
+            <Button variant="primary" onClick={saveAward}>
+              {activeId ? "Update award" : "Save award"}
+            </Button>
             <Button
               variant="ghost"
               onClick={() => {
@@ -252,8 +391,12 @@ export default function AwardApp() {
 
       {step === "award" && extraction && (
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
-          <PreviewPanel extraction={extraction} basis={basis} />
-          <div className="lg:sticky lg:top-6">
+          {/* min-w-0: a grid item defaults to min-width:auto, so the wide
+              preview table would otherwise push the page sideways. */}
+          <div className="min-w-0">
+            <PreviewPanel extraction={extraction} basis={basis} />
+          </div>
+          <div className="min-w-0 lg:sticky lg:top-6">
             <AwardPanel
               result={result}
               oandpPct={oandpPct}
@@ -307,6 +450,8 @@ export default function AwardApp() {
           onSelect={(id) => setStep(id as StepId)}
         />
       )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -356,17 +501,19 @@ function Button({
 }: {
   children: React.ReactNode;
   onClick: () => void;
-  variant?: "solid" | "ghost";
+  variant?: "solid" | "ghost" | "primary";
 }) {
+  const styles = {
+    solid:
+      "border border-navy-200 bg-white text-navy-700 hover:border-navy-300 hover:bg-navy-50",
+    primary: "bg-navy-700 text-white hover:bg-navy-800",
+    ghost: "text-navy-600/80 hover:text-brand-red",
+  } as const;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-        variant === "solid"
-          ? "border border-navy-200 bg-white text-navy-700 hover:border-navy-300 hover:bg-navy-50"
-          : "text-navy-600/80 hover:text-brand-red"
-      }`}
+      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${styles[variant]}`}
     >
       {children}
     </button>

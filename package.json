@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import tsx --test src/lib/award.test.ts src/lib/parse.test.ts src/lib/export.test.ts src/lib/extract.test.ts"
+    "test": "node --import tsx --test src/lib/award.test.ts src/lib/parse.test.ts src/lib/export.test.ts src/lib/extract.test.ts src/lib/history.test.ts"
   },
   "dependencies": {
     "next": "16.3.3",

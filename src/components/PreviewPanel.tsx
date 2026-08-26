@@ -127,7 +127,7 @@ function LinesView({
   return (
     <>
       <div className="max-h-[30rem] overflow-auto print-full">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[42rem] text-sm">
           <thead className="sticky top-0 z-10 bg-navy-50 text-xs tracking-wide text-navy-600/80 uppercase">
             <tr>
               <th scope="col" className="px-4 py-2 text-left font-semibold">#</th>

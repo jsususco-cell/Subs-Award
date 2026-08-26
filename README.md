@@ -25,6 +25,12 @@ file is ever uploaded to a server.
    *The letter template itself is still to come — the generate button is
    deliberately disabled until it lands.*
 
+**Save award** stores the whole job in the history rail on the left: the letter
+details, every setting, the computed figures and the parsed line items. Click a
+saved award to restore it and carry on revising — because the raw lines travel
+with it, you can change the coverage selection on a restored award, not just the
+percentages. Saving again updates that entry in place rather than duplicating it.
+
 A raw file that contains no CE-DEMO lines extracts cleanly to whatever it does
 have and says so, rather than failing — a repair job legitimately has none, and
 its scope may sit under an entirely different coverage code.
@@ -62,6 +68,20 @@ The basis, O&P rate, subs percentages and HC are remembered in `localStorage`
 between files, since they are shop conventions. The coverage picks are not —
 they are re-derived from each file. The storage key is versioned (`:v2`), so a
 change to the stored shape retires the old entry instead of masking new defaults.
+
+## History
+
+History lives in `localStorage` under `subs-award:history:v1`, read through
+`useSyncExternalStore` so the server render stays empty and no effect is needed.
+
+**It is per-browser.** Saved awards are not shared between machines, browsers or
+teammates, and clearing site data removes them. Making history shared would mean
+adding a backend, which the app deliberately does not have today.
+
+The store keeps the 25 most recent awards. Because each one carries its line
+items it can be sizeable, so a write that trips the browser's quota sheds the
+oldest records and retries rather than losing the save — the UI reports how many
+were dropped.
 
 ## Reading the workbook
 

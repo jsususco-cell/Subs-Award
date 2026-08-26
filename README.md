@@ -78,6 +78,42 @@ between files, since they are shop conventions. The coverage picks are not —
 they are re-derived from each file. The storage key is versioned (`:v2`), so a
 change to the stored shape retires the old entry instead of masking new defaults.
 
+## Quickbase lookups (Job name, Job address, Subcontractor)
+
+The three letter fields can be backed by Quickbase, filtered to one region
+(`QB_REGION`, default `Puerto Rico`). They remain plain text fields if the
+lookup is unavailable — a Quickbase outage never blocks an award letter.
+
+- **Jobs** — `buskqh27b` where `{11.EX.'Puerto Rico'}`, minus template and
+  scratch names (same exclusion list the QB award code page uses; "demo" is
+  deliberately not a keyword so Demolition jobs survive). Picking a job
+  auto-fills the address.
+- **Subcontractors** — `buskqh272` where Eligible for Award (`182`) is true,
+  plus the region once the Vendors Region field exists.
+
+The token stays server-side in `/api/qb`; the browser never sees it.
+
+### Setup
+
+> **Order matters.** `/api/qb` is only as private as the deployment. Turn on
+> Vercel Deployment Protection *before* setting `QB_USER_TOKEN` in Production,
+> or the job and vendor lists are readable by anyone with the URL.
+
+```bash
+cp .env.example .env.local     # then put your QB user token in it
+npm run qb:introspect          # find the Jobs address field id
+npm run qb:add-vendor-region   # dry run; add --create to actually add the field
+```
+
+`qb:introspect` is read-only. `qb:add-vendor-region` only reports what it would
+do unless you pass `--create`, because it changes a live Quickbase app.
+
+Set `QB_JOB_ADDRESS_FID` and `QB_VENDOR_REGION_FID` once you have them.
+
+**A Region field with nothing in it matches no vendors.** Rather than showing an
+empty dropdown, the app falls back to all award-eligible vendors and says on
+screen that the list is not region-filtered, until the field is populated.
+
 ## History
 
 History lives in `localStorage` under `subs-award:history:v1`, read through

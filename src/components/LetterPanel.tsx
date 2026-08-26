@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import LookupField from "./LookupField";
 import NumberField from "./NumberField";
+import { loadJobs, loadSubs } from "@/lib/qb-client";
 import { money, pct } from "@/lib/format";
 import type { AwardResult } from "@/lib/types";
 
@@ -74,11 +76,32 @@ export default function LetterPanel({
           </p>
         </header>
         <div className="space-y-3 p-4">
-          <Field
+          <LookupField
             label="Job name"
             value={fields.jobName}
-            onChange={(v) => onField({ jobName: v })}
             placeholder="PR-R3-03073"
+            onChange={(v, extra) =>
+              onField({
+                jobName: v,
+                // Only overwrite the address when the job actually carries one,
+                // so a hand-typed address is not wiped by a blank lookup.
+                ...(extra?.address ? { jobAddress: extra.address } : {}),
+              })
+            }
+            loadChoices={async () => {
+              const r = await loadJobs();
+              return {
+                configured: r.configured,
+                warning: r.warning,
+                error: r.error,
+                choices: r.items.map((j) => ({
+                  id: j.id,
+                  label: j.name,
+                  hint: j.address,
+                  extra: { address: j.address },
+                })),
+              };
+            }}
           />
           <Field
             label="Job address"
@@ -86,11 +109,24 @@ export default function LetterPanel({
             onChange={(v) => onField({ jobAddress: v })}
             placeholder="Street, municipality"
           />
-          <Field
+          <LookupField
             label="Subcontractor"
             value={fields.subcontractor}
-            onChange={(v) => onField({ subcontractor: v })}
             placeholder="Company name"
+            onChange={(v) => onField({ subcontractor: v })}
+            loadChoices={async () => {
+              const r = await loadSubs();
+              return {
+                configured: r.configured,
+                warning: r.warning,
+                error: r.error,
+                choices: r.items.map((sub) => ({
+                  id: sub.id,
+                  label: sub.company,
+                  hint: sub.trade,
+                })),
+              };
+            }}
           />
           <div>
             <label

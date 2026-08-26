@@ -84,12 +84,23 @@ The three letter fields can be backed by Quickbase, filtered to one region
 (`QB_REGION`, default `Puerto Rico`). They remain plain text fields if the
 lookup is unavailable — a Quickbase outage never blocks an award letter.
 
-- **Jobs** — `buskqh27b` where `{11.EX.'Puerto Rico'}`, minus template and
-  scratch names (same exclusion list the QB award code page uses; "demo" is
-  deliberately not a keyword so Demolition jobs survive). Picking a job
-  auto-fills the address.
-- **Subcontractors** — `buskqh272` where Eligible for Award (`182`) is true,
-  plus the region once the Vendors Region field exists.
+- **Jobs** — `buskqh27b`, `Job Name` = `6`, `Address` = `7` (a composite field
+  that returns one formatted line), region = `11`, which is the address field's
+  State/Region child. Filtered `{11.EX.'Puerto Rico'}` → 403 records, 386 after
+  dropping template and scratch names ("demo" is deliberately not an exclusion
+  keyword so Demolition jobs survive). Picking a job auto-fills the address.
+- **Subcontractors** — `buskqh272`, `Company` = `23`, `Division/Trade` = `34`,
+  `Eligible for Award` = `182`, `Region` = `206`. 22 vendors are award-eligible;
+  20 are in region.
+
+  `Region` is a multiple-choice of `Puerto Rico | Mainland | Both | No work on
+  file`. **`Both` counts as in-region** — a vendor working Puerto Rico *and* the
+  mainland is still a Puerto Rico vendor, and matching `Puerto Rico` alone
+  silently drops two of them. `QB_VENDOR_REGIONS` controls the accepted set.
+
+Sorting happens after the values are read, not in the query: Quickbase orders by
+the raw stored value, and at least one vendor name carries zero-width characters
+that would otherwise sort it to the top.
 
 The token stays server-side in `/api/qb`; the browser never sees it.
 
@@ -100,19 +111,21 @@ The token stays server-side in `/api/qb`; the browser never sees it.
 > or the job and vendor lists are readable by anyone with the URL.
 
 ```bash
-cp .env.example .env.local     # then put your QB user token in it
-npm run qb:introspect          # find the Jobs address field id
-npm run qb:add-vendor-region   # dry run; add --create to actually add the field
+cp .env.example .env.local     # put your QB user token in .env.local
+npm run qb:introspect          # read-only field dump, if ids ever change
 ```
 
-`qb:introspect` is read-only. `qb:add-vendor-region` only reports what it would
-do unless you pass `--create`, because it changes a live Quickbase app.
+**Put credentials in `.env.local`, never in `.env.example`.** `.env.example` is
+the one env file git tracks, so a token pasted there would be committed.
+`npm test` fails if that happens.
 
-Set `QB_JOB_ADDRESS_FID` and `QB_VENDOR_REGION_FID` once you have them.
+The field ids above are the defaults, so no configuration is needed for the
+Puerto Rico setup. Override them with the `QB_*_FID` variables if the schema
+moves.
 
-**A Region field with nothing in it matches no vendors.** Rather than showing an
-empty dropdown, the app falls back to all award-eligible vendors and says on
-screen that the list is not region-filtered, until the field is populated.
+**A Region field with nothing in it would match no vendors.** Rather than
+showing an empty dropdown, the app falls back to all award-eligible vendors and
+says on screen that the list is not region-filtered.
 
 ## History
 

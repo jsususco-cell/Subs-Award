@@ -9,6 +9,15 @@ export const QB_CONFIG = {
   realm: process.env.QB_REALM ?? "byrdsonservices.quickbase.com",
   token: process.env.QB_USER_TOKEN ?? "",
   region: process.env.QB_REGION ?? "Puerto Rico",
+  /**
+   * Region values that count as in-region for vendors. "Both" has to be here:
+   * a vendor who works Puerto Rico *and* the mainland is still a Puerto Rico
+   * vendor, and an exact match on "Puerto Rico" alone silently drops them.
+   */
+  vendorRegions: (process.env.QB_VENDOR_REGIONS ?? "Puerto Rico,Both")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean),
   tables: {
     jobs: process.env.QB_JOBS_TABLE ?? "buskqh27b",
     vendors: process.env.QB_VENDORS_TABLE ?? "buskqh272",
@@ -18,18 +27,19 @@ export const QB_CONFIG = {
       recordId: 3,
       name: 6,
       region: 11,
-      // Not confirmed in the Jobs table — run `npm run qb:introspect` to find
-      // it, then set QB_JOB_ADDRESS_FID. Zero means "do not select it".
-      address: Number(process.env.QB_JOB_ADDRESS_FID ?? 0),
+      // Composite address field; returns a formatted single line such as
+      // "Calle Orlando Olivero Casa 10, Canovanas, Puerto Rico 00972".
+      // Field 11 is its State/Region child, which is what the region filter uses.
+      address: Number(process.env.QB_JOB_ADDRESS_FID ?? 7),
     },
     vendors: {
       recordId: 3,
       company: 23,
       trade: 34,
       eligible: 182,
-      // Created by `npm run qb:add-vendor-region`; zero means the region
-      // filter cannot be applied yet.
-      region: Number(process.env.QB_VENDOR_REGION_FID ?? 0),
+      // Already exists on the Vendors table. Choices are Puerto Rico,
+      // Mainland, Both, No work on file.
+      region: Number(process.env.QB_VENDOR_REGION_FID ?? 206),
     },
   },
 } as const;
@@ -103,10 +113,18 @@ export async function queryAll(body: QueryBody): Promise<QbRecord[]> {
   return rows;
 }
 
+/**
+ * Read a field as text. Strips zero-width and non-breaking characters, which
+ * some vendor records carry from pasted data — they are invisible but break
+ * sorting and exact-match comparisons.
+ */
 function text(record: QbRecord, fid: number): string {
   const v = record[String(fid)]?.value;
   if (v === null || v === undefined) return "";
-  return String(v).trim();
+  return String(v)
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ")
+    .trim();
 }
 
 export interface JobOption {
@@ -140,7 +158,10 @@ export async function fetchJobs(): Promise<{ items: JobOption[]; warning?: strin
       name: text(r, f.name),
       address: f.address ? text(r, f.address) : "",
     }))
-    .filter((j) => j.name && !EXCLUDED_JOB_NAMES.test(j.name));
+    .filter((j) => j.name && !EXCLUDED_JOB_NAMES.test(j.name))
+    // Sort here, not in the query: Quickbase orders by the raw stored value,
+    // so a record with an invisible prefix would sort ahead of everything.
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     items,
@@ -157,9 +178,11 @@ export async function fetchSubs(): Promise<{ items: SubOption[]; warning?: strin
   if (f.region) select.push(f.region);
 
   const eligible = `{${f.eligible}.EX.true}`;
-  const regional = f.region
-    ? `${eligible}AND{${f.region}.EX.'${QB_CONFIG.region}'}`
-    : eligible;
+  const regionOr = QB_CONFIG.vendorRegions
+    .map((v) => `{${f.region}.EX.'${v.replace(/'/g, "")}'}`)
+    .join("OR");
+  const regional =
+    f.region && regionOr ? `${eligible}AND(${regionOr})` : eligible;
 
   const read = async (where: string) => {
     const rows = await queryAll({
@@ -174,7 +197,8 @@ export async function fetchSubs(): Promise<{ items: SubOption[]; warning?: strin
         company: text(r, f.company),
         trade: text(r, f.trade),
       }))
-      .filter((s) => s.company);
+      .filter((s) => s.company)
+      .sort((a, b) => a.company.localeCompare(b.company));
   };
 
   if (!f.region) {

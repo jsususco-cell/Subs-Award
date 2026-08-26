@@ -17,6 +17,8 @@ interface Props {
   onField: (patch: Partial<LetterFields>) => void;
   result: AwardResult;
   onHc: (v: number) => void;
+  /** The coverage codes the scope total was built from. */
+  coverages: string[];
 }
 
 /**
@@ -24,7 +26,13 @@ interface Props {
  * carry. The letter template itself is still to come, so this deliberately
  * stops short of rendering a document rather than inventing a layout.
  */
-export default function LetterPanel({ fields, onField, result, onHc }: Props) {
+export default function LetterPanel({
+  fields,
+  onField,
+  result,
+  onHc,
+  coverages,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const chosen = result.tierRows.find((r) => r.selected);
   const ready = fields.jobName.trim() !== "" && fields.subcontractor.trim() !== "";
@@ -34,7 +42,8 @@ export default function LetterPanel({ fields, onField, result, onHc }: Props) {
     ["Job address", fields.jobAddress || "—"],
     ["Subcontractor", fields.subcontractor || "—"],
     ["Scope of work", fields.scopeOfWork || "—"],
-    ["Demo/Site total", money(result.base)],
+    ["Coverages", coverages.join(" + ") || "—"],
+    ["Scope total", money(result.base)],
     ["Less O&P", money(result.lessOandP)],
     ["Subs %", chosen ? pct(chosen.pct) : "—"],
     ["Subs amount", chosen ? money(chosen.amount) : "—"],

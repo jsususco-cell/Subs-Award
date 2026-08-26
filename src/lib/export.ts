@@ -1,6 +1,6 @@
 import { money, pct, toCsv } from "./format";
 import { groupAmount } from "./award";
-import { TEMPLATE_COLUMNS, templateRow } from "./extract";
+import { TEMPLATE_COLUMNS, coverageLabel, templateRow } from "./extract";
 import type { AmountBasis, AwardResult, CoverageGroup, ScopeItem } from "./types";
 import type { Extraction } from "./extract";
 
@@ -24,12 +24,13 @@ export interface Context {
 export function summaryText(ctx: Context): string {
   const { result, oandpPct } = ctx;
   const chosen = result.tierRows.find((r) => r.selected);
-  const pad = (label: string) => label.padEnd(12);
+  const scope = coverageLabel(ctx.baseCoverages);
+  const pad = (label: string) => label.padEnd(14);
   const lines = [
     `Subcontractor Award — ${ctx.fileName}`,
-    `Basis: ${BASIS_LABEL[ctx.basis]} · Base coverages: ${ctx.baseCoverages.join(", ") || "none"}`,
+    `Basis: ${BASIS_LABEL[ctx.basis]} · Coverages: ${ctx.baseCoverages.join(", ") || "none"}`,
     "",
-    `${pad("Demo/Site")}${money(result.base)}`,
+    `${pad(scope)}${money(result.base)}`,
     `${pad("Less O&P")}${money(result.lessOandP)}   ${
       result.lessOandPIsManual ? "(manual entry)" : `(÷ ${(1 + oandpPct / 100).toFixed(2)})`
     }`,
@@ -54,10 +55,10 @@ export function buildCsv(ctx: Context): string {
     ["Source file", ctx.fileName],
     ["Amount basis", BASIS_LABEL[basis]],
     ["O&P %", ctx.oandpPct],
-    ["Base coverages", ctx.baseCoverages.join(" + ")],
+    ["Coverages", ctx.baseCoverages.join(" + ")],
     [],
     ["SUMMARY", "Amount"],
-    ["Demo/Site", round(result.base)],
+    [coverageLabel(ctx.baseCoverages), round(result.base)],
     [
       result.lessOandPIsManual ? "Less O&P (manual)" : "Less O&P",
       round(result.lessOandP),
@@ -127,7 +128,7 @@ export function buildScopeCsv(extraction: Extraction, basis: AmountBasis): strin
     rows.push([`${g.coverage} total`, "", "", "", "", "", "", "", "", round(g.rcv)]);
   }
   rows.push([
-    "Demo/Site total",
+    `${coverageLabel(extraction.keptCoverages)} total`,
     "",
     "",
     "",

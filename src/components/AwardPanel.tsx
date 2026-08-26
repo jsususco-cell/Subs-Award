@@ -10,6 +10,8 @@ interface Props {
   tiers: number[];
   selectedTier: number;
   baseCount: number;
+  /** What the selected coverages are called, e.g. "Demo/Site" or "ECR". */
+  baseLabel: string;
   onOandP: (v: number) => void;
   onLessOandP: (v: number) => void;
   onResetLessOandP: () => void;
@@ -26,6 +28,7 @@ export default function AwardPanel({
   tiers,
   selectedTier,
   baseCount,
+  baseLabel,
   onOandP,
   onLessOandP,
   onResetLessOandP,
@@ -49,9 +52,9 @@ export default function AwardPanel({
       <dl className="divide-y divide-navy-50">
         <div className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3">
           <div>
-            <dt className="text-sm font-medium text-navy-800">Demo/Site</dt>
+            <dt className="text-sm font-medium text-navy-800">{baseLabel}</dt>
             <dd className="mt-0.5 text-xs text-navy-600/70">
-              Total of {baseCount} extracted coverage{baseCount === 1 ? "" : "s"}
+              Total of {baseCount} selected coverage{baseCount === 1 ? "" : "s"}
             </dd>
           </div>
           <span className="tabular text-right text-base font-semibold text-navy-800">
@@ -64,7 +67,7 @@ export default function AwardPanel({
             <div>
               <dt className="text-sm font-medium text-navy-800">Less O&amp;P</dt>
               <dd className="mt-0.5 text-xs text-navy-600/70">
-                Demo/Site &divide; {divisor.toFixed(2)}
+                {baseLabel} &divide; {divisor.toFixed(2)}
                 {result.lessOandPIsManual && (
                   <>
                     {" · "}

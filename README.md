@@ -11,8 +11,12 @@ file is ever uploaded to a server.
 **Upload → Extract → Preview → Award → Award Letter.**
 
 1. **Upload** a raw scope export straight out of the estimating system.
-2. **Extract** filters it down to the Demo/Site coverages (`CE-DEMO` + `CE-SITE`)
-   and drops everything else. Any coverage in the file can be ticked instead.
+2. **Extract** is a free coverage picker. Every coverage in the file is listed
+   with its line count, share of the file and total; tick any combination and
+   that becomes the base. `CE-DEMO` + `CE-SITE` are ticked for you as a starting
+   point, and quick-pick chips offer **All**, **None** and the **Demo/Site**
+   preset. Labels throughout follow the selection — pick `ECR` and the award row
+   reads "ECR", not "Demo/Site".
 3. **Preview** shows the extracted lines in the structured template's column
    order, with a **Totals** view that rolls them up by coverage and group and
    ends in the Demo/Site total.
@@ -22,7 +26,8 @@ file is ever uploaded to a server.
    deliberately disabled until it lands.*
 
 A raw file that contains no CE-DEMO lines extracts cleanly to whatever it does
-have and says so, rather than failing — a repair job legitimately has none.
+have and says so, rather than failing — a repair job legitimately has none, and
+its scope may sit under an entirely different coverage code.
 
 ## The calculation
 
@@ -43,8 +48,8 @@ markup, so removing 32% means `base ÷ 1.32`, not `base × 0.68`.
 
 Every input above is adjustable in the UI:
 
-- **Which coverages** form the base — CE-DEMO and CE-SITE are ticked
-  automatically, any coverage in the file can be added or removed.
+- **Which coverages** form the base — any combination. CE-DEMO and CE-SITE are
+  the default pick, not a constraint.
 - **The amount basis** — RCV (default), ACV, or Item Amount.
 - **The O&P rate** — defaults to 32%.
 - **The subs percentages** — prefilled at 50 / 55 / 60; rows can be edited,

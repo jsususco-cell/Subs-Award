@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { demoSiteCoveragesIn, extract, templateRow, totalOf } from "./extract";
+import {
+  coverageLabel,
+  demoSiteCoveragesIn,
+  extract,
+  templateRow,
+  totalOf,
+} from "./extract";
 import {
   DEFAULT_HC,
   DEFAULT_TIERS,
@@ -160,4 +166,42 @@ test("award at the default tiers off the sample scope", () => {
     const r = calculateAward(groups, settings({ selectedTier: i }));
     assert.ok(Math.abs(r.award - (DEFAULT_HC + base * (p / 100))) < CENT);
   }
+});
+
+test("the coverage label follows the selection, not a Demo/Site assumption", () => {
+  assert.equal(coverageLabel([]), "No coverage selected");
+  assert.equal(coverageLabel(["CE-DEMO", "CE-SITE"]), "Demo/Site");
+  assert.equal(coverageLabel(["CE-SITE", "CE-DEMO"]), "Demo/Site");
+  // A lone Demo/Site coverage is named honestly rather than called the pair.
+  assert.equal(coverageLabel(["CE-SITE"]), "CE-SITE");
+  assert.equal(coverageLabel(["ECR"]), "ECR");
+  assert.equal(coverageLabel(["ECR", "CE-ENV"]), "CE-ENV + ECR");
+  assert.equal(coverageLabel(["ECR", "CE-ENV", "TAX-SD"]), "CE-ENV + ECR + TAX-SD");
+  assert.equal(coverageLabel(["A", "B", "C", "D"]), "4 coverages");
+  // Mixing a non-Demo/Site code in drops the shorthand.
+  assert.equal(coverageLabel(["CE-DEMO", "CE-SITE", "ECR"]), "CE-DEMO + CE-SITE + ECR");
+});
+
+test("any coverage set can drive the award, not only Demo/Site", () => {
+  const items = loadSample();
+  const groups = groupByCoverage(items);
+
+  // Build the base from coverages that have nothing to do with demolition.
+  const picked = ["CE-ENV", "TAX-MIT"];
+  const ex = extract(items, picked, DEMO_SITE_COVERAGES);
+  assert.equal(ex.keptCount, 4 + 6);
+  assert.ok(ex.items.every((i) => picked.includes(i.coverage)));
+
+  const expected = 2125.2 + 20880.52;
+  const r = calculateAward(ex.keptGroups, settings({ baseCoverages: picked }));
+  assert.ok(Math.abs(r.base - expected) < CENT, `base ${r.base} != ${expected}`);
+  assert.ok(Math.abs(r.lessOandP - expected / 1.32) < CENT);
+  assert.ok(Math.abs(r.award - (DEFAULT_HC + (expected / 1.32) * 0.5)) < CENT);
+  assert.equal(coverageLabel(picked), "CE-ENV + TAX-MIT");
+
+  // Selecting everything reproduces the whole-file total.
+  const all = groups.map((g) => g.coverage);
+  const everything = calculateAward(groups, settings({ baseCoverages: all }));
+  const fileTotal = items.reduce((s, i) => s + i.rcv, 0);
+  assert.ok(Math.abs(everything.base - fileTotal) < CENT);
 });

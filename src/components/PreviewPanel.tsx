@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { groupAmount } from "@/lib/award";
-import { totalOf } from "@/lib/extract";
+import { coverageLabel, totalOf } from "@/lib/extract";
 import { money, num } from "@/lib/format";
 import type { Extraction } from "@/lib/extract";
 import type { AmountBasis, GroupTotal } from "@/lib/types";
@@ -103,6 +103,7 @@ export default function PreviewPanel({ extraction, basis }: Props) {
           groups={extraction.keptGroups}
           basis={basis}
           grandTotal={grandTotal}
+          label={coverageLabel(extraction.keptCoverages)}
         />
       )}
     </section>
@@ -209,11 +210,13 @@ function TotalsView({
   groups,
   basis,
   grandTotal,
+  label,
 }: {
   breakdown: GroupTotal[];
   groups: Extraction["keptGroups"];
   basis: AmountBasis;
   grandTotal: number;
+  label: string;
 }) {
   return (
     <div className="overflow-auto print-full">
@@ -267,7 +270,7 @@ function TotalsView({
               colSpan={3}
               className="px-4 py-3 text-sm font-bold tracking-wide text-white uppercase"
             >
-              Demo/Site total
+              {label} total
             </td>
             <td className="tabular px-4 py-3 text-right text-lg font-bold text-white">
               {money(grandTotal)}

@@ -13,7 +13,7 @@ import {
   groupByCoverage,
   suggestBaseCoverages,
 } from "@/lib/award";
-import { extract } from "@/lib/extract";
+import { coverageLabel, extract } from "@/lib/extract";
 import { buildCsv, buildScopeCsv, downloadCsv, summaryText } from "@/lib/export";
 import { parseWorkbook } from "@/lib/parse";
 import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
@@ -133,7 +133,7 @@ export default function AwardApp() {
   const loaded = Boolean(parsed && extraction);
   const steps: Step[] = [
     { id: "upload", label: "Upload", hint: "Raw scope export", enabled: true },
-    { id: "extract", label: "Extract", hint: "Filter to Demo/Site", enabled: loaded },
+    { id: "extract", label: "Extract", hint: "Choose coverages", enabled: loaded },
     { id: "preview", label: "Preview", hint: "Structured lines", enabled: loaded },
     { id: "award", label: "Award", hint: "Totals & subs %", enabled: loaded },
     { id: "letter", label: "Award Letter", hint: "Generate document", enabled: loaded },
@@ -242,9 +242,7 @@ export default function AwardApp() {
                 : [...prev, coverage],
             )
           }
-          onResetToDemoSite={() =>
-            setKeptCoverages(suggestBaseCoverages(extraction.allCoverages))
-          }
+          onSet={setKeptCoverages}
         />
       )}
 
@@ -262,6 +260,7 @@ export default function AwardApp() {
               tiers={tiers}
               selectedTier={selectedTier}
               baseCount={keptCoverages.length}
+              baseLabel={coverageLabel(keptCoverages)}
               onOandP={(v) => updatePrefs({ oandpPct: v })}
               onLessOandP={setLessOandPOverride}
               onResetLessOandP={() => setLessOandPOverride(null)}
@@ -297,6 +296,7 @@ export default function AwardApp() {
           onField={(patch) => setLetter((prev) => ({ ...prev, ...patch }))}
           result={result}
           onHc={(v) => updatePrefs({ hc: v })}
+          coverages={keptCoverages}
         />
       )}
 
@@ -386,9 +386,9 @@ function ErrorNote({ message }: { message: string }) {
 
 const STEPS: [string, string][] = [
   ["Upload", "Drop the raw scope export straight out of the estimating system."],
-  ["Extract", "Keeps CE-DEMO and CE-SITE lines and drops everything else."],
-  ["Preview", "The extracted lines, plus a totals view for the Demo/Site rollup."],
-  ["Less O&P", "Demo/Site ÷ 1.32, editable if you need to override it."],
+  ["Extract", "Pick any coverages to build the base from. CE-DEMO and CE-SITE are ticked for you."],
+  ["Preview", "The extracted lines, plus a totals view rolled up by coverage and group."],
+  ["Less O&P", "Selected total ÷ 1.32, editable if you need to override it."],
   ["Subs %", "Prefilled at 50 / 55 / 60 — edit the rates and pick which applies."],
   ["Award", "HC plus the selected subs percentage."],
 ];

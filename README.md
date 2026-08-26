@@ -47,7 +47,7 @@ Given the structured scope `scope of work- template.xls`:
 | 55%       | `$61,902.75` | **Less O&P × 55%**                           |
 | 60%       | `$67,530.27` | **Less O&P × 60%**                           |
 | HC        | `$122,000.00`| Hard-cost allowance, prefilled and editable  |
-| **Award** | `$178,275.23`| **HC + the selected subs %** (50% here)      |
+| **Award** | `$178,275.23`| **HC + the subs amount** ($122,000 + $56,275.23) |
 
 Two things about that chain are easy to get wrong:
 
@@ -57,6 +57,9 @@ Two things about that chain are easy to get wrong:
   `Subs amount = Less O&P × %`. At 50% that is $56,275.23, not $74,283.30.
   If Less O&P has been overridden by hand, the percentage applies to the
   overridden figure.
+- **The award adds only the selected tier.** `Award = HC + subs amount` — the
+  other tiers are shown for comparison and contribute nothing. The award footer
+  spells the sum out so it can be checked at a glance.
 
 Every input above is adjustable in the UI:
 

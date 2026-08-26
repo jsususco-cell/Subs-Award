@@ -197,8 +197,10 @@ export default function AwardPanel({
           <p className="text-sm font-bold tracking-wide text-white uppercase">
             Award total
           </p>
-          <p className="mt-0.5 text-xs text-navy-200">
-            {chosen ? `HC + ${pct(chosen.pct)} of less O&P` : "HC only — no tier selected"}
+          <p className="tabular mt-0.5 text-xs text-navy-200">
+            {chosen
+              ? `HC ${money(result.hc)} + subs ${money(chosen.amount)} (${pct(chosen.pct)})`
+              : "HC only — no subs tier selected"}
           </p>
         </div>
         <p className="tabular text-2xl font-bold text-white">{money(result.award)}</p>

@@ -236,3 +236,40 @@ test("subs amount is Less O&P multiplied by the percentage", () => {
   const half = calculateAward(groups, settings({ tiers: [52.5] }));
   assert.ok(Math.abs(half.tierRows[0].amount - lessOandP * 0.525) < CENT);
 });
+
+test("award total is HC plus the subs amount", () => {
+  const groups = groupByCoverage(loadSample());
+
+  for (const [i] of DEFAULT_TIERS.entries()) {
+    const r = calculateAward(groups, settings({ selectedTier: i }));
+    const subs = r.tierRows[i].amount;
+    assert.ok(
+      Math.abs(r.award - (r.hc + subs)) < CENT,
+      `tier ${i}: award ${r.award} != hc ${r.hc} + subs ${subs}`,
+    );
+    // Only the selected tier contributes; the others are just shown.
+    const others = r.tierRows.filter((_, j) => j !== i).reduce((s, t) => s + t.amount, 0);
+    assert.ok(Math.abs(r.award - (r.hc + subs + others)) > CENT || others === 0);
+  }
+
+  // The worksheet's own numbers.
+  const at50 = calculateAward(groups, settings({ selectedTier: 0 }));
+  assert.ok(Math.abs(at50.award - (122000 + 56275.23)) < CENT);
+  assert.ok(Math.abs(at50.award - 178275.23) < CENT);
+
+  // A manual Less O&P flows all the way through to the award.
+  const over = calculateAward(groups, settings({ lessOandPOverride: 200000 }));
+  assert.ok(Math.abs(over.award - (DEFAULT_HC + 100000)) < CENT);
+
+  // Changing HC moves the award one-for-one.
+  const hcUp = calculateAward(groups, settings({ hc: DEFAULT_HC + 1000 }));
+  assert.ok(Math.abs(hcUp.award - (at50.award + 1000)) < CENT);
+
+  // HC of zero leaves just the subs amount.
+  const noHc = calculateAward(groups, settings({ hc: 0 }));
+  assert.ok(Math.abs(noHc.award - noHc.tierRows[0].amount) < CENT);
+
+  // No tier selected falls back to HC alone rather than NaN.
+  const noTier = calculateAward(groups, settings({ selectedTier: 9 }));
+  assert.equal(noTier.award, DEFAULT_HC);
+});

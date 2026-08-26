@@ -1,11 +1,8 @@
 import { money, pct, toCsv } from "./format";
 import { groupAmount } from "./award";
-import type {
-  AmountBasis,
-  AwardResult,
-  CoverageGroup,
-  ScopeItem,
-} from "./types";
+import { TEMPLATE_COLUMNS, templateRow } from "./extract";
+import type { AmountBasis, AwardResult, CoverageGroup, ScopeItem } from "./types";
+import type { Extraction } from "./extract";
 
 const BASIS_LABEL: Record<AmountBasis, string> = {
   rcv: "RCV",
@@ -13,7 +10,7 @@ const BASIS_LABEL: Record<AmountBasis, string> = {
   itemAmount: "Item Amount",
 };
 
-interface Context {
+export interface Context {
   fileName: string;
   basis: AmountBasis;
   oandpPct: number;
@@ -33,13 +30,19 @@ export function summaryText(ctx: Context): string {
     `Basis: ${BASIS_LABEL[ctx.basis]} · Base coverages: ${ctx.baseCoverages.join(", ") || "none"}`,
     "",
     `${pad("Demo/Site")}${money(result.base)}`,
-    `${pad(`Less O&P`)}${money(result.lessOandP)}   (÷ ${(1 + oandpPct / 100).toFixed(2)})`,
+    `${pad("Less O&P")}${money(result.lessOandP)}   ${
+      result.lessOandPIsManual ? "(manual entry)" : `(÷ ${(1 + oandpPct / 100).toFixed(2)})`
+    }`,
   ];
   for (const row of result.tierRows) {
-    lines.push(`${pad(pct(row.pct))}${money(row.amount)}${row.selected ? "   <- applied" : ""}`);
+    lines.push(
+      `${pad(pct(row.pct))}${money(row.amount)}${row.selected ? "   <- applied" : ""}`,
+    );
   }
   lines.push(`${pad("HC")}${money(result.hc)}`);
-  lines.push(`${pad("Award")}${money(result.award)}${chosen ? `   (HC + ${pct(chosen.pct)})` : ""}`);
+  lines.push(
+    `${pad("Award")}${money(result.award)}${chosen ? `   (HC + ${pct(chosen.pct)})` : ""}`,
+  );
   return lines.join("\n");
 }
 
@@ -55,7 +58,10 @@ export function buildCsv(ctx: Context): string {
     [],
     ["SUMMARY", "Amount"],
     ["Demo/Site", round(result.base)],
-    ["Less O&P", round(result.lessOandP)],
+    [
+      result.lessOandPIsManual ? "Less O&P (manual)" : "Less O&P",
+      round(result.lessOandP),
+    ],
     ...result.tierRows.map((r) => [
       `${r.pct}%${r.selected ? " (applied)" : ""}`,
       round(r.amount),
@@ -106,12 +112,41 @@ export function buildCsv(ctx: Context): string {
   return toCsv(rows);
 }
 
+/**
+ * The extracted scope in the structured template's own column order, so the
+ * output can stand in for a hand-built scope-of-work sheet.
+ */
+export function buildScopeCsv(extraction: Extraction, basis: AmountBasis): string {
+  const rows: (string | number)[][] = [
+    [...TEMPLATE_COLUMNS],
+    ...extraction.items.map((item, i) => templateRow(item, i)),
+  ];
+
+  rows.push([]);
+  for (const g of extraction.keptGroups) {
+    rows.push([`${g.coverage} total`, "", "", "", "", "", "", "", "", round(g.rcv)]);
+  }
+  rows.push([
+    "Demo/Site total",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    round(extraction.keptGroups.reduce((s, g) => s + groupAmount(g, basis), 0)),
+  ]);
+  return toCsv(rows);
+}
+
 function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
 export function downloadCsv(fileName: string, csv: string): void {
-  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["﻿", csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

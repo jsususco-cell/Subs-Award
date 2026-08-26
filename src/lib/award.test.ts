@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_OANDP_PCT,
-  DEFAULT_TIERS,
   calculateAward,
   findHcGroup,
   groupByCoverage,
@@ -27,7 +26,8 @@ function settings(over: Partial<AwardSettings> = {}): AwardSettings {
     basis: "rcv",
     baseCoverages: suggestBaseCoverages(groups),
     oandpPct: DEFAULT_OANDP_PCT,
-    tiers: [...DEFAULT_TIERS],
+    lessOandPOverride: null,
+    tiers: [50, 60, 70],
     selectedTier: 0,
     hc: EXPECTED.hc,
     ...over,
@@ -78,7 +78,7 @@ test("backs 32% O&P out of the base rather than deducting it", () => {
   assert.ok(Math.abs(result.lessOandP - EXPECTED.demoSiteRcv * 0.68) > 1000);
 });
 
-test("computes the 50/60/70 tiers off the ex-O&P figure", () => {
+test("computes percentage tiers off the ex-O&P figure", () => {
   const { groups } = load();
   const { tierRows } = calculateAward(groups, settings());
   assert.ok(Math.abs(tierRows[0].amount - EXPECTED.tier50) < CENT);

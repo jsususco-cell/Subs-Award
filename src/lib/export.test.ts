@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { buildCsv, summaryText } from "./export";
 import {
   DEFAULT_OANDP_PCT,
-  DEFAULT_TIERS,
   calculateAward,
   groupByCoverage,
   suggestBaseCoverages,
@@ -19,7 +18,8 @@ function context() {
     basis: "rcv",
     baseCoverages,
     oandpPct: DEFAULT_OANDP_PCT,
-    tiers: [...DEFAULT_TIERS],
+    lessOandPOverride: null,
+    tiers: [50, 60, 70],
     selectedTier: 0,
     hc: EXPECTED.hc,
   });

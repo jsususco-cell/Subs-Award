@@ -7,11 +7,23 @@ import type {
 } from "./types";
 
 export const DEFAULT_OANDP_PCT = 32;
-export const DEFAULT_TIERS = [50, 60, 70];
 
-/** Coverage codes that make up the Demo/Site base by default. */
-const DEFAULT_BASE_EXACT = /^ce-\s*(demo|site)$/i;
-const DEFAULT_BASE_LOOSE = /(demo|site)/i;
+/** Subcontractor percentage tiers offered by default. */
+export const DEFAULT_TIERS = [50, 55, 60];
+
+/** Prefilled hard-cost allowance. */
+export const DEFAULT_HC = 122000;
+
+/** The coverages that make up the Demo/Site scope. */
+export const DEMO_SITE_COVERAGES = ["CE-DEMO", "CE-SITE"];
+
+const DEMO_SITE_EXACT = /^ce-\s*(demo|site)\b/i;
+const DEMO_SITE_LOOSE = /(demo|site)/i;
+
+/** Does this coverage code belong to the Demo/Site scope? */
+export function isDemoSite(coverage: string): boolean {
+  return DEMO_SITE_EXACT.test(coverage.trim());
+}
 
 export function amountOf(item: ScopeItem, basis: AmountBasis): number {
   return item[basis];
@@ -41,10 +53,10 @@ export function groupByCoverage(items: ScopeItem[]): CoverageGroup[] {
  * CE-DEMO / CE-SITE codes; falls back to anything mentioning demo or site.
  */
 export function suggestBaseCoverages(groups: CoverageGroup[]): string[] {
-  const exact = groups.filter((g) => DEFAULT_BASE_EXACT.test(g.coverage.trim()));
+  const exact = groups.filter((g) => isDemoSite(g.coverage));
   if (exact.length) return exact.map((g) => g.coverage);
   return groups
-    .filter((g) => DEFAULT_BASE_LOOSE.test(g.coverage))
+    .filter((g) => DEMO_SITE_LOOSE.test(g.coverage))
     .map((g) => g.coverage);
 }
 
@@ -68,16 +80,29 @@ export function stripOandP(base: number, oandpPct: number): number {
   return base / divisor;
 }
 
+/** Sum the selected coverages under the chosen basis. */
+export function baseTotal(
+  groups: CoverageGroup[],
+  baseCoverages: string[],
+  basis: AmountBasis,
+): number {
+  const selected = new Set(baseCoverages);
+  return groups
+    .filter((g) => selected.has(g.coverage))
+    .reduce((sum, g) => sum + groupAmount(g, basis), 0);
+}
+
 export function calculateAward(
   groups: CoverageGroup[],
   settings: AwardSettings,
 ): AwardResult {
-  const selected = new Set(settings.baseCoverages);
-  const base = groups
-    .filter((g) => selected.has(g.coverage))
-    .reduce((sum, g) => sum + groupAmount(g, settings.basis), 0);
+  const base = baseTotal(groups, settings.baseCoverages, settings.basis);
+  const derivedLessOandP = stripOandP(base, settings.oandpPct);
 
-  const lessOandP = stripOandP(base, settings.oandpPct);
+  const lessOandPIsManual = settings.lessOandPOverride !== null;
+  const lessOandP = lessOandPIsManual
+    ? (settings.lessOandPOverride as number)
+    : derivedLessOandP;
 
   const tierRows = settings.tiers.map((pct, i) => ({
     pct,
@@ -88,5 +113,13 @@ export function calculateAward(
   const chosen = tierRows[settings.selectedTier];
   const award = settings.hc + (chosen ? chosen.amount : 0);
 
-  return { base, lessOandP, tierRows, hc: settings.hc, award };
+  return {
+    base,
+    derivedLessOandP,
+    lessOandP,
+    lessOandPIsManual,
+    tierRows,
+    hc: settings.hc,
+    award,
+  };
 }

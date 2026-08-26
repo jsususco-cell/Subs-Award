@@ -45,6 +45,17 @@ export interface CoverageGroup {
   salesTax: number;
 }
 
+/** A coverage broken down by the group description within it. */
+export interface GroupTotal {
+  coverage: string;
+  groupDesc: string;
+  count: number;
+  rcv: number;
+  acv: number;
+  itemAmount: number;
+  salesTax: number;
+}
+
 export interface TierRow {
   pct: number;
   amount: number;
@@ -57,7 +68,12 @@ export interface AwardSettings {
   baseCoverages: string[];
   /** Overhead & profit percentage baked into the base, e.g. 32. */
   oandpPct: number;
-  /** Percentage tiers applied to the ex-O&P figure, e.g. [50, 60, 70]. */
+  /**
+   * Less O&P is a manual entry. It starts out derived from the base and the
+   * O&P rate, and holds whatever the user types once they override it.
+   */
+  lessOandPOverride: number | null;
+  /** Subcontractor percentage tiers applied to the ex-O&P figure. */
   tiers: number[];
   /** Index into `tiers` of the row that feeds the award. */
   selectedTier: number;
@@ -67,7 +83,11 @@ export interface AwardSettings {
 
 export interface AwardResult {
   base: number;
+  /** What base ÷ (1 + O&P) works out to, regardless of any override. */
+  derivedLessOandP: number;
+  /** The figure the tiers are actually taken from. */
   lessOandP: number;
+  lessOandPIsManual: boolean;
   tierRows: TierRow[];
   hc: number;
   award: number;

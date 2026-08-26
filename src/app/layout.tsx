@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Brand from "@/components/Brand";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Subcontractor Award System",
   description:
-    "Upload a scope of work and get the Demo/Site, less O&P, percentage tier and award totals calculated automatically.",
+    "Upload a raw scope export, extract the Demo/Site scope, and calculate the subcontractor award.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -25,14 +26,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <header className="no-print bg-navy-700">
-          <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3.5 sm:px-6">
-            <span aria-hidden className="h-6 w-1 rounded-full bg-brand-red" />
-            <div>
-              <h1 className="text-base leading-tight font-semibold text-white">
+        <header className="no-print border-b-4 border-brand-red bg-navy-700">
+          <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+            <Brand />
+            <div className="text-right">
+              <h1 className="text-sm leading-tight font-semibold text-white">
                 Subcontractor Award System
               </h1>
-              <p className="text-xs text-navy-200">Byrdson Services</p>
+              <p className="text-xs text-navy-200">Scope extraction &amp; award</p>
             </div>
           </div>
         </header>

@@ -1,18 +1,25 @@
-import { DEFAULT_OANDP_PCT, DEFAULT_TIERS } from "./award";
+import { DEFAULT_HC, DEFAULT_OANDP_PCT, DEFAULT_TIERS } from "./award";
 import type { AmountBasis } from "./types";
 
-const KEY = "subs-award:prefs";
+/**
+ * Versioned: v1 stored 50/60/70 tiers and no HC. Bumping the key retires that
+ * shape cleanly rather than letting a stale entry mask the current defaults.
+ */
+const KEY = "subs-award:prefs:v2";
 
 /**
  * Settings that are shop conventions rather than job facts, so they carry over
- * between scope files. The HC amount and the coverage selection belong to a
- * single job and are deliberately not remembered.
+ * between scope files. The coverage selection belongs to a single job and is
+ * deliberately not remembered — it is re-derived from each file.
  */
 export interface Prefs {
   basis: AmountBasis;
   oandpPct: number;
+  /** Subcontractor percentage tiers. */
   tiers: number[];
   selectedTier: number;
+  /** Hard-cost allowance carried between jobs as a starting point. */
+  hc: number;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -20,6 +27,7 @@ export const DEFAULT_PREFS: Prefs = {
   oandpPct: DEFAULT_OANDP_PCT,
   tiers: [...DEFAULT_TIERS],
   selectedTier: 0,
+  hc: DEFAULT_HC,
 };
 
 const BASES: AmountBasis[] = ["rcv", "acv", "itemAmount"];
@@ -53,6 +61,7 @@ export function loadPrefs(): Prefs {
         (p.selectedTier as number) < tiers.length
           ? (p.selectedTier as number)
           : 0,
+      hc: Number.isFinite(p.hc) ? (p.hc as number) : DEFAULT_PREFS.hc,
     };
   } catch {
     return { ...DEFAULT_PREFS, tiers: [...DEFAULT_PREFS.tiers] };

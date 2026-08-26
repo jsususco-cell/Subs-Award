@@ -9,6 +9,8 @@ interface Props {
   suffix?: string;
   className?: string;
   ariaLabel: string;
+  /** Fixed decimal places to show when not being edited — 2 for currency. */
+  decimals?: number;
 }
 
 /**
@@ -24,9 +26,10 @@ export default function NumberField({
   suffix,
   className = "",
   ariaLabel,
+  decimals,
 }: Props) {
   const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? String(value);
+  const shown = draft ?? display(value, decimals);
 
   function commit(raw: string) {
     setDraft(raw);
@@ -61,4 +64,10 @@ export default function NumberField({
       )}
     </div>
   );
+}
+
+function display(value: number, decimals?: number): string {
+  if (!Number.isFinite(value)) return "0";
+  if (decimals === undefined) return String(value);
+  return value.toFixed(decimals);
 }

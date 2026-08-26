@@ -1,32 +1,45 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import CoveragePanel from "./CoveragePanel";
+import AwardPanel from "./AwardPanel";
+import ExtractPanel from "./ExtractPanel";
 import FileDrop from "./FileDrop";
-import LineItemsTable from "./LineItemsTable";
-import SummaryPanel from "./SummaryPanel";
+import LetterPanel, { type LetterFields } from "./LetterPanel";
+import PreviewPanel from "./PreviewPanel";
+import StepRail, { type Step } from "./StepRail";
 import {
+  DEMO_SITE_COVERAGES,
   calculateAward,
-  findHcGroup,
-  groupAmount,
   groupByCoverage,
   suggestBaseCoverages,
 } from "@/lib/award";
-import { buildCsv, downloadCsv, summaryText } from "@/lib/export";
+import { extract } from "@/lib/extract";
+import { buildCsv, buildScopeCsv, downloadCsv, summaryText } from "@/lib/export";
 import { parseWorkbook } from "@/lib/parse";
 import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 import type { ParseResult } from "@/lib/types";
+
+type StepId = "upload" | "extract" | "preview" | "award" | "letter";
+
+const EMPTY_LETTER: LetterFields = {
+  jobName: "",
+  jobAddress: "",
+  subcontractor: "",
+  scopeOfWork: "",
+};
 
 export default function AwardApp() {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<StepId>("upload");
   const [showIgnored, setShowIgnored] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const [baseCoverages, setBaseCoverages] = useState<string[]>([]);
-  const [hc, setHc] = useState(0);
+  const [keptCoverages, setKeptCoverages] = useState<string[]>([]);
+  const [lessOandPOverride, setLessOandPOverride] = useState<number | null>(null);
+  const [letter, setLetter] = useState<LetterFields>(EMPTY_LETTER);
 
   // Preferences start at the defaults so the server and the first client render
   // agree, then the stored set is applied when a file is loaded — always a
@@ -41,22 +54,28 @@ export default function AwardApp() {
     savePrefs(next);
   }, []);
 
-  const { basis, oandpPct, tiers, selectedTier } = prefs;
+  const { basis, oandpPct, tiers, selectedTier, hc } = prefs;
 
-  const groups = useMemo(() => (parsed ? groupByCoverage(parsed.items) : []), [parsed]);
-  const hcGroup = useMemo(() => findHcGroup(groups), [groups]);
+  const extraction = useMemo(
+    () =>
+      parsed
+        ? extract(parsed.items, keptCoverages, DEMO_SITE_COVERAGES)
+        : null,
+    [parsed, keptCoverages],
+  );
 
   const result = useMemo(
     () =>
-      calculateAward(groups, {
+      calculateAward(extraction?.keptGroups ?? [], {
         basis,
-        baseCoverages,
+        baseCoverages: keptCoverages,
         oandpPct,
+        lessOandPOverride,
         tiers,
         selectedTier,
         hc,
       }),
-    [groups, basis, baseCoverages, oandpPct, tiers, selectedTier, hc],
+    [extraction, basis, keptCoverages, oandpPct, lessOandPOverride, tiers, selectedTier, hc],
   );
 
   const handleFile = useCallback(async (file: File) => {
@@ -65,7 +84,7 @@ export default function AwardApp() {
     try {
       const buffer = await file.arrayBuffer();
       const next = parseWorkbook(buffer);
-      const nextGroups = groupByCoverage(next.items);
+      const groups = groupByCoverage(next.items);
 
       const stored = loadPrefs();
       prefsRef.current = stored;
@@ -73,9 +92,11 @@ export default function AwardApp() {
 
       setParsed(next);
       setFileName(file.name);
-      setBaseCoverages(suggestBaseCoverages(nextGroups));
-      setHc(0);
+      setKeptCoverages(suggestBaseCoverages(groups));
+      setLessOandPOverride(null);
+      setLetter(EMPTY_LETTER);
       setShowIgnored(false);
+      setStep("extract");
     } catch (e) {
       setParsed(null);
       setFileName(null);
@@ -85,17 +106,18 @@ export default function AwardApp() {
     }
   }, []);
 
-  const ctx = parsed
-    ? {
-        fileName: fileName ?? "scope",
-        basis,
-        oandpPct,
-        baseCoverages,
-        groups,
-        items: parsed.items,
-        result,
-      }
-    : null;
+  const ctx =
+    parsed && extraction
+      ? {
+          fileName: fileName ?? "scope",
+          basis,
+          oandpPct,
+          baseCoverages: keptCoverages,
+          groups: extraction.allCoverages,
+          items: extraction.items,
+          result,
+        }
+      : null;
 
   async function copySummary() {
     if (!ctx) return;
@@ -108,149 +130,220 @@ export default function AwardApp() {
     }
   }
 
+  const loaded = Boolean(parsed && extraction);
+  const steps: Step[] = [
+    { id: "upload", label: "Upload", hint: "Raw scope export", enabled: true },
+    { id: "extract", label: "Extract", hint: "Filter to Demo/Site", enabled: loaded },
+    { id: "preview", label: "Preview", hint: "Structured lines", enabled: loaded },
+    { id: "award", label: "Award", hint: "Totals & subs %", enabled: loaded },
+    { id: "letter", label: "Award Letter", hint: "Generate document", enabled: loaded },
+  ];
+
+  const base = fileName ? fileName.replace(/\.[^.]+$/, "") : "scope";
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
-      {!parsed && (
+      <StepRail steps={steps} current={step} onSelect={(id) => setStep(id as StepId)} />
+
+      {loaded && parsed && extraction && ctx && (
+        <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p
+              className="truncate text-sm font-semibold text-navy-800"
+              title={fileName ?? ""}
+            >
+              {fileName}
+            </p>
+            <p className="mt-0.5 text-xs text-navy-600/70">
+              Sheet &ldquo;{parsed.sheetName}&rdquo; &middot; header on row{" "}
+              {parsed.headerRow} &middot; {parsed.items.length} raw lines
+              {parsed.ignored.length > 0 && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={() => setShowIgnored((v) => !v)}
+                    className="font-medium underline underline-offset-2 hover:text-brand-red"
+                  >
+                    {parsed.ignored.length} row
+                    {parsed.ignored.length === 1 ? "" : "s"} skipped
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() =>
+                downloadCsv(`${base} - extracted scope.csv`, buildScopeCsv(extraction, basis))
+              }
+            >
+              Export scope
+            </Button>
+            <Button onClick={copySummary}>{copied ? "Copied" : "Copy summary"}</Button>
+            <Button onClick={() => downloadCsv(`${base} - award.csv`, buildCsv(ctx))}>
+              Download CSV
+            </Button>
+            <Button onClick={() => window.print()}>Print</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setParsed(null);
+                setFileName(null);
+                setError(null);
+                setStep("upload");
+              }}
+            >
+              New file
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showIgnored && parsed && (
+        <div className="no-print mb-5 rounded-lg border border-navy-200 bg-white p-4">
+          <p className="mb-2 text-xs font-semibold tracking-wide text-navy-800 uppercase">
+            Rows read but not counted
+          </p>
+          <p className="mb-3 text-xs text-navy-600/70">
+            A row becomes a line item only when it carries a Coverage value. These did
+            not, so they were left out of every total &mdash; usually the
+            worksheet&rsquo;s own summary block.
+          </p>
+          <ul className="space-y-1 text-xs text-navy-600">
+            {parsed.ignored.slice(0, 40).map((r) => (
+              <li key={r.row} className="tabular">
+                <span className="text-navy-300">row {r.row}</span>{" "}
+                {r.preview || <em>blank</em>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {error && <ErrorNote message={error} />}
+
+      {step === "upload" && (
         <div className="mx-auto max-w-2xl">
           <FileDrop onFile={handleFile} busy={busy} fileName={fileName} />
-          {error && <ErrorNote message={error} />}
           <HowItWorks />
         </div>
       )}
 
-      {parsed && ctx && (
-        <>
-          <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p
-                className="truncate text-sm font-semibold text-navy-800"
-                title={fileName ?? ""}
-              >
-                {fileName}
-              </p>
-              <p className="mt-0.5 text-xs text-navy-600/70">
-                Sheet &ldquo;{parsed.sheetName}&rdquo; &middot; header on row{" "}
-                {parsed.headerRow} &middot; {parsed.items.length} line items
-                {parsed.ignored.length > 0 && (
-                  <>
-                    {" · "}
-                    <button
-                      type="button"
-                      onClick={() => setShowIgnored((v) => !v)}
-                      className="font-medium underline underline-offset-2 hover:text-brand-red"
-                    >
-                      {parsed.ignored.length} row
-                      {parsed.ignored.length === 1 ? "" : "s"} skipped
-                    </button>
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={copySummary}>{copied ? "Copied" : "Copy summary"}</Button>
-              <Button
-                onClick={() =>
-                  downloadCsv(
-                    `${(fileName ?? "scope").replace(/\.[^.]+$/, "")} - award.csv`,
-                    buildCsv(ctx),
-                  )
-                }
-              >
-                Download CSV
-              </Button>
-              <Button onClick={() => window.print()}>Print</Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setParsed(null);
-                  setFileName(null);
-                  setError(null);
-                }}
-              >
-                New file
-              </Button>
-            </div>
+      {step === "extract" && extraction && (
+        <ExtractPanel
+          extraction={extraction}
+          basis={basis}
+          onBasis={(next) => updatePrefs({ basis: next })}
+          onToggle={(coverage) =>
+            setKeptCoverages((prev) =>
+              prev.includes(coverage)
+                ? prev.filter((c) => c !== coverage)
+                : [...prev, coverage],
+            )
+          }
+          onResetToDemoSite={() =>
+            setKeptCoverages(suggestBaseCoverages(extraction.allCoverages))
+          }
+        />
+      )}
+
+      {step === "preview" && extraction && (
+        <PreviewPanel extraction={extraction} basis={basis} />
+      )}
+
+      {step === "award" && extraction && (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
+          <PreviewPanel extraction={extraction} basis={basis} />
+          <div className="lg:sticky lg:top-6">
+            <AwardPanel
+              result={result}
+              oandpPct={oandpPct}
+              tiers={tiers}
+              selectedTier={selectedTier}
+              baseCount={keptCoverages.length}
+              onOandP={(v) => updatePrefs({ oandpPct: v })}
+              onLessOandP={setLessOandPOverride}
+              onResetLessOandP={() => setLessOandPOverride(null)}
+              onHc={(v) => updatePrefs({ hc: v })}
+              onSelectTier={(i) => updatePrefs({ selectedTier: i })}
+              onTier={(i, v) =>
+                updatePrefs({ tiers: tiers.map((t, j) => (j === i ? v : t)) })
+              }
+              onAddTier={() =>
+                updatePrefs({
+                  tiers: [...tiers, tiers.length ? tiers[tiers.length - 1] + 5 : 50],
+                })
+              }
+              onRemoveTier={(i) =>
+                updatePrefs({
+                  tiers: tiers.filter((_, j) => j !== i),
+                  selectedTier:
+                    selectedTier > i
+                      ? selectedTier - 1
+                      : selectedTier === i
+                        ? 0
+                        : selectedTier,
+                })
+              }
+            />
           </div>
+        </div>
+      )}
 
-          {showIgnored && (
-            <div className="no-print mb-5 rounded-lg border border-navy-200 bg-white p-4">
-              <p className="mb-2 text-xs font-semibold tracking-wide text-navy-800 uppercase">
-                Rows read but not counted
-              </p>
-              <p className="mb-3 text-xs text-navy-600/70">
-                A row becomes a line item only when it carries a Coverage value. These
-                did not, so they were left out of every total &mdash; usually the
-                worksheet&rsquo;s own summary block.
-              </p>
-              <ul className="space-y-1 text-xs text-navy-600">
-                {parsed.ignored.slice(0, 40).map((r) => (
-                  <li key={r.row} className="tabular">
-                    <span className="text-navy-300">row {r.row}</span>{" "}
-                    {r.preview || <em>blank</em>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+      {step === "letter" && (
+        <LetterPanel
+          fields={letter}
+          onField={(patch) => setLetter((prev) => ({ ...prev, ...patch }))}
+          result={result}
+          onHc={(v) => updatePrefs({ hc: v })}
+        />
+      )}
 
-          {error && <ErrorNote message={error} />}
+      {loaded && step !== "upload" && (
+        <StepNav
+          steps={steps}
+          current={step}
+          onSelect={(id) => setStep(id as StepId)}
+        />
+      )}
+    </div>
+  );
+}
 
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
-            <div className="space-y-5">
-              <CoveragePanel
-                groups={groups}
-                selected={baseCoverages}
-                basis={basis}
-                onBasis={(next) => updatePrefs({ basis: next })}
-                onToggle={(coverage) =>
-                  setBaseCoverages((prev) =>
-                    prev.includes(coverage)
-                      ? prev.filter((c) => c !== coverage)
-                      : [...prev, coverage],
-                  )
-                }
-                onSelectAll={(all) =>
-                  setBaseCoverages(all ? groups.map((g) => g.coverage) : [])
-                }
-              />
-              <LineItemsTable
-                items={parsed.items}
-                basis={basis}
-                baseCoverages={baseCoverages}
-              />
-            </div>
-
-            <div className="lg:sticky lg:top-6">
-              <SummaryPanel
-                result={result}
-                oandpPct={oandpPct}
-                tiers={tiers}
-                selectedTier={selectedTier}
-                baseCount={baseCoverages.length}
-                hcGroup={hcGroup}
-                hcGroupAmount={hcGroup ? groupAmount(hcGroup, basis) : 0}
-                onOandP={(v) => updatePrefs({ oandpPct: v })}
-                onHc={setHc}
-                onSelectTier={(i) => updatePrefs({ selectedTier: i })}
-                onTier={(i, v) =>
-                  updatePrefs({ tiers: tiers.map((t, j) => (j === i ? v : t)) })
-                }
-                onAddTier={() =>
-                  updatePrefs({
-                    tiers: [...tiers, tiers.length ? tiers[tiers.length - 1] : 50],
-                  })
-                }
-                onRemoveTier={(i) =>
-                  updatePrefs({
-                    tiers: tiers.filter((_, j) => j !== i),
-                    selectedTier:
-                      selectedTier > i ? selectedTier - 1 : selectedTier === i ? 0 : selectedTier,
-                  })
-                }
-              />
-            </div>
-          </div>
-        </>
+function StepNav({
+  steps,
+  current,
+  onSelect,
+}: {
+  steps: Step[];
+  current: string;
+  onSelect: (id: string) => void;
+}) {
+  const i = steps.findIndex((s) => s.id === current);
+  const prev = i > 0 ? steps[i - 1] : null;
+  const next = i < steps.length - 1 ? steps[i + 1] : null;
+  return (
+    <div className="no-print mt-5 flex items-center justify-between">
+      {prev ? (
+        <button
+          type="button"
+          onClick={() => onSelect(prev.id)}
+          className="rounded-md border border-navy-200 bg-white px-3.5 py-2 text-sm font-medium text-navy-700 hover:bg-navy-50"
+        >
+          &larr; {prev.label}
+        </button>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <button
+          type="button"
+          onClick={() => onSelect(next.id)}
+          className="rounded-md bg-navy-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-navy-800"
+        >
+          {next.label} &rarr;
+        </button>
       )}
     </div>
   );
@@ -284,7 +377,7 @@ function ErrorNote({ message }: { message: string }) {
   return (
     <p
       role="alert"
-      className="mt-4 rounded-lg border border-brand-red/30 bg-brand-red/5 px-4 py-3 text-sm text-brand-red-dark"
+      className="mb-5 rounded-lg border border-brand-red/30 bg-brand-red-50 px-4 py-3 text-sm text-brand-red-dark"
     >
       {message}
     </p>
@@ -292,30 +385,28 @@ function ErrorNote({ message }: { message: string }) {
 }
 
 const STEPS: [string, string][] = [
-  ["Demo/Site", "Adds up the RCV of the CE-DEMO and CE-SITE coverages."],
-  ["Less O&P", "Divides that base by 1.32 to back out 32% overhead & profit."],
-  ["50 / 60 / 70%", "Percentage tiers off the ex-O&P figure. Pick the one to apply."],
-  ["HC", "The hard-cost allowance, typed in as an absolute amount."],
-  ["Award", "HC plus the tier you selected."],
+  ["Upload", "Drop the raw scope export straight out of the estimating system."],
+  ["Extract", "Keeps CE-DEMO and CE-SITE lines and drops everything else."],
+  ["Preview", "The extracted lines, plus a totals view for the Demo/Site rollup."],
+  ["Less O&P", "Demo/Site ÷ 1.32, editable if you need to override it."],
+  ["Subs %", "Prefilled at 50 / 55 / 60 — edit the rates and pick which applies."],
+  ["Award", "HC plus the selected subs percentage."],
 ];
 
 function HowItWorks() {
   return (
     <div className="mt-8 rounded-xl border border-navy-100 bg-white/60 p-5">
       <h2 className="text-xs font-semibold tracking-wide text-navy-800 uppercase">
-        What gets calculated
+        How it works
       </h2>
       <dl className="mt-3 space-y-2.5">
         {STEPS.map(([term, detail]) => (
-          <div key={term} className="grid grid-cols-[7.5rem_1fr] gap-3 text-sm">
+          <div key={term} className="grid grid-cols-[6rem_1fr] gap-3 text-sm">
             <dt className="font-semibold text-navy-700">{term}</dt>
             <dd className="text-navy-600/80">{detail}</dd>
           </div>
         ))}
       </dl>
-      <p className="mt-4 text-xs text-navy-600/60">
-        Every coverage, percentage and rate is adjustable once the file is loaded.
-      </p>
     </div>
   );
 }

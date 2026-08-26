@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  /* Byrdson Services palette */
+  /* Byrdson Services — navy #1f3864 structure, red #C8102E accent */
   --color-navy-50: #eef2f9;
   --color-navy-100: #dbe3f2;
   --color-navy-200: #b9c7e4;
   --color-navy-300: #8ba1d0;
+  --color-navy-400: #5f7cb5;
   --color-navy-600: #2b4b85;
   --color-navy-700: #1f3864;
   --color-navy-800: #182b4d;
@@ -13,6 +14,7 @@
 
   --color-brand-red: #c8102e;
   --color-brand-red-dark: #9c0c24;
+  --color-brand-red-50: #fdf2f4;
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;

@@ -111,8 +111,13 @@ export default function AwardPanel({
 
         <div className="bg-navy-50/40 px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wide text-navy-600/80 uppercase">
-              Subs %
+            <span>
+              <span className="text-xs font-semibold tracking-wide text-navy-600/80 uppercase">
+                Subs %
+              </span>
+              <span className="ml-2 text-xs font-normal text-navy-600/60 normal-case">
+                less O&amp;P &times; %
+              </span>
             </span>
             <button
               type="button"

@@ -43,14 +43,20 @@ Given the structured scope `scope of work- template.xls`:
 | --------- | ------------ | -------------------------------------------- |
 | Demo/Site | `$148,566.60`| Sum of **RCV** across the CE-DEMO and CE-SITE coverages |
 | Less O&P  | `$112,550.45`| Demo/Site **÷ 1.32** — backs out 32% overhead & profit |
-| 50%       | `$56,275.23` | 50% of the ex-O&P figure                     |
-| 55%       | `$61,902.75` | 55% of the ex-O&P figure                     |
-| 60%       | `$67,530.27` | 60% of the ex-O&P figure                     |
+| 50%       | `$56,275.23` | **Less O&P × 50%**                           |
+| 55%       | `$61,902.75` | **Less O&P × 55%**                           |
+| 60%       | `$67,530.27` | **Less O&P × 60%**                           |
 | HC        | `$122,000.00`| Hard-cost allowance, prefilled and editable  |
 | **Award** | `$178,275.23`| **HC + the selected subs %** (50% here)      |
 
-Note that "Less O&P" *divides*, it does not deduct. The base already carries the
-markup, so removing 32% means `base ÷ 1.32`, not `base × 0.68`.
+Two things about that chain are easy to get wrong:
+
+- **"Less O&P" divides, it does not deduct.** The base already carries the
+  markup, so removing 32% means `base ÷ 1.32`, not `base × 0.68`.
+- **The subs percentage multiplies Less O&P, never the Demo/Site base.**
+  `Subs amount = Less O&P × %`. At 50% that is $56,275.23, not $74,283.30.
+  If Less O&P has been overridden by hand, the percentage applies to the
+  overridden figure.
 
 Every input above is adjustable in the UI:
 

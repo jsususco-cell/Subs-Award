@@ -205,3 +205,34 @@ test("any coverage set can drive the award, not only Demo/Site", () => {
   const fileTotal = items.reduce((s, i) => s + i.rcv, 0);
   assert.ok(Math.abs(everything.base - fileTotal) < CENT);
 });
+
+test("subs amount is Less O&P multiplied by the percentage", () => {
+  const groups = groupByCoverage(loadSample());
+  const lessOandP = EXPECTED.demoSiteRcv / 1.32;
+
+  const r = calculateAward(groups, settings({ tiers: [50, 55, 60] }));
+  r.tierRows.forEach((row) => {
+    assert.ok(
+      Math.abs(row.amount - lessOandP * (row.pct / 100)) < CENT,
+      `${row.pct}% should be ${lessOandP * (row.pct / 100)}, got ${row.amount}`,
+    );
+  });
+  // The exact figures the worksheet shows.
+  assert.ok(Math.abs(r.tierRows[0].amount - 56275.23) < CENT);
+  assert.ok(Math.abs(r.tierRows[1].amount - 61902.75) < CENT);
+  assert.ok(Math.abs(r.tierRows[2].amount - 67530.27) < CENT);
+
+  // It multiplies the *effective* Less O&P, so an override flows through.
+  const over = calculateAward(groups, settings({ lessOandPOverride: 200000 }));
+  assert.ok(Math.abs(over.tierRows[0].amount - 100000) < CENT);
+  assert.ok(Math.abs(over.tierRows[1].amount - 110000) < CENT);
+  assert.ok(Math.abs(over.tierRows[2].amount - 120000) < CENT);
+
+  // And it is taken off Less O&P, never off the Demo/Site base.
+  const offBase = EXPECTED.demoSiteRcv * 0.5;
+  assert.ok(Math.abs(r.tierRows[0].amount - offBase) > 1000);
+
+  // A fractional rate is honoured, not rounded to a whole percent.
+  const half = calculateAward(groups, settings({ tiers: [52.5] }));
+  assert.ok(Math.abs(half.tierRows[0].amount - lessOandP * 0.525) < CENT);
+});

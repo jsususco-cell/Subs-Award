@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  /* Byrdson Services palette */
+  --color-navy-50: #eef2f9;
+  --color-navy-100: #dbe3f2;
+  --color-navy-200: #b9c7e4;
+  --color-navy-300: #8ba1d0;
+  --color-navy-600: #2b4b85;
+  --color-navy-700: #1f3864;
+  --color-navy-800: #182b4d;
+  --color-navy-900: #101d35;
+
+  --color-brand-red: #c8102e;
+  --color-brand-red-dark: #9c0c24;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: #f4f6fa;
+  color: var(--color-navy-900);
+}
+
+/* Numeric columns line up when digits share a width. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  appearance: textfield;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-full {
+    position: static !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}

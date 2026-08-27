@@ -173,12 +173,23 @@ async function sendViaN8n(input: SendInput): Promise<string> {
     throw new Error(`n8n webhook ${res.status}: ${body.slice(0, 300)}`);
   }
 
+  // A 200 alone is not proof of delivery: if the workflow throws before the
+  // Respond node, n8n can still answer 200 with an error body. Require the
+  // message id the workflow returns on success, or treat it as a failure.
+  let parsed: { messageId?: string; id?: string; message?: string } | null = null;
   try {
-    const parsed = JSON.parse(body) as { messageId?: string; id?: string };
-    return parsed.messageId ?? parsed.id ?? "sent via n8n";
+    parsed = JSON.parse(body);
   } catch {
-    return "sent via n8n";
+    throw new Error(`n8n returned a non-JSON response: ${body.slice(0, 200)}`);
   }
+
+  const messageId = parsed?.messageId ?? parsed?.id;
+  if (!messageId) {
+    throw new Error(
+      `n8n did not confirm the send: ${parsed?.message ?? body.slice(0, 200)}`,
+    );
+  }
+  return messageId;
 }
 
 /**

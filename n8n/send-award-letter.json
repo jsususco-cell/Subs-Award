@@ -1,10 +1,10 @@
 {
-  "name": "Send Award Letter",
+  "name": "Subs Award — Send Award Letter",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "send-award-letter",
+        "path": "subs-award-send-letter",
         "authentication": "headerAuth",
         "responseMode": "responseNode",
         "options": {}
@@ -13,39 +13,64 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
-      "webhookId": "send-award-letter",
-      "notes": "Header Auth credential: name x-webhook-token, value must match N8N_WEBHOOK_TOKEN in the app. Without this the webhook can send mail as the company to anyone who finds the URL."
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "subs-award-send-letter",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "LpeDib7oMulYwdNz",
+          "name": "Subs Award webhook token"
+        }
+      }
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "// Turn the base64 attachment into a real binary the Gmail node can attach.\nconst att = ($json.attachments ?? [])[0];\nif (!att) throw new Error('No attachment on the request');\n\nconst binary = await this.helpers.prepareBinaryData(\n  Buffer.from(att.contentBase64, 'base64'),\n  att.filename,\n  att.contentType,\n);\n\nreturn {\n  json: {\n    to: ($json.to ?? []).join(', '),\n    cc: ($json.cc ?? []).join(', '),\n    subject: $json.subject,\n    html: $json.html,\n    text: $json.text,\n    filename: att.filename,\n  },\n  binary: { attachment: binary },\n};"
+        "jsCode": "const out = [];\n\nfor (const item of $input.all()) {\n  const req = item.json.body ?? item.json;\n  const att = (req.attachments ?? [])[0];\n  if (!att) throw new Error('No attachment on the request');\n\n  const b64 = String(att.contentBase64 ?? '');\n  const name = att.filename ?? 'attachment.pdf';\n  const dot = name.lastIndexOf('.');\n\n  out.push({\n    json: {\n      to: (req.to ?? []).join(', '),\n      cc: (req.cc ?? []).join(', '),\n      subject: req.subject,\n      html: req.html,\n      fromName: req.fromName ?? 'Byrdson Services',\n    },\n    binary: {\n      attachment: {\n        data: b64,\n        mimeType: att.contentType ?? 'application/pdf',\n        fileName: name,\n        fileExtension: dot > -1 ? name.slice(dot + 1) : 'pdf',\n        fileSize: Buffer.byteLength(b64, 'base64'),\n      },\n    },\n  });\n}\n\nreturn out;"
       },
       "id": "decode",
       "name": "Decode attachment",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
         "sendTo": "={{ $json.to }}",
         "subject": "={{ $json.subject }}",
+        "emailType": "html",
         "message": "={{ $json.html }}",
         "options": {
           "ccList": "={{ $json.cc }}",
+          "senderName": "={{ $json.fromName }}",
           "attachmentsUi": {
-            "attachmentsBinary": [{ "property": "attachment" }]
+            "attachmentsBinary": [
+              {
+                "property": "attachment"
+              }
+            ]
           }
         }
       },
       "id": "gmail",
-      "name": "Send email",
+      "name": "Send award letter",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [440, 0],
-      "notes": "Uses the Gmail credential already stored in n8n. Nothing about it reaches the app."
+      "position": [
+        440,
+        0
+      ],
+      "webhookId": "df9aac56-651a-4b95-961a-d7c24d22755f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "VFSVlQJu0WvJeCVE",
+          "name": "Byrdson Admin Gmail account"
+        }
+      }
     },
     {
       "parameters": {
@@ -57,15 +82,49 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [660, 0],
-      "notes": "The app reads messageId from this response and shows it as confirmation."
+      "position": [
+        660,
+        0
+      ]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Decode attachment", "type": "main", "index": 0 }]] },
-    "Decode attachment": { "main": [[{ "node": "Send email", "type": "main", "index": 0 }]] },
-    "Send email": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Decode attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode attachment": {
+      "main": [
+        [
+          {
+            "node": "Send award letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send award letter": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "pinData": {}
 }

@@ -141,7 +141,7 @@ test("accented Spanish survives the JSON body the send route builds", () => {
     assert.ok(source.includes(ch), `sample text is missing ${ch}`);
     assert.ok(
       (round.subject + round.text).includes(ch),
-      `${ch} (U+${ch.codePointAt(0).toString(16).toUpperCase()}) did not survive`,
+      `${ch} (U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase()}) did not survive`,
     );
   }
 });

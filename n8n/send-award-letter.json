@@ -1,0 +1,71 @@
+{
+  "name": "Send Award Letter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-award-letter",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "send-award-letter",
+      "notes": "Header Auth credential: name x-webhook-token, value must match N8N_WEBHOOK_TOKEN in the app. Without this the webhook can send mail as the company to anyone who finds the URL."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Turn the base64 attachment into a real binary the Gmail node can attach.\nconst att = ($json.attachments ?? [])[0];\nif (!att) throw new Error('No attachment on the request');\n\nconst binary = await this.helpers.prepareBinaryData(\n  Buffer.from(att.contentBase64, 'base64'),\n  att.filename,\n  att.contentType,\n);\n\nreturn {\n  json: {\n    to: ($json.to ?? []).join(', '),\n    cc: ($json.cc ?? []).join(', '),\n    subject: $json.subject,\n    html: $json.html,\n    text: $json.text,\n    filename: att.filename,\n  },\n  binary: { attachment: binary },\n};"
+      },
+      "id": "decode",
+      "name": "Decode attachment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "ccList": "={{ $json.cc }}",
+          "attachmentsUi": {
+            "attachmentsBinary": [{ "property": "attachment" }]
+          }
+        }
+      },
+      "id": "gmail",
+      "name": "Send email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [440, 0],
+      "notes": "Uses the Gmail credential already stored in n8n. Nothing about it reaches the app."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ messageId: $json.id ?? 'sent', threadId: $json.threadId ?? null }) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, 0],
+      "notes": "The app reads messageId from this response and shows it as confirmation."
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Decode attachment", "type": "main", "index": 0 }]] },
+    "Decode attachment": { "main": [[{ "node": "Send email", "type": "main", "index": 0 }]] },
+    "Send email": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

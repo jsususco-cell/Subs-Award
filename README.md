@@ -146,10 +146,27 @@ This puts a contract in front of a real subcontractor, so:
 - Missing recipients, malformed addresses and unconfigured credentials all fail
   loudly rather than half-sending.
 
-Mail goes out over Gmail SMTP. **`GMAIL_APP_PASSWORD` must be a Google App
-Password**, which requires 2FA on the account — a normal account password is
-rejected with `535-5.7.8`, and the app surfaces that specific hint when it
-happens.
+### Transports
+
+Three ways to send, checked in this order:
+
+1. **n8n webhook** (preferred). Set `N8N_SEND_WEBHOOK_URL`. No mail credential
+   lives in this app at all — n8n already holds one, and its execution log
+   becomes the send audit trail. Import `n8n/send-award-letter.json`.
+   **Set `N8N_WEBHOOK_TOKEN` and the matching header auth on the webhook node**:
+   that URL can send mail as the company to anyone who finds it.
+2. **Google service account** with domain-wide delegation. No human credential
+   and revocable on its own, but a Workspace super-admin has to authorise its
+   client ID — and SMTP will only accept the **full-mailbox** `https://mail.google.com/`
+   scope, not a send-only one. Sending with a narrower scope means using the
+   Gmail API rather than SMTP.
+3. **Google App Password**. Simplest, but it belongs to one person's account and
+   dies when that password changes. It must be an App Password, which requires
+   2FA — a normal account password is rejected with `535-5.7.8`.
+
+Each failure mode gets its own hint: a wrong webhook token, an inactive
+workflow, an unauthorised service account, and the `535` App Password case are
+all named specifically rather than surfaced as a bare SMTP error.
 
 PDFs are rendered with headless Chromium: the bundled Linux build on Vercel, and
 whatever Chrome is installed locally (`CHROME_PATH` overrides). The API renders

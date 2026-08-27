@@ -5,7 +5,10 @@ import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 import {
   MAIL_CONFIG,
   checkRecipients,
+  explainSendError,
   isMailConfigured,
+  mailMode,
+  missingMailConfig,
   parseRecipients,
   sendMail,
 } from "@/lib/mail";
@@ -25,8 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: false,
       configured: false,
-      error:
-        "Email is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD (a Google App Password, not the account password).",
+      error: missingMailConfig(),
     });
   }
 
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
 
   try {
     const pdf = await htmlToPdf(renderLetter(input));
-    const { messageId } = await sendMail({
+    const { messageId, mode } = await sendMail({
       to,
       cc,
       subject,
@@ -95,6 +97,7 @@ export async function POST(request: Request) {
       ok: true,
       configured: true,
       messageId,
+      mode,
       to,
       cc,
       attachment: pdfFileName(input.jobName),
@@ -103,12 +106,13 @@ export async function POST(request: Request) {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Send failed";
     console.error("[letter/send]", message);
-    // 535-5.7.8 is Gmail refusing a normal password where an App Password is required.
-    const hint = /535|BadCredentials/i.test(message)
-      ? " Gmail rejected the credentials — GMAIL_APP_PASSWORD must be a Google App Password, which requires 2FA on the account."
-      : "";
     return NextResponse.json(
-      { ok: false, configured: true, error: message + hint },
+      {
+        ok: false,
+        configured: true,
+        mode: mailMode(),
+        error: message + explainSendError(message),
+      },
       { status: 502 },
     );
   }

@@ -148,7 +148,10 @@ async function sendViaN8n(input: SendInput): Promise<string> {
   const res = await fetch(MAIL_CONFIG.webhookUrl, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      // JSON is UTF-8 by spec and fetch encodes it as such, but the letter is
+      // full of accented Spanish — saying so explicitly costs nothing and
+      // leaves no room for a receiver to guess a different codepage.
+      "Content-Type": "application/json; charset=utf-8",
       ...(MAIL_CONFIG.webhookToken
         ? { "x-webhook-token": MAIL_CONFIG.webhookToken }
         : {}),

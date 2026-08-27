@@ -120,3 +120,46 @@ test("a letter with no selected tier still produces a sendable note", () => {
   assert.ok(!/undefined|NaN/.test(body));
   assert.ok(body.includes("$178,275.23"));
 });
+
+test("accented Spanish survives the JSON body the send route builds", () => {
+  // A shell can mangle these into a different codepage before they are ever
+  // serialised; JSON.stringify plus a UTF-8 encode must not.
+  const subject = "Adjudicación de Subcontrato — Caso PR-R3-03073";
+  const body = "Señor, ¿está bien? ¡Sí! Movilización, Empañetado, Inspección Final.";
+
+  const wire = JSON.stringify({ subject, text: body });
+  const round = JSON.parse(Buffer.from(wire, "utf8").toString("utf8"));
+
+  assert.equal(round.subject, subject);
+  assert.equal(round.text, body);
+  assert.ok(!round.subject.includes("\uFFFD"), "replacement char in subject");
+  assert.ok(!round.text.includes("\uFFFD"), "replacement char in body");
+
+  // Every character the award letter relies on must survive the round trip.
+  for (const ch of ["ó", "á", "ñ", "í", "¿", "¡", "—"]) {
+    const source = subject + body;
+    assert.ok(source.includes(ch), `sample text is missing ${ch}`);
+    assert.ok(
+      (round.subject + round.text).includes(ch),
+      `${ch} (U+${ch.codePointAt(0).toString(16).toUpperCase()}) did not survive`,
+    );
+  }
+});
+
+test("the default covering note carries real accents, not escapes", () => {
+  const input = sampleInput();
+  input.subcontractor = "Demolición Acme";
+  const subject = defaultSubject(input);
+  const body = defaultBody(input);
+
+  assert.ok(subject.includes("Adjudicación"), "subject lost its accent");
+  assert.ok(subject.includes("—"), "subject lost its em dash");
+  assert.ok(body.includes("Demolición"));
+  assert.ok(body.includes("días laborables"));
+  assert.ok(!(subject + body).includes("\uFFFD"));
+
+  // Code points, so a mis-encoded source file would be caught too.
+  assert.equal("ó".codePointAt(0), 0x00f3);
+  assert.equal("—".codePointAt(0), 0x2014);
+  assert.ok(subject.codePointAt(subject.indexOf("ó")) === 0x00f3);
+});

@@ -6,7 +6,8 @@ import NumberField from "./NumberField";
 import { loadJobs, loadSubs } from "@/lib/qb-client";
 import PaymentSchedule from "./PaymentSchedule";
 import { scheduleAmounts, scheduleForJobType } from "@/lib/schedule";
-import { renderLetter } from "@/lib/letter";
+import { renderLetter, type LetterInput } from "@/lib/letter";
+import SendLetterPanel from "./SendLetterPanel";
 import { money, pct } from "@/lib/format";
 import type { AwardResult } from "@/lib/types";
 
@@ -45,6 +46,8 @@ export default function LetterPanel({
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [letterError, setLetterError] = useState<string | null>(null);
+  const [subEmail, setSubEmail] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
   const chosen = result.tierRows.find((r) => r.selected);
   const ready = fields.jobName.trim() !== "" && fields.subcontractor.trim() !== "";
 
@@ -67,8 +70,8 @@ export default function LetterPanel({
     ] as [string, string]),
   ];
 
-  function buildLetter(): string {
-    return renderLetter({
+  function letterInput(): LetterInput {
+    return {
       jobName: fields.jobName,
       jobAddress: fields.jobAddress,
       subcontractor: fields.subcontractor,
@@ -80,26 +83,16 @@ export default function LetterPanel({
       coverages,
       result,
       issuedOn: new Date().toISOString(),
-    });
+    };
   }
 
-  function openLetter(mode: "print" | "download") {
-    const html = buildLetter();
-    const slug =
-      (fields.jobName.trim() || "award").replace(/[^\w.-]+/g, "-") + " - award letter";
+  function buildLetter(): string {
+    return renderLetter(letterInput());
+  }
 
-    if (mode === "download") {
-      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = slug + ".html";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      return;
-    }
+  function openLetter() {
+    const html = buildLetter();
+
 
     const win = window.open("", "_blank");
     if (!win) {
@@ -111,6 +104,38 @@ export default function LetterPanel({
     setLetterError(null);
     win.document.write(html);
     win.document.close();
+  }
+
+  async function downloadPdf() {
+    setPdfBusy(true);
+    setLetterError(null);
+    try {
+      const res = await fetch("/api/letter/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(letterInput()),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setLetterError(body.error ?? "Could not render the PDF.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download =
+        (fields.jobName.trim() || "award").replace(/[^\w.-]+/g, "-") +
+        " - Adjudicacion de Subcontrato.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setLetterError("Could not reach the server to render the PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   async function copyMerge() {
@@ -174,7 +199,10 @@ export default function LetterPanel({
             label="Subcontractor"
             value={fields.subcontractor}
             placeholder="Company name"
-            onChange={(v) => onField({ subcontractor: v })}
+            onChange={(v, extra) => {
+              onField({ subcontractor: v });
+              if (extra?.email !== undefined) setSubEmail(extra.email);
+            }}
             loadChoices={async () => {
               const r = await loadSubs();
               return {
@@ -184,7 +212,8 @@ export default function LetterPanel({
                 choices: r.items.map((sub) => ({
                   id: sub.id,
                   label: sub.company,
-                  hint: sub.trade,
+                  hint: [sub.trade, sub.email].filter(Boolean).join('  ·  '),
+                  extra: { email: sub.email },
                 })),
               };
             }}
@@ -278,7 +307,7 @@ export default function LetterPanel({
             <button
               type="button"
               disabled={!ready}
-              onClick={() => openLetter("print")}
+              onClick={openLetter}
               className={`flex-1 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
                 ready ? "bg-navy-700 hover:bg-navy-800" : "cursor-not-allowed bg-navy-300"
               }`}
@@ -287,15 +316,15 @@ export default function LetterPanel({
             </button>
             <button
               type="button"
-              disabled={!ready}
-              onClick={() => openLetter("download")}
+              disabled={!ready || pdfBusy}
+              onClick={downloadPdf}
               className={`rounded-md border px-3 py-2.5 text-sm font-semibold transition ${
                 ready
                   ? "border-navy-200 bg-white text-navy-700 hover:bg-navy-50"
                   : "cursor-not-allowed border-navy-100 text-navy-300"
               }`}
             >
-              Download
+              {pdfBusy ? "Rendering…" : "Download PDF"}
             </button>
           </div>
           {letterError && (
@@ -310,6 +339,12 @@ export default function LetterPanel({
           </p>
         </div>
       </section>
+
+      <SendLetterPanel
+        letter={letterInput()}
+        suggestedTo={subEmail}
+        ready={ready}
+      />
       </div>
     </div>
   );

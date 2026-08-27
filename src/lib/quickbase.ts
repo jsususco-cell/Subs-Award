@@ -39,6 +39,7 @@ export const QB_CONFIG = {
       company: 23,
       trade: 34,
       eligible: 182,
+      email: Number(process.env.QB_VENDOR_EMAIL_FID ?? 28),
       // Already exists on the Vendors table. Choices are Puerto Rico,
       // Mainland, Both, No work on file.
       region: Number(process.env.QB_VENDOR_REGION_FID ?? 206),
@@ -140,6 +141,7 @@ export interface SubOption {
   id: string;
   company: string;
   trade: string;
+  email: string;
 }
 
 /** Jobs in the configured region, minus templates and scratch records. */
@@ -181,6 +183,7 @@ export async function fetchSubs(): Promise<{ items: SubOption[]; warning?: strin
   const f = QB_CONFIG.fields.vendors;
   const select: number[] = [f.recordId, f.company, f.trade];
   if (f.region) select.push(f.region);
+  if (f.email) select.push(f.email);
 
   const eligible = `{${f.eligible}.EX.true}`;
   const regionOr = QB_CONFIG.vendorRegions
@@ -201,6 +204,7 @@ export async function fetchSubs(): Promise<{ items: SubOption[]; warning?: strin
         id: text(r, f.recordId),
         company: text(r, f.company),
         trade: text(r, f.trade),
+        email: f.email ? text(r, f.email) : "",
       }))
       .filter((s) => s.company)
       .sort((a, b) => a.company.localeCompare(b.company));

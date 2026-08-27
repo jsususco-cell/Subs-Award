@@ -7,12 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import tsx --test src/lib/award.test.ts src/lib/parse.test.ts src/lib/export.test.ts src/lib/extract.test.ts src/lib/history.test.ts src/lib/secrets.test.ts src/lib/schedule.test.ts src/lib/letter.test.ts",
+    "test": "node --import tsx --test src/lib/award.test.ts src/lib/parse.test.ts src/lib/export.test.ts src/lib/extract.test.ts src/lib/history.test.ts src/lib/secrets.test.ts src/lib/schedule.test.ts src/lib/letter.test.ts src/lib/mail.test.ts",
     "qb:introspect": "node scripts/introspect.mjs",
     "qb:add-vendor-region": "node scripts/add-vendor-region.mjs"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "next": "16.3.3",
+    "nodemailer": "^9.0.6",
+    "puppeteer-core": "^25.9.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

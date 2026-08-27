@@ -127,6 +127,35 @@ moves.
 showing an empty dropdown, the app falls back to all award-eligible vendors and
 says on screen that the list is not region-filtered.
 
+## Sending the letter
+
+**Generate Award Letter** opens the letter to print or save; **Download PDF**
+renders it server-side; **Send by email** delivers it as a PDF attachment.
+
+The recipient prefills from the subcontractor's Quickbase record (Vendors fid
+`28`, populated for all 20 in-region award-eligible vendors) and stays editable.
+
+This puts a contract in front of a real subcontractor, so:
+
+- **Sending is always two steps.** The first click shows the recipient, subject
+  and attachment and says the send cannot be recalled; nothing leaves until the
+  confirmation is clicked.
+- **`LETTER_SEND_ALLOWLIST` is a rollout rail.** While it is set, only those
+  addresses can be mailed — `to` *and* `cc` — and anything else is refused with
+  a message naming what was blocked. Leave it unset in normal operation.
+- Missing recipients, malformed addresses and unconfigured credentials all fail
+  loudly rather than half-sending.
+
+Mail goes out over Gmail SMTP. **`GMAIL_APP_PASSWORD` must be a Google App
+Password**, which requires 2FA on the account — a normal account password is
+rejected with `535-5.7.8`, and the app surfaces that specific hint when it
+happens.
+
+PDFs are rendered with headless Chromium: the bundled Linux build on Vercel, and
+whatever Chrome is installed locally (`CHROME_PATH` overrides). The API renders
+the letter from structured values rather than accepting HTML, so a caller cannot
+have the server render arbitrary markup.
+
 ## Desglose de Pagos (payment breakdown)
 
 The award letter carries the payment schedule from the Quickbase Puerto Rico

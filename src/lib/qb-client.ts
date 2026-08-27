@@ -9,6 +9,7 @@ export interface SubOption {
   id: string;
   company: string;
   trade: string;
+  email: string;
 }
 
 export interface Lookup<T> {

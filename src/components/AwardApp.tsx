@@ -38,6 +38,9 @@ const EMPTY_LETTER: LetterFields = {
   subcontractor: "",
   scopeOfWork: "",
   jobType: "",
+  program: "PR R3",
+  startDate: "",
+  endDate: "",
 };
 
 export default function AwardApp() {

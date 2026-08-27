@@ -10,8 +10,11 @@ export interface LetterDetails {
   jobAddress: string;
   subcontractor: string;
   scopeOfWork: string;
-  /** Added after the first releases, so older records may not carry it. */
+  /** Added after the first releases, so older records may not carry these. */
   jobType?: string;
+  program?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface HistorySettings {

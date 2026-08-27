@@ -6,6 +6,7 @@ import NumberField from "./NumberField";
 import { loadJobs, loadSubs } from "@/lib/qb-client";
 import PaymentSchedule from "./PaymentSchedule";
 import { scheduleAmounts, scheduleForJobType } from "@/lib/schedule";
+import { renderLetter } from "@/lib/letter";
 import { money, pct } from "@/lib/format";
 import type { AwardResult } from "@/lib/types";
 
@@ -16,6 +17,9 @@ export interface LetterFields {
   scopeOfWork: string;
   /** Drives the Desglose de Pagos schedule. */
   jobType: string;
+  program: string;
+  startDate: string;
+  endDate: string;
 }
 
 interface Props {
@@ -40,6 +44,7 @@ export default function LetterPanel({
   coverages,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [letterError, setLetterError] = useState<string | null>(null);
   const chosen = result.tierRows.find((r) => r.selected);
   const ready = fields.jobName.trim() !== "" && fields.subcontractor.trim() !== "";
 
@@ -61,6 +66,52 @@ export default function LetterPanel({
       money(scheduleAmounts(result.award, scheduleForJobType(fields.jobType))[i]),
     ] as [string, string]),
   ];
+
+  function buildLetter(): string {
+    return renderLetter({
+      jobName: fields.jobName,
+      jobAddress: fields.jobAddress,
+      subcontractor: fields.subcontractor,
+      scopeOfWork: fields.scopeOfWork,
+      jobType: fields.jobType,
+      program: fields.program,
+      startDate: fields.startDate,
+      endDate: fields.endDate,
+      coverages,
+      result,
+      issuedOn: new Date().toISOString(),
+    });
+  }
+
+  function openLetter(mode: "print" | "download") {
+    const html = buildLetter();
+    const slug =
+      (fields.jobName.trim() || "award").replace(/[^\w.-]+/g, "-") + " - award letter";
+
+    if (mode === "download") {
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = slug + ".html";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      setLetterError(
+        "The browser blocked the letter window. Allow pop-ups for this site, or use Download.",
+      );
+      return;
+    }
+    setLetterError(null);
+    win.document.write(html);
+    win.document.close();
+  }
 
   async function copyMerge() {
     const text = merge.map(([k, v]) => `${k}\t${v}`).join("\n");
@@ -154,6 +205,24 @@ export default function LetterPanel({
               className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Programa"
+              value={fields.program}
+              onChange={(v) => onField({ program: v })}
+              placeholder="PR R3"
+            />
+            <DateField
+              label="Fecha de Inicio"
+              value={fields.startDate}
+              onChange={(v) => onField({ startDate: v })}
+            />
+          </div>
+          <DateField
+            label="Fecha de Finalizacion"
+            value={fields.endDate}
+            onChange={(v) => onField({ endDate: v })}
+          />
           <div>
             <span className="mb-1 block text-xs font-medium text-navy-700">HC</span>
             <NumberField
@@ -205,22 +274,69 @@ export default function LetterPanel({
         </table>
 
         <div className="border-t-2 border-navy-200 bg-navy-50 p-4">
-          <button
-            type="button"
-            disabled
-            title="Waiting on the award letter template"
-            className="w-full cursor-not-allowed rounded-md bg-navy-300 px-4 py-2.5 text-sm font-semibold text-white"
-          >
-            Generate Award Letter
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={() => openLetter("print")}
+              className={`flex-1 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
+                ready ? "bg-navy-700 hover:bg-navy-800" : "cursor-not-allowed bg-navy-300"
+              }`}
+            >
+              Generate Award Letter
+            </button>
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={() => openLetter("download")}
+              className={`rounded-md border px-3 py-2.5 text-sm font-semibold transition ${
+                ready
+                  ? "border-navy-200 bg-white text-navy-700 hover:bg-navy-50"
+                  : "cursor-not-allowed border-navy-100 text-navy-300"
+              }`}
+            >
+              Download
+            </button>
+          </div>
+          {letterError && (
+            <p role="alert" className="mt-2 text-xs font-semibold text-brand-red">
+              {letterError}
+            </p>
+          )}
           <p className="mt-2 text-xs text-navy-600/70">
             {ready
-              ? "Ready — waiting on the letter template. Send it over and this button will render and download the document."
-              : "Fill in the job name and subcontractor. The letter template is still to come."}
+              ? "Opens the letter ready to print or save as PDF. Wording and conditions follow the Quickbase template; the Desglose de Adjudicacion shows this system's derivation."
+              : "Fill in the job name and subcontractor to generate the letter."}
           </p>
         </div>
       </section>
       </div>
+    </div>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const id = "letter-" + label.toLowerCase().replace(/\s+/g, "-");
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-navy-700">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+      />
     </div>
   );
 }

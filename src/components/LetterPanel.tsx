@@ -4,6 +4,8 @@ import { useState } from "react";
 import LookupField from "./LookupField";
 import NumberField from "./NumberField";
 import { loadJobs, loadSubs } from "@/lib/qb-client";
+import PaymentSchedule from "./PaymentSchedule";
+import { scheduleAmounts, scheduleForJobType } from "@/lib/schedule";
 import { money, pct } from "@/lib/format";
 import type { AwardResult } from "@/lib/types";
 
@@ -12,6 +14,8 @@ export interface LetterFields {
   jobAddress: string;
   subcontractor: string;
   scopeOfWork: string;
+  /** Drives the Desglose de Pagos schedule. */
+  jobType: string;
 }
 
 interface Props {
@@ -44,6 +48,7 @@ export default function LetterPanel({
     ["Job address", fields.jobAddress || "—"],
     ["Subcontractor", fields.subcontractor || "—"],
     ["Scope of work", fields.scopeOfWork || "—"],
+    ["Job type", fields.jobType || "—"],
     ["Coverages", coverages.join(" + ") || "—"],
     ["Scope total", money(result.base)],
     ["Less O&P", money(result.lessOandP)],
@@ -51,6 +56,10 @@ export default function LetterPanel({
     ["Subs amount", chosen ? money(chosen.amount) : "—"],
     ["HC", money(result.hc)],
     ["Award total", money(result.award)],
+    ...scheduleForJobType(fields.jobType).map((m, i) => [
+      `${m.n}. ${m.desc} (${m.pct}%)`,
+      money(scheduleAmounts(result.award, scheduleForJobType(fields.jobType))[i]),
+    ] as [string, string]),
   ];
 
   async function copyMerge() {
@@ -83,9 +92,10 @@ export default function LetterPanel({
             onChange={(v, extra) =>
               onField({
                 jobName: v,
-                // Only overwrite the address when the job actually carries one,
-                // so a hand-typed address is not wiped by a blank lookup.
+                // Only overwrite these when the job actually carries them, so
+                // hand-typed values are not wiped by a blank lookup.
                 ...(extra?.address ? { jobAddress: extra.address } : {}),
+                ...(extra?.jobType ? { jobType: extra.jobType } : {}),
               })
             }
             loadChoices={async () => {
@@ -97,8 +107,8 @@ export default function LetterPanel({
                 choices: r.items.map((j) => ({
                   id: j.id,
                   label: j.name,
-                  hint: j.address,
-                  extra: { address: j.address },
+                  hint: [j.address, j.jobType].filter(Boolean).join("  ·  "),
+                  extra: { address: j.address, jobType: j.jobType },
                 })),
               };
             }}
@@ -157,6 +167,13 @@ export default function LetterPanel({
         </div>
       </section>
 
+      <div className="space-y-5">
+      <PaymentSchedule
+        jobType={fields.jobType}
+        onJobType={(v) => onField({ jobType: v })}
+        amount={result.award}
+      />
+
       <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
         <header className="flex items-center justify-between gap-3 border-b border-navy-100 px-4 py-3">
           <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
@@ -203,6 +220,7 @@ export default function LetterPanel({
           </p>
         </div>
       </section>
+      </div>
     </div>
   );
 }

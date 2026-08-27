@@ -2,6 +2,7 @@ export interface JobOption {
   id: string;
   name: string;
   address: string;
+  jobType: string;
 }
 
 export interface SubOption {

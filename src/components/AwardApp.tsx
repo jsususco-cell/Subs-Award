@@ -37,6 +37,7 @@ const EMPTY_LETTER: LetterFields = {
   jobAddress: "",
   subcontractor: "",
   scopeOfWork: "",
+  jobType: "",
 };
 
 export default function AwardApp() {
@@ -199,7 +200,8 @@ export default function AwardApp() {
     setFileName(record.fileName);
     setKeptCoverages([...record.settings.keptCoverages]);
     setLessOandPOverride(record.settings.lessOandPOverride);
-    setLetter({ ...record.letter });
+    // jobType arrived later than the first saved awards, so default it.
+    setLetter({ ...EMPTY_LETTER, ...record.letter });
 
     const restored: Prefs = {
       basis: record.settings.basis,

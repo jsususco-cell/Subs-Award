@@ -127,6 +127,36 @@ moves.
 showing an empty dropdown, the app falls back to all award-eligible vendors and
 says on screen that the list is not region-filtered.
 
+## Desglose de Pagos (payment breakdown)
+
+The award letter carries the payment schedule from the Quickbase Puerto Rico
+award code page, so this letter and the Billing Line Items that page creates
+against the PO stay in step. **Changing one without the other puts them out of
+sync.**
+
+The schedule follows the job's **Job Type** (Jobs fid `34`), which arrives with
+the job lookup and can be overridden:
+
+| Job Type | Schedule |
+| --- | --- |
+| Reconstruction, New Construction | 8 milestones — Movilización 10, Demolición 15, Fundación 10, Paredes 10, Techo 10, Empañetado 20, Terminaciones 15, Inspección Final 10 |
+| Repair, Renovation | 50 / 50 — Pago Inicial, Pago Final |
+| Relocation, Demolition, Acquisition & Demolition | 20 / 80 — Pago Inicial, Pago Final |
+
+Amounts are a percentage of the **award total**. Each line is rounded to the
+cent and the drift lands on the last line, so the rows always add back to the
+total exactly — the same approach the code page uses.
+
+Job Types with no mapping (Rehabilitation, MHU, Home Elevation, Modular Home)
+fall back to the 8-milestone schedule, and the UI says it is a fallback rather
+than presenting it as settled.
+
+**The mobilisation cap is reported, not enforced.** The letter states
+mobilisation is limited to $10,000, but the 8-milestone schedule pays 10% of the
+award and Quickbase does not apply the cap when it creates bills. Rather than
+silently changing the maths, a breach is flagged so the right figure can be
+chosen before sending.
+
 ## History
 
 History lives in `localStorage` under `subs-award:history:v1`, read through

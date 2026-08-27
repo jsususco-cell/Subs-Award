@@ -8,6 +8,9 @@ import {
   explainSendError,
   isMailConfigured,
   mailMode,
+  sendKey,
+  sendKeyMatches,
+  sendKeyRequired,
   missingMailConfig,
   parseRecipients,
   sendMail,
@@ -24,6 +27,27 @@ export const maxDuration = 60;
  * configured allowlist all stop the send and say why.
  */
 export async function POST(request: Request) {
+  // Checked before anything else, so an unauthorised caller learns nothing
+  // about the mail configuration or the letter payload.
+  if (sendKeyRequired()) {
+    if (!sendKey()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Sending is disabled on this deployment: LETTER_SEND_KEY is not set. A hosted deployment must require a key, otherwise anyone who finds the URL could send an award letter as the company.",
+        },
+        { status: 503 },
+      );
+    }
+    if (!sendKeyMatches(request.headers.get("x-send-key") ?? "")) {
+      return NextResponse.json(
+        { ok: false, keyRequired: true, error: "Send key missing or incorrect." },
+        { status: 401 },
+      );
+    }
+  }
+
   if (!isMailConfigured()) {
     return NextResponse.json({
       ok: false,

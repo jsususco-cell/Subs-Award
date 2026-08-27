@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isEmail, parseRecipients } from "./mail";
+import { isEmail, parseRecipients, sendKeyRequired } from "./mail";
 import { parseLetterInput } from "./letter-input";
 import { defaultBody, defaultSubject } from "./letter-email";
 import type { LetterInput } from "./letter";
@@ -162,4 +162,27 @@ test("the default covering note carries real accents, not escapes", () => {
   assert.equal("ó".codePointAt(0), 0x00f3);
   assert.equal("—".codePointAt(0), 0x2014);
   assert.ok(subject.codePointAt(subject.indexOf("ó")) === 0x00f3);
+});
+
+test("the send key is required on a hosted deployment, optional locally", () => {
+  const saved = { vercel: process.env.VERCEL, key: process.env.LETTER_SEND_KEY };
+  try {
+    delete process.env.VERCEL;
+    delete process.env.LETTER_SEND_KEY;
+    assert.equal(sendKeyRequired(), false, "local dev should not demand a key");
+
+    // A hosted deployment is reachable by anyone, so it must fail closed even
+    // when nobody configured a key.
+    process.env.VERCEL = "1";
+    assert.equal(sendKeyRequired(), true, "Vercel must always demand a key");
+
+    delete process.env.VERCEL;
+    process.env.LETTER_SEND_KEY = "abc";
+    assert.equal(sendKeyRequired(), true, "an explicit key must be enforced");
+  } finally {
+    if (saved.vercel === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = saved.vercel;
+    if (saved.key === undefined) delete process.env.LETTER_SEND_KEY;
+    else process.env.LETTER_SEND_KEY = saved.key;
+  }
 });

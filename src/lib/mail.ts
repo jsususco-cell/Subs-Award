@@ -51,6 +51,38 @@ export const MAIL_CONFIG = {
     .filter(Boolean),
 };
 
+/**
+ * The shared secret the browser must present to send. Same pattern as the
+ * vendor portal's PORTAL_SEND_KEY. Read at call time rather than snapshotted
+ * at import, so the guard can never act on a stale value.
+ */
+export function sendKey(): string {
+  return process.env.LETTER_SEND_KEY ?? "";
+}
+
+/**
+ * Whether a send key must accompany the request.
+ *
+ * Fail closed on Vercel: a hosted deployment is reachable by anyone, so it
+ * requires a key even if none is configured — in which case sending is refused
+ * outright rather than left open. Local development does not require one.
+ */
+export function sendKeyRequired(): boolean {
+  return Boolean(process.env.VERCEL) || sendKey().length > 0;
+}
+
+/** Constant-time-ish comparison so a wrong key cannot be probed by timing. */
+export function sendKeyMatches(provided: string): boolean {
+  const expected = sendKey();
+  if (!expected) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided ?? "");
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 export function mailMode(): MailMode {
   if (MAIL_CONFIG.webhookUrl) return "n8n";
   if (!MAIL_CONFIG.user) return "unconfigured";

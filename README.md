@@ -140,6 +140,11 @@ This puts a contract in front of a real subcontractor, so:
 - **Sending is always two steps.** The first click shows the recipient, subject
   and attachment and says the send cannot be recalled; nothing leaves until the
   confirmation is clicked.
+- **`LETTER_SEND_KEY` gates the endpoint.** The browser must present it as an
+  `x-send-key` header; the app asks for it once and remembers it. **On Vercel a
+  key is mandatory** — a hosted deployment is reachable by anyone, so without
+  one the route refuses every send rather than acting as an open relay that
+  mails award letters as the company. Local development does not need one.
 - **`LETTER_SEND_ALLOWLIST` is a rollout rail.** While it is set, only those
   addresses can be mailed — `to` *and* `cc` — and anything else is refused with
   a message naming what was blocked. Leave it unset in normal operation.

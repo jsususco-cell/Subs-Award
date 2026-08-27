@@ -13,6 +13,16 @@ interface Props {
 
 type Stage = "compose" | "confirming" | "sending" | "sent";
 
+const KEY_STORE = "subs-award:send-key";
+
+function storedKey(): string {
+  try {
+    return localStorage.getItem(KEY_STORE) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
@@ -22,6 +32,10 @@ export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
   const [stage, setStage] = useState<Stage>("compose");
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string[]>([]);
+  // Only surfaced once the server says a key is required, so local use is
+  // unaffected. Read lazily in the click handler, never during render.
+  const [sendKey, setSendKey] = useState("");
+  const [keyNeeded, setKeyNeeded] = useState(false);
 
   // The defaults follow the letter until the user edits a field.
   const effectiveTo = touched ? to : to || suggestedTo;
@@ -34,9 +48,13 @@ export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
     setStage("sending");
     setError(null);
     try {
+      const key = sendKey || storedKey();
       const res = await fetch("/api/letter/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(key ? { "x-send-key": key } : {}),
+        },
         body: JSON.stringify({
           letter,
           to: effectiveTo,
@@ -47,9 +65,21 @@ export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
       });
       const body = await res.json();
       if (!body.ok) {
-        setError(body.error ?? "Could not send the letter.");
+        if (body.keyRequired) {
+          setKeyNeeded(true);
+          setError(
+            "This deployment needs a send key before it will mail anything. Enter it below.",
+          );
+        } else {
+          setError(body.error ?? "Could not send the letter.");
+        }
         setStage("compose");
         return;
+      }
+      try {
+        localStorage.setItem(KEY_STORE, key);
+      } catch {
+        /* private mode — the key just will not be remembered */
       }
       setSentTo([...(body.to ?? []), ...(body.cc ?? [])]);
       setStage("sent");
@@ -149,6 +179,22 @@ export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
             className="w-full rounded-md border border-navy-200 px-2.5 py-2 font-mono text-xs leading-relaxed outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
           />
         </Row>
+
+        {keyNeeded && (
+          <Row label="Send key" htmlFor="send-key">
+            <input
+              id="send-key"
+              type="password"
+              value={sendKey}
+              onChange={(e) => setSendKey(e.target.value)}
+              placeholder="Required on this deployment"
+              className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+            />
+            <p className="mt-1 text-[10px] text-navy-600/70">
+              Remembered in this browser so you only enter it once.
+            </p>
+          </Row>
+        )}
 
         {error && (
           <p

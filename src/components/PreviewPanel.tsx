@@ -5,21 +5,34 @@ import { groupAmount } from "@/lib/award";
 import { coverageLabel, totalOf } from "@/lib/extract";
 import { money, num } from "@/lib/format";
 import type { Extraction } from "@/lib/extract";
-import type { AmountBasis, GroupTotal } from "@/lib/types";
+import type { AmountBasis, GroupTotal, ScopeItem } from "@/lib/types";
 
 type View = "lines" | "totals";
 
 interface Props {
   extraction: Extraction;
   basis: AmountBasis;
+  /** Tick a line out of, or back into, the calculation. */
+  onToggleLine: (row: number) => void;
+  onIncludeAll: () => void;
 }
 
 const PAGE = 100;
 
-export default function PreviewPanel({ extraction, basis }: Props) {
+export default function PreviewPanel({
+  extraction,
+  basis,
+  onToggleLine,
+  onIncludeAll,
+}: Props) {
   const [view, setView] = useState<View>("lines");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
+
+  const excluded = useMemo(
+    () => new Set(extraction.excludedRows),
+    [extraction.excludedRows],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -33,7 +46,7 @@ export default function PreviewPanel({ extraction, basis }: Props) {
     );
   }, [extraction.items, query]);
 
-  const grandTotal = totalOf(extraction.items, basis);
+  const grandTotal = totalOf(extraction.includedItems, basis);
 
   return (
     <section className="rounded-xl border border-navy-200 bg-white shadow-sm">
@@ -44,11 +57,33 @@ export default function PreviewPanel({ extraction, basis }: Props) {
           </h2>
           <p className="mt-0.5 text-xs text-navy-600/70">
             {extraction.keptCoverages.join(" + ") || "no coverages selected"} &middot;{" "}
-            {extraction.keptCount} line{extraction.keptCount === 1 ? "" : "s"}
+            {extraction.includedItems.length} of {extraction.keptCount} line
+            {extraction.keptCount === 1 ? "" : "s"} counted
+            {extraction.excludedCount > 0 && (
+              <>
+                {" · "}
+                <span className="font-semibold text-brand-red">
+                  {extraction.excludedCount} excluded
+                </span>
+              </>
+            )}
           </p>
         </div>
         <div className="no-print flex items-center gap-2">
-          <div role="group" aria-label="Preview view" className="flex rounded-md border border-navy-200 p-0.5">
+          {extraction.excludedCount > 0 && (
+            <button
+              type="button"
+              onClick={onIncludeAll}
+              className="rounded-md border border-navy-200 px-2.5 py-1 text-xs font-medium text-navy-700 hover:bg-navy-50"
+            >
+              Include all
+            </button>
+          )}
+          <div
+            role="group"
+            aria-label="Preview view"
+            className="flex rounded-md border border-navy-200 p-0.5"
+          >
             {(
               [
                 ["lines", "Line items"],
@@ -93,9 +128,16 @@ export default function PreviewPanel({ extraction, basis }: Props) {
         <LinesView
           items={filtered}
           basis={basis}
+          excluded={excluded}
+          onToggleLine={onToggleLine}
           limit={limit}
           onMore={() => setLimit((n) => n + PAGE)}
-          total={totalOf(filtered, basis)}
+          total={totalOf(
+            filtered.filter((i) => !excluded.has(i.row)),
+            basis,
+          )}
+          excludedTotal={extraction.excludedTotal}
+          excludedCount={extraction.excludedCount}
         />
       ) : (
         <TotalsView
@@ -104,6 +146,8 @@ export default function PreviewPanel({ extraction, basis }: Props) {
           basis={basis}
           grandTotal={grandTotal}
           label={coverageLabel(extraction.keptCoverages)}
+          excludedCount={extraction.excludedCount}
+          excludedTotal={extraction.excludedTotal}
         />
       )}
     </section>
@@ -113,24 +157,35 @@ export default function PreviewPanel({ extraction, basis }: Props) {
 function LinesView({
   items,
   basis,
+  excluded,
+  onToggleLine,
   limit,
   onMore,
   total,
+  excludedTotal,
+  excludedCount,
 }: {
-  items: Extraction["items"];
+  items: ScopeItem[];
   basis: AmountBasis;
+  excluded: Set<number>;
+  onToggleLine: (row: number) => void;
   limit: number;
   onMore: () => void;
   total: number;
+  excludedTotal: number;
+  excludedCount: number;
 }) {
   const shown = items.slice(0, limit);
   return (
     <>
       <div className="max-h-[30rem] overflow-auto print-full">
-        <table className="w-full min-w-[42rem] text-sm">
+        <table className="w-full min-w-[46rem] text-sm">
           <thead className="sticky top-0 z-10 bg-navy-50 text-xs tracking-wide text-navy-600/80 uppercase">
             <tr>
-              <th scope="col" className="px-4 py-2 text-left font-semibold">#</th>
+              <th scope="col" className="w-10 px-3 py-2 text-left font-semibold">
+                <span className="sr-only">Include</span>
+              </th>
+              <th scope="col" className="py-2 text-left font-semibold">#</th>
               <th scope="col" className="py-2 text-left font-semibold">Group</th>
               <th scope="col" className="py-2 text-left font-semibold">Description</th>
               <th scope="col" className="py-2 text-left font-semibold">Coverage</th>
@@ -140,41 +195,85 @@ function LinesView({
             </tr>
           </thead>
           <tbody>
-            {shown.map((item, i) => (
-              <tr key={item.row} className="border-b border-navy-50 last:border-0">
-                <td className="tabular px-4 py-1.5 text-navy-600/60">{i + 1}</td>
-                <td
-                  className="max-w-[10rem] truncate py-1.5 text-navy-600"
-                  title={item.groupDesc}
-                >
-                  {item.groupDesc || item.groupCode}
-                </td>
-                <td className="max-w-sm truncate py-1.5 text-navy-800" title={item.desc}>
-                  {item.desc || <span className="text-navy-300">&mdash;</span>}
-                </td>
-                <td className="py-1.5">
-                  <span className="rounded bg-navy-100 px-1.5 py-0.5 text-xs font-medium text-navy-700">
-                    {item.coverage}
-                  </span>
-                </td>
-                <td className="tabular py-1.5 text-right text-navy-600/80">
-                  {num(item.qty)}
-                </td>
-                <td className="tabular py-1.5 text-right text-navy-600/80">
-                  {money(item.unitCost)}
-                </td>
-                <td
-                  className={`tabular px-4 py-1.5 text-right font-medium ${
-                    item[basis] < 0 ? "text-brand-red" : "text-navy-800"
+            {shown.map((item, i) => {
+              const off = excluded.has(item.row);
+              return (
+                <tr
+                  key={item.row}
+                  className={`border-b border-navy-50 last:border-0 ${
+                    off ? "bg-navy-50/40" : ""
                   }`}
                 >
-                  {money(item[basis])}
-                </td>
-              </tr>
-            ))}
+                  <td className="px-3 py-1.5">
+                    <input
+                      type="checkbox"
+                      checked={!off}
+                      onChange={() => onToggleLine(item.row)}
+                      aria-label={`Include line ${i + 1}, ${item.desc || item.coverage}, in the calculation`}
+                      className="h-4 w-4 accent-[var(--color-navy-700)]"
+                    />
+                  </td>
+                  <td
+                    className={`tabular py-1.5 ${off ? "text-navy-300" : "text-navy-600/60"}`}
+                  >
+                    {i + 1}
+                  </td>
+                  <td
+                    className={`max-w-[10rem] truncate py-1.5 ${
+                      off ? "text-navy-300" : "text-navy-600"
+                    }`}
+                    title={item.groupDesc}
+                  >
+                    {item.groupDesc || item.groupCode}
+                  </td>
+                  <td
+                    className={`max-w-sm truncate py-1.5 ${
+                      off ? "text-navy-300 line-through" : "text-navy-800"
+                    }`}
+                    title={item.desc}
+                  >
+                    {item.desc || <span className="text-navy-300">&mdash;</span>}
+                  </td>
+                  <td className="py-1.5">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                        off ? "bg-navy-50 text-navy-300" : "bg-navy-100 text-navy-700"
+                      }`}
+                    >
+                      {item.coverage}
+                    </span>
+                  </td>
+                  <td
+                    className={`tabular py-1.5 text-right ${
+                      off ? "text-navy-300" : "text-navy-600/80"
+                    }`}
+                  >
+                    {num(item.qty)}
+                  </td>
+                  <td
+                    className={`tabular py-1.5 text-right ${
+                      off ? "text-navy-300" : "text-navy-600/80"
+                    }`}
+                  >
+                    {money(item.unitCost)}
+                  </td>
+                  <td
+                    className={`tabular px-4 py-1.5 text-right font-medium ${
+                      off
+                        ? "text-navy-300 line-through"
+                        : item[basis] < 0
+                          ? "text-brand-red"
+                          : "text-navy-800"
+                    }`}
+                  >
+                    {money(item[basis])}
+                  </td>
+                </tr>
+              );
+            })}
             {!shown.length && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-navy-600/60">
+                <td colSpan={8} className="px-4 py-8 text-center text-sm text-navy-600/60">
                   No lines match this filter.
                 </td>
               </tr>
@@ -195,11 +294,21 @@ function LinesView({
         )}
       </div>
 
-      <footer className="flex items-center justify-between border-t-2 border-navy-200 bg-navy-50 px-4 py-2.5">
-        <span className="text-xs font-semibold tracking-wide text-navy-800 uppercase">
-          Total shown
-        </span>
-        <span className="tabular text-sm font-bold text-navy-800">{money(total)}</span>
+      <footer className="border-t-2 border-navy-200 bg-navy-50 px-4 py-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold tracking-wide text-navy-800 uppercase">
+            Total counted
+          </span>
+          <span className="tabular text-sm font-bold text-navy-800">{money(total)}</span>
+        </div>
+        {excludedCount > 0 && (
+          <div className="mt-1 flex items-center justify-between text-xs text-brand-red">
+            <span>
+              {excludedCount} line{excludedCount === 1 ? "" : "s"} excluded
+            </span>
+            <span className="tabular">{money(excludedTotal)}</span>
+          </div>
+        )}
       </footer>
     </>
   );
@@ -211,12 +320,16 @@ function TotalsView({
   basis,
   grandTotal,
   label,
+  excludedCount,
+  excludedTotal,
 }: {
   breakdown: GroupTotal[];
   groups: Extraction["keptGroups"];
   basis: AmountBasis;
   grandTotal: number;
   label: string;
+  excludedCount: number;
+  excludedTotal: number;
 }) {
   return (
     <div className="overflow-auto print-full">
@@ -265,6 +378,21 @@ function TotalsView({
           );
         })}
         <tfoot>
+          {excludedCount > 0 && (
+            <tr className="border-t border-navy-100 bg-brand-red-50">
+              <td />
+              <td
+                colSpan={2}
+                className="px-4 py-1.5 text-xs font-medium text-brand-red-dark"
+              >
+                {excludedCount} line{excludedCount === 1 ? "" : "s"} excluded during
+                review, not counted below
+              </td>
+              <td className="tabular px-4 py-1.5 text-right text-xs text-brand-red-dark">
+                {money(excludedTotal)}
+              </td>
+            </tr>
+          )}
           <tr className="border-t-2 border-navy-700 bg-navy-800">
             <td
               colSpan={3}

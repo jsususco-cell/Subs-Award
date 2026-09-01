@@ -14,7 +14,7 @@ import {
   groupByCoverage,
   suggestBaseCoverages,
 } from "@/lib/award";
-import { coverageLabel, extract } from "@/lib/extract";
+import { coverageLabel, extract, toggleExcluded } from "@/lib/extract";
 import { buildCsv, buildScopeCsv, downloadCsv, summaryText } from "@/lib/export";
 import { parseWorkbook } from "@/lib/parse";
 import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
@@ -28,9 +28,16 @@ import {
   upsert,
   type AwardRecord,
 } from "@/lib/history";
-import type { ParseResult } from "@/lib/types";
+import type { AmountBasis, ParseResult } from "@/lib/types";
 
 type StepId = "upload" | "extract" | "preview" | "award" | "letter";
+
+/**
+ * Everything is measured on replacement cost value. ACV and Item Amount were
+ * selectable once; the award is always struck from RCV, so offering the others
+ * only invited a wrong basis.
+ */
+const BASIS: AmountBasis = "rcv";
 
 const EMPTY_LETTER: LetterFields = {
   jobName: "",
@@ -53,6 +60,9 @@ export default function AwardApp() {
   const [copied, setCopied] = useState(false);
 
   const [keptCoverages, setKeptCoverages] = useState<string[]>([]);
+  // Sheet rows the reviewer has ticked off. Keyed by row so the choice
+  // survives a change to the coverage selection.
+  const [excludedRows, setExcludedRows] = useState<number[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [restoredAt, setRestoredAt] = useState<string | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
@@ -77,14 +87,15 @@ export default function AwardApp() {
     savePrefs(next);
   }, []);
 
-  const { basis, oandpPct, tiers, selectedTier, hc } = prefs;
+  const { oandpPct, tiers, selectedTier, hc } = prefs;
+  const basis = BASIS;
 
   const extraction = useMemo(
     () =>
       parsed
-        ? extract(parsed.items, keptCoverages, DEMO_SITE_COVERAGES)
+        ? extract(parsed.items, keptCoverages, DEMO_SITE_COVERAGES, excludedRows)
         : null,
-    [parsed, keptCoverages],
+    [parsed, keptCoverages, excludedRows],
   );
 
   const result = useMemo(
@@ -162,6 +173,7 @@ export default function AwardApp() {
       settings: {
         basis,
         keptCoverages: [...keptCoverages],
+        excludedRows: [...excludedRows],
         oandpPct,
         lessOandPOverride,
         tiers: [...tiers],
@@ -202,12 +214,12 @@ export default function AwardApp() {
     });
     setFileName(record.fileName);
     setKeptCoverages([...record.settings.keptCoverages]);
+    setExcludedRows([...(record.settings.excludedRows ?? [])]);
     setLessOandPOverride(record.settings.lessOandPOverride);
     // jobType arrived later than the first saved awards, so default it.
     setLetter({ ...EMPTY_LETTER, ...record.letter });
 
     const restored: Prefs = {
-      basis: record.settings.basis,
       oandpPct: record.settings.oandpPct,
       tiers: [...record.settings.tiers],
       selectedTier: record.settings.selectedTier,
@@ -378,7 +390,6 @@ export default function AwardApp() {
         <ExtractPanel
           extraction={extraction}
           basis={basis}
-          onBasis={(next) => updatePrefs({ basis: next })}
           onToggle={(coverage) =>
             setKeptCoverages((prev) =>
               prev.includes(coverage)
@@ -391,7 +402,12 @@ export default function AwardApp() {
       )}
 
       {step === "preview" && extraction && (
-        <PreviewPanel extraction={extraction} basis={basis} />
+        <PreviewPanel
+          extraction={extraction}
+          basis={basis}
+          onToggleLine={(row) => setExcludedRows((prev) => toggleExcluded(prev, row))}
+          onIncludeAll={() => setExcludedRows([])}
+        />
       )}
 
       {step === "award" && extraction && (
@@ -399,7 +415,12 @@ export default function AwardApp() {
           {/* min-w-0: a grid item defaults to min-width:auto, so the wide
               preview table would otherwise push the page sideways. */}
           <div className="min-w-0">
-            <PreviewPanel extraction={extraction} basis={basis} />
+            <PreviewPanel
+          extraction={extraction}
+          basis={basis}
+          onToggleLine={(row) => setExcludedRows((prev) => toggleExcluded(prev, row))}
+          onIncludeAll={() => setExcludedRows([])}
+        />
           </div>
           <div className="min-w-0 lg:sticky lg:top-6">
             <AwardPanel

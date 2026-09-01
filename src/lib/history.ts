@@ -20,6 +20,8 @@ export interface LetterDetails {
 export interface HistorySettings {
   basis: AmountBasis;
   keptCoverages: string[];
+  /** Sheet rows ticked off during review. Absent on records saved before this. */
+  excludedRows?: number[];
   oandpPct: number;
   lessOandPOverride: number | null;
   tiers: number[];

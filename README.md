@@ -18,8 +18,14 @@ file is ever uploaded to a server.
    preset. Labels throughout follow the selection — pick `ECR` and the award row
    reads "ECR", not "Demo/Site".
 3. **Preview** shows the extracted lines in the structured template's column
-   order, with a **Totals** view that rolls them up by coverage and group and
-   ends in the Demo/Site total.
+   order, with a **Totals** view that rolls them up by coverage and group.
+
+   Every line has a tick box. Untick one to **exclude it from the calculation**:
+   it stays on screen struck through so it can be put back, but it drops out of
+   the coverage subtotals, the scope total, the award and the letter. The
+   footer shows what was set aside and how much it came to, and **Include all**
+   clears the lot. Exclusions are keyed by sheet row, so they survive a change
+   to the coverage selection, and they are saved and restored with the award.
 4. **Award** applies the calculation below.
 5. **Award Letter** collects the job details and previews the merge fields.
    *The letter template itself is still to come — the generate button is
@@ -41,7 +47,7 @@ Given the structured scope `scope of work- template.xls`:
 
 | Row       | Amount       | Where it comes from                          |
 | --------- | ------------ | -------------------------------------------- |
-| Demo/Site | `$148,566.60`| Sum of **RCV** across the CE-DEMO and CE-SITE coverages |
+| Demo/Site | `$148,566.60`| Sum of **RCV** across the CE-DEMO and CE-SITE coverages, minus any lines excluded during review |
 | Less O&P  | `$112,550.45`| Demo/Site **÷ 1.32** — backs out 32% overhead & profit |
 | 50%       | `$56,275.23` | **Less O&P × 50%**                           |
 | 55%       | `$61,902.75` | **Less O&P × 55%**                           |
@@ -65,7 +71,6 @@ Every input above is adjustable in the UI:
 
 - **Which coverages** form the base — any combination. CE-DEMO and CE-SITE are
   the default pick, not a constraint.
-- **The amount basis** — RCV (default), ACV, or Item Amount.
 - **The O&P rate** — defaults to 32%.
 - **The subs percentages** — prefilled at 50 / 55 / 60; rows can be edited,
   added or removed, and a radio picks which one feeds the award.
@@ -97,6 +102,11 @@ lookup is unavailable — a Quickbase outage never blocks an award letter.
   file`. **`Both` counts as in-region** — a vendor working Puerto Rico *and* the
   mainland is still a Puerto Rico vendor, and matching `Puerto Rico` alone
   silently drops two of them. `QB_VENDOR_REGIONS` controls the accepted set.
+
+Everything is measured on **RCV**. ACV and Item Amount used to be selectable;
+the award is always struck from RCV, so offering the others only invited the
+wrong basis. The library still supports them — the CSV carries all three
+columns — but the app does not offer a choice.
 
 Sorting happens after the values are read, not in the query: Quickbase orders by
 the raw stored value, and at least one vendor name carries zero-width characters

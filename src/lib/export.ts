@@ -118,15 +118,33 @@ export function buildCsv(ctx: Context): string {
  * output can stand in for a hand-built scope-of-work sheet.
  */
 export function buildScopeCsv(extraction: Extraction, basis: AmountBasis): string {
+  // Only the included lines make up the awarded scope, but the ones set aside
+  // are listed underneath rather than dropped, so the file records the review.
   const rows: (string | number)[][] = [
     [...TEMPLATE_COLUMNS],
-    ...extraction.items.map((item, i) => templateRow(item, i)),
+    ...extraction.includedItems.map((item, i) => templateRow(item, i)),
   ];
 
   rows.push([]);
   for (const g of extraction.keptGroups) {
     rows.push([`${g.coverage} total`, "", "", "", "", "", "", "", "", round(g.rcv)]);
   }
+  if (extraction.excludedCount > 0) {
+    rows.push([]);
+    rows.push([
+      `EXCLUDED FROM THE AWARD (${extraction.excludedCount} line${
+        extraction.excludedCount === 1 ? "" : "s"
+      })`,
+    ]);
+    rows.push([...TEMPLATE_COLUMNS]);
+    const excluded = new Set(extraction.excludedRows);
+    extraction.items
+      .filter((i) => excluded.has(i.row))
+      .forEach((item, i) => rows.push(templateRow(item, i)));
+    rows.push(["Excluded total", "", "", "", "", "", "", "", "", round(extraction.excludedTotal)]);
+    rows.push([]);
+  }
+
   rows.push([
     `${coverageLabel(extraction.keptCoverages)} total`,
     "",

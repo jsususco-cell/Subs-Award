@@ -70,3 +70,45 @@ test("csv quotes fields containing commas or quotes", () => {
   const csv = buildCsv(ctx);
   assert.ok(csv.includes('"Tear-out, haul and ""dispose"""'));
 });
+
+test("the scope csv exports included lines and records what was excluded", async () => {
+  const { extract } = await import("./extract");
+  const { buildScopeCsv } = await import("./export");
+  const parsed = parseWorkbook(buildSampleWorkbook());
+
+  const all = extract(parsed.items, ["CE-DEMO", "CE-SITE"]);
+  const biggest = [...all.items].sort((a, b) => b.rcv - a.rcv)[0];
+  const ex = extract(parsed.items, ["CE-DEMO", "CE-SITE"], [], [biggest.row]);
+
+  const csv = buildScopeCsv(ex, "rcv");
+  const lines = csv.split("\r\n");
+
+  // The awarded scope is the included lines, renumbered from 1. Count only the
+  // rows above the excluded block — that section repeats the same shape.
+  const cut = lines.findIndex((l) => l.startsWith("EXCLUDED FROM THE AWARD"));
+  assert.ok(cut > 0, "excluded section missing");
+  const dataRows = lines.slice(0, cut).filter((l) => /^\d+,GRP_/.test(l));
+  assert.equal(dataRows.length, ex.includedItems.length);
+  assert.ok(dataRows[0].startsWith("1,"));
+
+  const excludedRows = lines.slice(cut).filter((l) => /^\d+,GRP_/.test(l));
+  assert.equal(excludedRows.length, 1, "the one excluded line should be listed");
+
+  // The excluded line is recorded rather than silently dropped.
+  assert.ok(csv.includes("EXCLUDED FROM THE AWARD (1 line)"));
+  assert.ok(lines.some((l) => l.startsWith("Excluded total,")));
+
+  // And the headline total is the included figure.
+  const total = lines.find((l) => l.startsWith("Demo/Site total,"));
+  assert.ok(total, "missing the scope total row");
+  const value = Number(total.split(",")[9]);
+  assert.ok(Math.abs(value - (EXPECTED.demoSiteRcv - biggest.rcv)) < 0.005);
+});
+
+test("with nothing excluded the csv has no excluded section", async () => {
+  const { extract } = await import("./extract");
+  const { buildScopeCsv } = await import("./export");
+  const parsed = parseWorkbook(buildSampleWorkbook());
+  const csv = buildScopeCsv(extract(parsed.items, ["CE-DEMO", "CE-SITE"]), "rcv");
+  assert.ok(!csv.includes("EXCLUDED FROM THE AWARD"));
+});

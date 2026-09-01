@@ -1,5 +1,4 @@
 import { DEFAULT_HC, DEFAULT_OANDP_PCT, DEFAULT_TIERS } from "./award";
-import type { AmountBasis } from "./types";
 
 /**
  * Versioned: v1 stored 50/60/70 tiers and no HC. Bumping the key retires that
@@ -13,7 +12,6 @@ const KEY = "subs-award:prefs:v2";
  * deliberately not remembered — it is re-derived from each file.
  */
 export interface Prefs {
-  basis: AmountBasis;
   oandpPct: number;
   /** Subcontractor percentage tiers. */
   tiers: number[];
@@ -23,14 +21,11 @@ export interface Prefs {
 }
 
 export const DEFAULT_PREFS: Prefs = {
-  basis: "rcv",
   oandpPct: DEFAULT_OANDP_PCT,
   tiers: [...DEFAULT_TIERS],
   selectedTier: 0,
   hc: DEFAULT_HC,
 };
-
-const BASES: AmountBasis[] = ["rcv", "acv", "itemAmount"];
 
 /**
  * Read stored preferences, falling back to defaults for anything missing or
@@ -48,9 +43,6 @@ export function loadPrefs(): Prefs {
         : [...DEFAULT_PREFS.tiers];
 
     return {
-      basis: BASES.includes(p.basis as AmountBasis)
-        ? (p.basis as AmountBasis)
-        : DEFAULT_PREFS.basis,
       oandpPct: Number.isFinite(p.oandpPct)
         ? (p.oandpPct as number)
         : DEFAULT_PREFS.oandpPct,

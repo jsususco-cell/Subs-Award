@@ -7,18 +7,11 @@ import { money, pct } from "@/lib/format";
 import type { Extraction } from "@/lib/extract";
 import type { AmountBasis } from "@/lib/types";
 
-const BASES: { key: AmountBasis; label: string; hint: string }[] = [
-  { key: "rcv", label: "RCV", hint: "Replacement cost value" },
-  { key: "acv", label: "ACV", hint: "Actual cash value" },
-  { key: "itemAmount", label: "Item Amount", hint: "Line amount before tax" },
-];
-
 interface Props {
   extraction: Extraction;
   basis: AmountBasis;
   onToggle: (coverage: string) => void;
   onSet: (coverages: string[]) => void;
-  onBasis: (basis: AmountBasis) => void;
 }
 
 export default function ExtractPanel({
@@ -26,7 +19,6 @@ export default function ExtractPanel({
   basis,
   onToggle,
   onSet,
-  onBasis,
 }: Props) {
   const [query, setQuery] = useState("");
   const kept = useMemo(() => new Set(extraction.keptCoverages), [extraction.keptCoverages]);
@@ -58,28 +50,9 @@ export default function ExtractPanel({
               &middot; {extraction.droppedCount} filtered out
             </p>
           </div>
-          <div
-            role="group"
-            aria-label="Amount basis"
-            className="flex rounded-md border border-navy-200 p-0.5"
-          >
-            {BASES.map((b) => (
-              <button
-                key={b.key}
-                type="button"
-                title={b.hint}
-                onClick={() => onBasis(b.key)}
-                aria-pressed={basis === b.key}
-                className={`rounded px-2.5 py-1 text-xs font-medium transition ${
-                  basis === b.key
-                    ? "bg-navy-700 text-white"
-                    : "text-navy-600 hover:bg-navy-50"
-                }`}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
+          <span className="rounded-md border border-navy-200 px-2.5 py-1 text-xs font-medium text-navy-600">
+            Amounts are RCV
+          </span>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">

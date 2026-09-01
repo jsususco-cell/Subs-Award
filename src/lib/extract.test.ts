@@ -6,6 +6,7 @@ import {
   demoSiteCoveragesIn,
   extract,
   templateRow,
+  toggleExcluded,
   totalOf,
 } from "./extract";
 import {
@@ -272,4 +273,87 @@ test("award total is HC plus the subs amount", () => {
   // No tier selected falls back to HC alone rather than NaN.
   const noTier = calculateAward(groups, settings({ selectedTier: 9 }));
   assert.equal(noTier.award, DEFAULT_HC);
+});
+
+test("excluding a line removes it from every total but keeps it visible", () => {
+  const items = loadSample();
+  const all = extract(items, DEMO_SITE_COVERAGES, DEMO_SITE_COVERAGES);
+
+  // Take out the single largest CE-SITE line.
+  const biggest = [...all.items].sort((a, b) => b.rcv - a.rcv)[0];
+  const ex = extract(items, DEMO_SITE_COVERAGES, DEMO_SITE_COVERAGES, [biggest.row]);
+
+  // Still shown, so the reviewer can put it back.
+  assert.equal(ex.items.length, all.items.length, "the line must remain visible");
+  assert.ok(ex.items.some((i) => i.row === biggest.row));
+
+  // But it no longer counts.
+  assert.equal(ex.includedItems.length, all.includedItems.length - 1);
+  assert.ok(!ex.includedItems.some((i) => i.row === biggest.row));
+  assert.equal(ex.excludedCount, 1);
+  assert.ok(Math.abs(ex.excludedTotal - biggest.rcv) < CENT);
+  assert.ok(
+    Math.abs(totalOf(ex.includedItems, "rcv") - (EXPECTED.demoSiteRcv - biggest.rcv)) <
+      CENT,
+  );
+
+  // The roll-ups follow, not just the flat total.
+  const groupSum = ex.keptGroups.reduce((s, g) => s + g.rcv, 0);
+  const breakdownSum = ex.breakdown.reduce((s, b) => s + b.rcv, 0);
+  assert.ok(Math.abs(groupSum - (EXPECTED.demoSiteRcv - biggest.rcv)) < CENT);
+  assert.ok(Math.abs(breakdownSum - (EXPECTED.demoSiteRcv - biggest.rcv)) < CENT);
+});
+
+test("the award follows the exclusions all the way through", () => {
+  const items = loadSample();
+  const biggest = [...extract(items, DEMO_SITE_COVERAGES).items].sort(
+    (a, b) => b.rcv - a.rcv,
+  )[0];
+  const ex = extract(items, DEMO_SITE_COVERAGES, DEMO_SITE_COVERAGES, [biggest.row]);
+
+  const base = EXPECTED.demoSiteRcv - biggest.rcv;
+  const r = calculateAward(ex.keptGroups, settings());
+  assert.ok(Math.abs(r.base - base) < CENT);
+  assert.ok(Math.abs(r.lessOandP - base / 1.32) < CENT);
+  assert.ok(Math.abs(r.award - (DEFAULT_HC + (base / 1.32) * 0.5)) < CENT);
+});
+
+test("excluding every line leaves a base of zero, not NaN", () => {
+  const items = loadSample();
+  const all = extract(items, DEMO_SITE_COVERAGES);
+  const ex = extract(
+    items,
+    DEMO_SITE_COVERAGES,
+    DEMO_SITE_COVERAGES,
+    all.items.map((i) => i.row),
+  );
+
+  assert.equal(ex.includedItems.length, 0);
+  assert.equal(ex.keptGroups.length, 0);
+  assert.equal(ex.excludedCount, all.items.length);
+
+  const r = calculateAward(ex.keptGroups, settings());
+  assert.equal(r.base, 0);
+  assert.ok(!Number.isNaN(r.award));
+  assert.equal(r.award, DEFAULT_HC, "with nothing counted the award is just HC");
+});
+
+test("an exclusion for a row outside the coverage selection is harmless", () => {
+  const items = loadSample();
+  // A row that exists in the file but is not in the Demo/Site coverages.
+  const outside = items.find((i) => !DEMO_SITE_COVERAGES.includes(i.coverage));
+  assert.ok(outside, "sample should have a non-Demo/Site line");
+
+  const ex = extract(items, DEMO_SITE_COVERAGES, DEMO_SITE_COVERAGES, [outside.row]);
+  assert.equal(ex.excludedCount, 0, "it was never counted, so nothing is excluded");
+  assert.ok(Math.abs(totalOf(ex.includedItems, "rcv") - EXPECTED.demoSiteRcv) < CENT);
+});
+
+test("toggleExcluded adds, removes and stays sorted", () => {
+  assert.deepEqual(toggleExcluded([], 5), [5]);
+  assert.deepEqual(toggleExcluded([5], 5), []);
+  assert.deepEqual(toggleExcluded([9, 2], 5), [2, 5, 9]);
+  assert.deepEqual(toggleExcluded([2, 5, 9], 5), [2, 9]);
+  // Toggling twice returns to where it started.
+  assert.deepEqual(toggleExcluded(toggleExcluded([3], 7), 7), [3]);
 });

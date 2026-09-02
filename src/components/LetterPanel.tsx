@@ -8,6 +8,7 @@ import PaymentSchedule from "./PaymentSchedule";
 import { scheduleAmounts, scheduleForJobType } from "@/lib/schedule";
 import { renderLetter, type LetterInput } from "@/lib/letter";
 import SendLetterPanel from "./SendLetterPanel";
+import CreatePoPanel, { type CreatePoResult } from "./CreatePoPanel";
 import { money, pct } from "@/lib/format";
 import type { AwardResult } from "@/lib/types";
 
@@ -21,6 +22,9 @@ export interface LetterFields {
   program: string;
   startDate: string;
   endDate: string;
+  /** Quickbase record ids, only set when picked from a lookup. */
+  jobRecordId: string;
+  subRecordId: string;
 }
 
 interface Props {
@@ -30,6 +34,11 @@ interface Props {
   onHc: (v: number) => void;
   /** The coverage codes the scope total was built from. */
   coverages: string[];
+  /** Scope totals used to split the award across the PO's category fields. */
+  demoTotal: number;
+  siteTotal: number;
+  createdPo: CreatePoResult | null;
+  onPoCreated: (result: CreatePoResult) => void;
 }
 
 /**
@@ -43,6 +52,10 @@ export default function LetterPanel({
   result,
   onHc,
   coverages,
+  demoTotal,
+  siteTotal,
+  createdPo,
+  onPoCreated,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [letterError, setLetterError] = useState<string | null>(null);
@@ -172,6 +185,7 @@ export default function LetterPanel({
                 // hand-typed values are not wiped by a blank lookup.
                 ...(extra?.address ? { jobAddress: extra.address } : {}),
                 ...(extra?.jobType ? { jobType: extra.jobType } : {}),
+                jobRecordId: extra?.recordId ?? "",
               })
             }
             loadChoices={async () => {
@@ -184,7 +198,7 @@ export default function LetterPanel({
                   id: j.id,
                   label: j.name,
                   hint: [j.address, j.jobType].filter(Boolean).join("  ·  "),
-                  extra: { address: j.address, jobType: j.jobType },
+                  extra: { address: j.address, jobType: j.jobType, recordId: j.id },
                 })),
               };
             }}
@@ -200,7 +214,7 @@ export default function LetterPanel({
             value={fields.subcontractor}
             placeholder="Company name"
             onChange={(v, extra) => {
-              onField({ subcontractor: v });
+              onField({ subcontractor: v, subRecordId: extra?.recordId ?? "" });
               if (extra?.email !== undefined) setSubEmail(extra.email);
             }}
             loadChoices={async () => {
@@ -213,7 +227,7 @@ export default function LetterPanel({
                   id: sub.id,
                   label: sub.company,
                   hint: [sub.trade, sub.email].filter(Boolean).join('  ·  '),
-                  extra: { email: sub.email },
+                  extra: { email: sub.email, recordId: sub.id },
                 })),
               };
             }}
@@ -264,6 +278,20 @@ export default function LetterPanel({
           </div>
         </div>
       </section>
+
+      <CreatePoPanel
+        jobRecordId={fields.jobRecordId}
+        subRecordId={fields.subRecordId}
+        jobName={fields.jobName}
+        subcontractor={fields.subcontractor}
+        scopeOfWork={fields.scopeOfWork}
+        jobType={fields.jobType}
+        award={result.award}
+        demoTotal={demoTotal}
+        siteTotal={siteTotal}
+        created={createdPo}
+        onCreated={onPoCreated}
+      />
 
       <div className="space-y-5">
       <PaymentSchedule

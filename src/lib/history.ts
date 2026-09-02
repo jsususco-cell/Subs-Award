@@ -15,6 +15,8 @@ export interface LetterDetails {
   program?: string;
   startDate?: string;
   endDate?: string;
+  jobRecordId?: string;
+  subRecordId?: string;
 }
 
 export interface HistorySettings {
@@ -51,6 +53,8 @@ export interface AwardRecord {
   sheetName: string;
   headerRow: number;
   letter: LetterDetails;
+  /** Set once the award has been written to Quickbase. */
+  createdPo?: { poRecordId: number; costItemRecordId: number; billCount: number } | null;
   settings: HistorySettings;
   totals: HistoryTotals;
   items: ScopeItem[];

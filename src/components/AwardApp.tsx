@@ -5,6 +5,7 @@ import AwardPanel from "./AwardPanel";
 import ExtractPanel from "./ExtractPanel";
 import FileDrop from "./FileDrop";
 import LetterPanel, { type LetterFields } from "./LetterPanel";
+import type { CreatePoResult } from "./CreatePoPanel";
 import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
 import StepRail, { type Step } from "./StepRail";
@@ -48,6 +49,8 @@ const EMPTY_LETTER: LetterFields = {
   program: "PR R3",
   startDate: "",
   endDate: "",
+  jobRecordId: "",
+  subRecordId: "",
 };
 
 export default function AwardApp() {
@@ -73,6 +76,9 @@ export default function AwardApp() {
   const history = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [lessOandPOverride, setLessOandPOverride] = useState<number | null>(null);
   const [letter, setLetter] = useState<LetterFields>(EMPTY_LETTER);
+  // Recorded once the award is written to Quickbase, so it cannot be
+  // created a second time from the same award.
+  const [createdPo, setCreatedPo] = useState<CreatePoResult | null>(null);
 
   // Preferences start at the defaults so the server and the first client render
   // agree, then the stored set is applied when a file is loaded — always a
@@ -129,6 +135,7 @@ export default function AwardApp() {
       setKeptCoverages(suggestBaseCoverages(groups));
       setLessOandPOverride(null);
       setLetter(EMPTY_LETTER);
+      setCreatedPo(null);
       setShowIgnored(false);
       setActiveId(null);
       setRestoredAt(null);
@@ -170,6 +177,7 @@ export default function AwardApp() {
       sheetName: parsed.sheetName,
       headerRow: parsed.headerRow,
       letter: { ...letter },
+      createdPo,
       settings: {
         basis,
         keptCoverages: [...keptCoverages],
@@ -218,6 +226,7 @@ export default function AwardApp() {
     setLessOandPOverride(record.settings.lessOandPOverride);
     // jobType arrived later than the first saved awards, so default it.
     setLetter({ ...EMPTY_LETTER, ...record.letter });
+    setCreatedPo(record.createdPo ?? null);
 
     const restored: Prefs = {
       oandpPct: record.settings.oandpPct,
@@ -466,6 +475,14 @@ export default function AwardApp() {
           result={result}
           onHc={(v) => updatePrefs({ hc: v })}
           coverages={keptCoverages}
+          demoTotal={
+            extraction?.keptGroups.find((g) => /^ce-\s*demo\b/i.test(g.coverage))?.rcv ?? 0
+          }
+          siteTotal={
+            extraction?.keptGroups.find((g) => /^ce-\s*site\b/i.test(g.coverage))?.rcv ?? 0
+          }
+          createdPo={createdPo}
+          onPoCreated={setCreatedPo}
         />
       )}
 

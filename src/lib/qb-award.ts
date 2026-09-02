@@ -63,12 +63,15 @@ export const QB_AWARD = {
   billLineQbLineItem: "Subcontractors - Puerto Rico",
   billLineCostType: "Subcontractor",
   /**
-   * Bill % (fid 48) is a percent field that stores a fraction — 0.10 shows as
-   * 10%. The API wants the WHOLE number: send 10, Quickbase stores 0.10.
-   * Sending 0.10 stores 0.001 and displays 0.1%. Verified against live data on
-   * the code page, where this same flag "MUST stay false".
+   * Bill % (fid 48) is a percent field that stores the FRACTION: 0.2 displays
+   * as 20%, and 1 as 100%. Send 20 and it stores 20, which displays as 2000%.
+   *
+   * Established by reading live Billing Line Items rather than trusting the
+   * code page's comment, which claimed the opposite. Records #78/#79 bill the
+   * same $845 contract at 0.4 ($338) and 0.3 ($253.50) -- 338/0.4 = 845 and
+   * 253.5/0.3 = 845, so the stored number is unambiguously the fraction.
    */
-  billPctAsFraction: false,
+  billPctAsFraction: true,
 } as const;
 
 export type QbValue = { value: string | number | boolean };
@@ -146,7 +149,10 @@ export function buildCostItemRecord(
     [f.relatedPO]: { value: poRecordId },
     [f.title]: { value: input.title || input.scope },
     [f.costType]: { value: QB_AWARD.costItemCostType },
-    [f.unitCost]: { value: input.award },
+    // Unit Cost is currency to 2dp. An unrounded award stored the raw float
+    // (178275.2272727273), a fraction of a cent off the bills that derive
+    // from it, so round to cents here as everywhere else.
+    [f.unitCost]: { value: round(input.award) },
     [f.qty]: { value: 1 },
     [f.unit]: { value: QB_AWARD.costItemUnit },
     [f.relatedSub]: { value: input.subRecordId },
@@ -201,7 +207,7 @@ export function planAward(input: AwardWriteInput): AwardPlan {
     },
     costItem: {
       title: input.title || input.scope,
-      unitCost: input.award,
+      unitCost: round(input.award),
       costType: QB_AWARD.costItemCostType,
       unit: QB_AWARD.costItemUnit,
     },

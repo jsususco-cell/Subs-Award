@@ -113,16 +113,38 @@ test("the cost item holds the contract amount and the required QB line item", ()
   assert.equal(val(ci, f.relatedQbLineItem), 182);
 });
 
-test("bill percentages are sent as whole numbers, never fractions", () => {
-  // Quickbase stores 10 as 0.10 and shows 10%. Sending 0.10 stored 0.001 and
-  // showed 0.1% — the bug the code page's flag exists to prevent.
-  assert.equal(QB_AWARD.billPctAsFraction, false);
+test("bill percentages are sent as fractions, never whole numbers", () => {
+  // Bill % (48) is a percent field holding the fraction: 0.2 displays as 20%.
+  // Sending 20 stores 20 and displays 2000%. Confirmed against live records
+  // #78/#79, which bill one $845 contract at 0.4 ($338) and 0.3 ($253.50).
+  assert.equal(QB_AWARD.billPctAsFraction, true);
 
   const bills = buildBillRecords(input(), 9001);
   const f = QB_AWARD.billLines;
-  assert.equal(val(bills[0], f.billPct), 10, "Movilización is 10, not 0.1");
-  assert.equal(val(bills[5], f.billPct), 20, "Empañetado is 20, not 0.2");
-  assert.ok(bills.every((b) => Number(val(b, f.billPct)) >= 1));
+  assert.equal(val(bills[0], f.billPct), 0.1, "Movilización is 0.1, not 10");
+  assert.equal(val(bills[5], f.billPct), 0.2, "Empañetado is 0.2, not 20");
+  assert.ok(
+    bills.every((b) => Number(val(b, f.billPct)) <= 1),
+    "no bill may exceed 1, which is 100%",
+  );
+
+  // A single-payment schedule must store 1, the way live 100% bills do.
+  const whole = buildBillRecords(input({ jobType: "Repair" }), 9001);
+  assert.equal(val(whole[0], f.billPct), 0.5);
+
+  // The fractions still describe the amounts they sit beside.
+  for (const b of bills) {
+    const pct = Number(val(b, f.billPct));
+    const amount = Number(val(b, f.billAmount));
+    assert.ok(Math.abs(amount / pct - 178275.23) < 0.5, "amount / pct is the contract");
+  }
+});
+
+test("the contract amount is stored to the cent, not as a raw float", () => {
+  // Unit Cost is currency to 2dp; an unrounded award stored 178275.2272727273.
+  const ci = buildCostItemRecord(input({ award: 178275.2272727273 }), 1);
+  assert.equal(val(ci, QB_AWARD.costItems.unitCost), 178275.23);
+  assert.equal(planAward(input({ award: 178275.2272727273 })).costItem.unitCost, 178275.23);
 });
 
 test("the bills match the payment schedule and total the award", () => {
@@ -154,7 +176,7 @@ test("the job type picks the schedule, so a repair gets two bills", () => {
   assert.equal(val(bills[0], QB_AWARD.billLines.title), "Pago Inicial (50%)");
 
   const relocation = buildBillRecords(input({ jobType: "Relocation" }), 9001);
-  assert.equal(val(relocation[0], QB_AWARD.billLines.billPct), 20);
+  assert.equal(val(relocation[0], QB_AWARD.billLines.billPct), 0.2);
 });
 
 test("the plan describes exactly what would be written", () => {

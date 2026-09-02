@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { money, pct } from "@/lib/format";
 import { planAward, type AwardWriteInput } from "@/lib/qb-award";
+import { defaultBody, defaultSubject } from "@/lib/letter-email";
+import type { LetterInput } from "@/lib/letter";
 
 const PO_STATUSES = ["Unreleased", "Released", "Approved"];
 const EXPENSE_CLASSES = ["PO", "Non-PO"];
@@ -11,6 +13,10 @@ export interface CreatePoResult {
   poRecordId: number;
   costItemRecordId: number;
   billCount: number;
+  /** Who the award letter reached, when it went out with the records. */
+  letterSentTo?: string[];
+  /** Why it did not, when the records were created anyway. */
+  letterError?: string;
 }
 
 interface Props {
@@ -27,6 +33,10 @@ interface Props {
   /** Set once an award has been written, so it cannot be created twice. */
   created: CreatePoResult | null;
   onCreated: (result: CreatePoResult) => void;
+  /** The letter that goes out with the records, if sending is left on. */
+  letter: LetterInput;
+  /** Prefilled from the subcontractor's Quickbase record, when there is one. */
+  suggestedTo: string;
 }
 
 type Stage = "idle" | "confirming" | "working";
@@ -53,6 +63,8 @@ export default function CreatePoPanel({
   siteTotal,
   created,
   onCreated,
+  letter,
+  suggestedTo,
 }: Props) {
   const [title, setTitle] = useState("");
   const [poStatus, setPoStatus] = useState(PO_STATUSES[0]);
@@ -65,6 +77,15 @@ export default function CreatePoPanel({
   const [partial, setPartial] = useState<string | null>(null);
   const [sendKey, setSendKey] = useState("");
   const [keyNeeded, setKeyNeeded] = useState(false);
+  const [sendLetter, setSendLetter] = useState(true);
+  const [to, setTo] = useState("");
+  const [toTouched, setToTouched] = useState(false);
+
+  // Follows the subcontractor's Quickbase address until the field is edited.
+  const effectiveTo = toTouched ? to : to || suggestedTo;
+  // With no address there is nothing to send to, so the letter is simply
+  // skipped rather than failing the whole flow.
+  const willSend = sendLetter && effectiveTo.trim().length > 0;
 
   const effectiveTitle = title || scopeOfWork || jobName;
   const linked = Boolean(jobRecordId && subRecordId);
@@ -86,12 +107,28 @@ export default function CreatePoPanel({
   };
   const plan = planAward(input);
 
+  /**
+   * Write the records, then send the letter -- in that order and never the
+   * reverse. A letter can be sent again; a purchase order cannot be
+   * un-created, and telling a subcontractor they have been awarded when the
+   * PO failed to write is the worse of the two mistakes.
+   */
   async function create() {
     setStage("working");
     setError(null);
     setPartial(null);
+    const key = sendKey || storedKey();
+
+    let body: {
+      ok?: boolean;
+      keyRequired?: boolean;
+      error?: string;
+      partial?: string;
+      poRecordId?: number;
+      costItemRecordId?: number;
+      billCount?: number;
+    };
     try {
-      const key = sendKey || storedKey();
       const res = await fetch("/api/qb/award", {
         method: "POST",
         headers: {
@@ -100,28 +137,68 @@ export default function CreatePoPanel({
         },
         body: JSON.stringify(input),
       });
-      const body = await res.json();
-      if (!body.ok) {
-        if (body.keyRequired) {
-          setKeyNeeded(true);
-          setError("This deployment needs a send key before it will write to Quickbase.");
-        } else {
-          setError(body.error ?? "Could not create the purchase order.");
-          if (body.partial) setPartial(body.partial);
-        }
-        setStage("idle");
-        return;
-      }
-      onCreated({
-        poRecordId: body.poRecordId,
-        costItemRecordId: body.costItemRecordId,
-        billCount: body.billCount ?? 0,
-      });
-      setStage("idle");
+      body = await res.json();
     } catch {
       setError("Could not reach the server. Nothing was written to Quickbase.");
       setStage("idle");
+      return;
     }
+
+    if (!body.ok) {
+      if (body.keyRequired) {
+        setKeyNeeded(true);
+        setError("This deployment needs a send key before it will write to Quickbase.");
+      } else {
+        setError(body.error ?? "Could not create the purchase order.");
+        if (body.partial) setPartial(body.partial);
+      }
+      setStage("idle");
+      return;
+    }
+
+    // The records exist from here on, so nothing below may report failure of
+    // the whole operation -- only of the letter.
+    try {
+      localStorage.setItem(KEY_STORE, key);
+    } catch {
+      /* private mode -- the key just will not be remembered */
+    }
+
+    const result: CreatePoResult = {
+      poRecordId: body.poRecordId as number,
+      costItemRecordId: body.costItemRecordId as number,
+      billCount: body.billCount ?? 0,
+    };
+
+    if (willSend) {
+      try {
+        const res = await fetch("/api/letter/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(key ? { "x-send-key": key } : {}),
+          },
+          body: JSON.stringify({
+            letter,
+            to: effectiveTo,
+            cc: "",
+            subject: defaultSubject(letter),
+            text: defaultBody(letter),
+          }),
+        });
+        const sent = await res.json();
+        if (sent.ok) {
+          result.letterSentTo = [...(sent.to ?? []), ...(sent.cc ?? [])];
+        } else {
+          result.letterError = sent.error ?? "The letter could not be sent.";
+        }
+      } catch {
+        result.letterError = "Could not reach the server, so the letter was not sent.";
+      }
+    }
+
+    onCreated(result);
+    setStage("idle");
   }
 
   if (created) {
@@ -143,7 +220,27 @@ export default function CreatePoPanel({
                 : "none — generate them in Quickbase"
             }
           />
+          <Line
+            label="Award letter"
+            value={
+              created.letterSentTo?.length
+                ? `sent to ${created.letterSentTo.join(", ")}`
+                : created.letterError
+                  ? "not sent"
+                  : "not sent — sending was off"
+            }
+          />
         </dl>
+        {created.letterError && (
+          <p
+            role="alert"
+            className="border-t border-brand-red/30 bg-brand-red-50 px-4 py-2.5 text-xs text-brand-red-dark"
+          >
+            <strong>The records were created, but the letter was not sent:</strong>{" "}
+            {created.letterError} Send it from the panel below — creating the
+            purchase order again would duplicate it.
+          </p>
+        )}
         <p className="border-t border-navy-100 bg-navy-50 px-4 py-2.5 text-xs text-navy-600/70">
           Saved with this award, so it will not be created twice.
         </p>
@@ -265,6 +362,47 @@ export default function CreatePoPanel({
               </div>
             </div>
 
+            <div className="rounded-md border border-navy-100 bg-navy-50/60 p-3">
+              <label className="flex items-center gap-2 text-xs font-medium text-navy-800">
+                <input
+                  type="checkbox"
+                  checked={sendLetter}
+                  onChange={(e) => setSendLetter(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--color-navy-700)]"
+                />
+                Email the award letter to the subcontractor
+              </label>
+              {sendLetter && (
+                <div className="mt-2">
+                  <label
+                    htmlFor="po-letter-to"
+                    className="mb-1 block text-xs font-medium text-navy-700"
+                  >
+                    To
+                  </label>
+                  <input
+                    id="po-letter-to"
+                    type="email"
+                    multiple
+                    value={effectiveTo}
+                    onChange={(e) => {
+                      setToTouched(true);
+                      setTo(e.target.value);
+                    }}
+                    placeholder="subcontractor@example.com"
+                    className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+                  />
+                  <p className="mt-1 text-[10px] text-navy-600/70">
+                    {effectiveTo.trim()
+                      ? suggestedTo && !toTouched
+                        ? "From the subcontractor's Quickbase record. The letter goes out after the records are created."
+                        : "The letter goes out after the records are created."
+                      : "No address on the subcontractor's Quickbase record — add one here, or the records will be created without a letter."}
+                  </p>
+                </div>
+              )}
+            </div>
+
             {keyNeeded && (
               <div>
                 <label
@@ -319,6 +457,10 @@ export default function CreatePoPanel({
                         : "none"
                     }
                   />
+                  <Row
+                    k="Award letter"
+                    v={willSend ? `emailed to ${effectiveTo}` : "not being sent"}
+                  />
                 </dl>
                 {plan.bills.length > 0 && (
                   <ul className="mt-2 max-h-32 overflow-auto rounded border border-navy-100 text-[11px]">
@@ -335,6 +477,9 @@ export default function CreatePoPanel({
                 )}
                 <p className="mt-2 text-[11px] text-navy-600/70">
                   These become real records in Quickbase and are not undone from here.
+                  {willSend
+                    ? " The letter goes to the subcontractor and cannot be recalled."
+                    : ""}
                 </p>
                 <div className="mt-3 flex gap-2">
                   <button
@@ -365,13 +510,17 @@ export default function CreatePoPanel({
                       : "cursor-not-allowed bg-navy-300"
                   }`}
                 >
-                  {stage === "working" ? "Creating…" : "Create PO & Bills"}
+                  {stage === "working"
+                    ? "Creating…"
+                    : willSend
+                      ? "Create PO & Send Letter"
+                      : "Create PO & Bills"}
                 </button>
                 <p className="mt-2 text-xs text-navy-600/70">
                   {award > 0
                     ? `${money(award)} contract${
                         plan.bills.length ? `, split into ${plan.bills.length} payments` : ""
-                      }. You will be asked to confirm.`
+                      }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
                     : "The award has to be above zero."}
                 </p>
               </>

@@ -291,6 +291,8 @@ export default function LetterPanel({
         siteTotal={siteTotal}
         created={createdPo}
         onCreated={onPoCreated}
+        letter={letterInput()}
+        suggestedTo={subEmail}
       />
 
       <div className="space-y-5">

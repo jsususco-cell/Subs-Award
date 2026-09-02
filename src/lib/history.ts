@@ -54,7 +54,13 @@ export interface AwardRecord {
   headerRow: number;
   letter: LetterDetails;
   /** Set once the award has been written to Quickbase. */
-  createdPo?: { poRecordId: number; costItemRecordId: number; billCount: number } | null;
+  createdPo?: {
+    poRecordId: number;
+    costItemRecordId: number;
+    billCount: number;
+    letterSentTo?: string[];
+    letterError?: string;
+  } | null;
   settings: HistorySettings;
   totals: HistoryTotals;
   items: ScopeItem[];

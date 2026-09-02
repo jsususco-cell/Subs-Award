@@ -10,6 +10,7 @@ import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
 import StepRail, { type Step } from "./StepRail";
 import {
+  DEFAULT_ADA,
   DEMO_SITE_COVERAGES,
   calculateAward,
   groupByCoverage,
@@ -78,7 +79,7 @@ export default function AwardApp() {
   // ADA belongs to one job, not to the shop, so it is deliberately kept out
   // of prefs -- carrying it to the next file would inflate that award.
   const [adaEnabled, setAdaEnabled] = useState(false);
-  const [ada, setAda] = useState(0);
+  const [ada, setAda] = useState(DEFAULT_ADA);
   const [letter, setLetter] = useState<LetterFields>(EMPTY_LETTER);
   // Recorded once the award is written to Quickbase, so it cannot be
   // created a second time from the same award.
@@ -152,7 +153,7 @@ export default function AwardApp() {
       setKeptCoverages(suggestBaseCoverages(groups));
       setLessOandPOverride(null);
       setAdaEnabled(false);
-      setAda(0);
+      setAda(DEFAULT_ADA);
       setLetter(EMPTY_LETTER);
       setCreatedPo(null);
       setShowIgnored(false);
@@ -246,7 +247,9 @@ export default function AwardApp() {
     setExcludedRows([...(record.settings.excludedRows ?? [])]);
     setLessOandPOverride(record.settings.lessOandPOverride);
     setAdaEnabled(record.settings.adaEnabled ?? false);
-    setAda(record.settings.ada ?? 0);
+    // Awards saved before ADA existed carry no amount; they open on the
+    // prefill, unticked, so ticking behaves like a fresh award.
+    setAda(record.settings.ada ?? DEFAULT_ADA);
     // jobType arrived later than the first saved awards, so default it.
     setLetter({ ...EMPTY_LETTER, ...record.letter });
     setCreatedPo(record.createdPo ?? null);

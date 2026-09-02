@@ -14,6 +14,13 @@ export const DEFAULT_TIERS = [50, 55, 60];
 /** Prefilled hard-cost allowance. */
 export const DEFAULT_HC = 122000;
 
+/**
+ * Prefilled ADA conversion amount. Only reaches the award once ADA is ticked,
+ * so this is a starting point for the usual case rather than a figure applied
+ * on its own.
+ */
+export const DEFAULT_ADA = 3000;
+
 /** The coverages that make up the Demo/Site scope. */
 export const DEMO_SITE_COVERAGES = ["CE-DEMO", "CE-SITE"];
 

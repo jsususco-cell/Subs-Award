@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  DEFAULT_ADA,
   DEFAULT_OANDP_PCT,
   calculateAward,
   findHcGroup,
@@ -146,4 +147,20 @@ test("ADA adds to the award only while it is ticked", () => {
     "the tiers are taken from Less O&P and ADA must not move them",
   );
   assert.equal(on.lessOandP, base.lessOandP);
+});
+
+test("the ADA prefill is 3000 and only counts once ticked", () => {
+  assert.equal(DEFAULT_ADA, 3000);
+
+  const { groups } = load();
+  const base = calculateAward(groups, settings());
+  // The prefill sitting in the field must not reach the award on its own.
+  const untickedWithPrefill = calculateAward(
+    groups,
+    settings({ adaEnabled: false, ada: DEFAULT_ADA }),
+  );
+  assert.equal(untickedWithPrefill.award, base.award);
+
+  const ticked = calculateAward(groups, settings({ adaEnabled: true, ada: DEFAULT_ADA }));
+  assert.ok(Math.abs(ticked.award - (base.award + 3000)) < 0.005);
 });

@@ -57,6 +57,7 @@ function sampleInput(): LetterInput {
         { pct: 55, amount: 61902.75, selected: false },
       ],
       hc: 122000,
+    ada: 0,
       award: 178275.23,
     },
   };

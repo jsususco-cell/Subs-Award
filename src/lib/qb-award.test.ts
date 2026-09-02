@@ -27,6 +27,7 @@ function input(over: Partial<AwardWriteInput> = {}): AwardWriteInput {
     award: 178275.23,
     demoTotal: 60039.88,
     siteTotal: 88526.72,
+    ada: 0,
     createBills: true,
     ...over,
   };
@@ -196,4 +197,63 @@ test("the plan describes exactly what would be written", () => {
 test("a blank title falls back to the scope, so the PO is never unnamed", () => {
   const ci = buildCostItemRecord(input({ title: "" }), 1);
   assert.equal(val(ci, QB_AWARD.costItems.title), "Per the extracted scope");
+});
+
+test("ADA is written to its own PO field and held out of the Demo/Site split", () => {
+  const po = buildPoRecord(input({ ada: 15000 }));
+  const f = QB_AWARD.pos;
+
+  assert.equal(val(po, f.catAdaConversion), 15000);
+
+  // The invariant that keeps Quickbase's Total Amount formula honest:
+  // Demolicion + Site + ADA must come to the award, never more.
+  const total =
+    Number(val(po, f.catDemolition)) +
+    Number(val(po, f.catSite)) +
+    Number(val(po, f.catAdaConversion));
+  assert.ok(Math.abs(total - 178275.23) < CENT, `PO categories total ${total}`);
+
+  // Demo/Site now share only the non-ADA remainder.
+  const spread = Number(val(po, f.catDemolition)) + Number(val(po, f.catSite));
+  assert.ok(Math.abs(spread - (178275.23 - 15000)) < CENT);
+});
+
+test("with no ADA the field is left off entirely, not written as zero", () => {
+  const po = buildPoRecord(input({ ada: 0 }));
+  assert.equal(po[String(QB_AWARD.pos.catAdaConversion)], undefined);
+  const total = Number(val(po, QB_AWARD.pos.catDemolition)) + Number(val(po, QB_AWARD.pos.catSite));
+  assert.ok(Math.abs(total - 178275.23) < CENT, "the whole award still lands on Demo/Site");
+});
+
+test("the split reconciles with ADA whatever the ratio", () => {
+  for (const [award, demo, site, ada] of [
+    [178275.23, 60039.88, 88526.72, 15000],
+    [193275.23, 60039.88, 88526.72, 15000.01],
+    [100000, 1, 2, 99999.99],
+    [50000, 0, 0, 10000],
+    [1000, 500, 0, 1000],
+  ]) {
+    const s = splitAward(award, demo, site, ada);
+    assert.ok(
+      Math.abs(s.demolition + s.site + ada - award) < CENT,
+      `${award} split ${s.demolition}/${s.site} + ada ${ada}`,
+    );
+  }
+});
+
+test("the contract and the bills carry ADA, because it is part of the award", () => {
+  // The award reaching this module already includes ADA; the cost item is the
+  // whole contract and the schedule bills against all of it.
+  const withAda = input({ award: 193275.23, ada: 15000 });
+
+  const ci = buildCostItemRecord(withAda, 1);
+  assert.equal(val(ci, QB_AWARD.costItems.unitCost), 193275.23);
+
+  const bills = buildBillRecords(withAda, 9001);
+  const total = bills.reduce((sum, b) => sum + Number(val(b, QB_AWARD.billLines.billAmount)), 0);
+  assert.ok(Math.abs(total - 193275.23) < CENT, `bills total ${total}`);
+
+  const plan = planAward(withAda);
+  assert.equal(plan.po.ada, 15000);
+  assert.ok(Math.abs(plan.po.demolition + plan.po.site + plan.po.ada - 193275.23) < CENT);
 });

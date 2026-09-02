@@ -90,6 +90,10 @@ export function renderLetter(input: LetterInput): string {
       false,
     ],
     ["Hard Costs (HC)", money(result.hc), false],
+    // Only shown when it applies, so an ordinary award reads exactly as before.
+    ...(result.ada > 0
+      ? ([["Conversión ADA", money(result.ada), false]] as [string, string, boolean][])
+      : []),
     ["Monto Total", money(result.award), true],
   ];
 

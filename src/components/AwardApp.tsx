@@ -75,6 +75,10 @@ export default function AwardApp() {
   // avoids a hydration mismatch.
   const history = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [lessOandPOverride, setLessOandPOverride] = useState<number | null>(null);
+  // ADA belongs to one job, not to the shop, so it is deliberately kept out
+  // of prefs -- carrying it to the next file would inflate that award.
+  const [adaEnabled, setAdaEnabled] = useState(false);
+  const [ada, setAda] = useState(0);
   const [letter, setLetter] = useState<LetterFields>(EMPTY_LETTER);
   // Recorded once the award is written to Quickbase, so it cannot be
   // created a second time from the same award.
@@ -114,8 +118,21 @@ export default function AwardApp() {
         tiers,
         selectedTier,
         hc,
+        adaEnabled,
+        ada,
       }),
-    [extraction, basis, keptCoverages, oandpPct, lessOandPOverride, tiers, selectedTier, hc],
+    [
+      extraction,
+      basis,
+      keptCoverages,
+      oandpPct,
+      lessOandPOverride,
+      tiers,
+      selectedTier,
+      hc,
+      adaEnabled,
+      ada,
+    ],
   );
 
   const handleFile = useCallback(async (file: File) => {
@@ -134,6 +151,8 @@ export default function AwardApp() {
       setFileName(file.name);
       setKeptCoverages(suggestBaseCoverages(groups));
       setLessOandPOverride(null);
+      setAdaEnabled(false);
+      setAda(0);
       setLetter(EMPTY_LETTER);
       setCreatedPo(null);
       setShowIgnored(false);
@@ -187,6 +206,8 @@ export default function AwardApp() {
         tiers: [...tiers],
         selectedTier,
         hc,
+        adaEnabled,
+        ada,
       },
       totals: {
         base: result.base,
@@ -224,6 +245,8 @@ export default function AwardApp() {
     setKeptCoverages([...record.settings.keptCoverages]);
     setExcludedRows([...(record.settings.excludedRows ?? [])]);
     setLessOandPOverride(record.settings.lessOandPOverride);
+    setAdaEnabled(record.settings.adaEnabled ?? false);
+    setAda(record.settings.ada ?? 0);
     // jobType arrived later than the first saved awards, so default it.
     setLetter({ ...EMPTY_LETTER, ...record.letter });
     setCreatedPo(record.createdPo ?? null);
@@ -443,6 +466,9 @@ export default function AwardApp() {
               onLessOandP={setLessOandPOverride}
               onResetLessOandP={() => setLessOandPOverride(null)}
               onHc={(v) => updatePrefs({ hc: v })}
+              adaEnabled={adaEnabled}
+              onAdaEnabled={setAdaEnabled}
+              onAda={setAda}
               onSelectTier={(i) => updatePrefs({ selectedTier: i })}
               onTier={(i, v) =>
                 updatePrefs({ tiers: tiers.map((t, j) => (j === i ? v : t)) })

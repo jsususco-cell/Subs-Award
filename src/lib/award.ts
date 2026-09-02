@@ -111,7 +111,10 @@ export function calculateAward(
   }));
 
   const chosen = tierRows[settings.selectedTier];
-  const award = settings.hc + (chosen ? chosen.amount : 0);
+  // ADA only counts when ticked, so an amount left behind after unticking
+  // cannot quietly inflate the award.
+  const ada = settings.adaEnabled ? settings.ada : 0;
+  const award = settings.hc + (chosen ? chosen.amount : 0) + ada;
 
   return {
     base,
@@ -120,6 +123,7 @@ export function calculateAward(
     lessOandPIsManual,
     tierRows,
     hc: settings.hc,
+    ada,
     award,
   };
 }

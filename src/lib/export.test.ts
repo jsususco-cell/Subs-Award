@@ -22,6 +22,8 @@ function context() {
     tiers: [50, 60, 70],
     selectedTier: 0,
     hc: EXPECTED.hc,
+    adaEnabled: false,
+    ada: 0,
   });
   return {
     fileName: "scope.xls",

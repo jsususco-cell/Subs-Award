@@ -87,6 +87,7 @@ function parseInput(raw: unknown): AwardWriteInput | null {
     award,
     demoTotal: num(o.demoTotal),
     siteTotal: num(o.siteTotal),
+    ada: num(o.ada),
     createBills: o.createBills !== false,
   };
 }

@@ -76,6 +76,9 @@ export default function LetterPanel({
     ["Subs %", chosen ? pct(chosen.pct) : "—"],
     ["Subs amount", chosen ? money(chosen.amount) : "—"],
     ["HC", money(result.hc)],
+    ...(result.ada > 0
+      ? ([["ADA", money(result.ada)]] as [string, string][])
+      : []),
     ["Award total", money(result.award)],
     ...scheduleForJobType(fields.jobType).map((m, i) => [
       `${m.n}. ${m.desc} (${m.pct}%)`,
@@ -289,6 +292,7 @@ export default function LetterPanel({
         award={result.award}
         demoTotal={demoTotal}
         siteTotal={siteTotal}
+        ada={result.ada}
         created={createdPo}
         onCreated={onPoCreated}
         letter={letterInput()}

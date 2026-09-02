@@ -41,6 +41,7 @@ export function summaryText(ctx: Context): string {
     );
   }
   lines.push(`${pad("HC")}${money(result.hc)}`);
+  if (result.ada > 0) lines.push(`${pad("ADA")}${money(result.ada)}`);
   lines.push(
     `${pad("Award")}${money(result.award)}${chosen ? `   (HC + ${pct(chosen.pct)})` : ""}`,
   );
@@ -68,6 +69,7 @@ export function buildCsv(ctx: Context): string {
       round(r.amount),
     ]),
     ["HC", round(result.hc)],
+    ...(result.ada > 0 ? ([["ADA", round(result.ada)]] as [string, number][]) : []),
     ["Award", round(result.award)],
     [],
     ["COVERAGE", "Lines", "In base", BASIS_LABEL[basis], "RCV", "ACV", "Item Amount"],

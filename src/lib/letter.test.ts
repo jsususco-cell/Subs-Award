@@ -17,6 +17,8 @@ function input(over: Partial<LetterInput> = {}): LetterInput {
     tiers: [50, 55, 60],
     selectedTier: 0,
     hc: DEFAULT_HC,
+    adaEnabled: false,
+    ada: 0,
   });
   return {
     jobName: "PR-R3-03073",
@@ -126,4 +128,31 @@ test("dates render in the template's mm-dd-yyyy form", () => {
 
 test("the fixture award is the one the worksheet produces", () => {
   assert.ok(Math.abs(EXPECTED.award - 178275.23) < 0.005);
+});
+
+test("the letter shows an ADA line only when ADA applies", () => {
+  const groups = groupByCoverage(parseWorkbook(buildSampleWorkbook()).items);
+  const base = {
+    basis: "rcv" as const,
+    baseCoverages: ["CE-DEMO", "CE-SITE"],
+    oandpPct: 32,
+    lessOandPOverride: null,
+    tiers: [50, 55, 60],
+    selectedTier: 0,
+    hc: DEFAULT_HC,
+  };
+
+  const plain = renderLetter(input());
+  assert.ok(!plain.includes("ADA"), "an ordinary award reads exactly as before");
+
+  const withAda = calculateAward(groups, { ...base, adaEnabled: true, ada: 15000 });
+  const html = renderLetter(input({ result: withAda }));
+  assert.match(html, /Conversión ADA/, "the breakdown names the ADA line");
+  assert.ok(html.includes("15,000.00"));
+
+  // Monto Total must be the figure the payment schedule divides, ADA included.
+  const plainAward = calculateAward(groups, { ...base, adaEnabled: false, ada: 0 }).award;
+  assert.ok(Math.abs(withAda.award - (plainAward + 15000)) < 0.005);
+  const amounts = scheduleAmounts(withAda.award, PAY_SCHEDULES.standard8);
+  assert.ok(Math.abs(amounts.reduce((a, b) => a + b, 0) - withAda.award) < 0.005);
 });

@@ -20,6 +20,9 @@ interface Props {
   onAddTier: () => void;
   onRemoveTier: (index: number) => void;
   onHc: (v: number) => void;
+  adaEnabled: boolean;
+  onAdaEnabled: (v: boolean) => void;
+  onAda: (v: number) => void;
 }
 
 export default function AwardPanel({
@@ -37,6 +40,9 @@ export default function AwardPanel({
   onAddTier,
   onRemoveTier,
   onHc,
+  adaEnabled,
+  onAdaEnabled,
+  onAda,
 }: Props) {
   const chosen = result.tierRows[selectedTier];
   const divisor = 1 + oandpPct / 100;
@@ -190,6 +196,42 @@ export default function AwardPanel({
             />
           </div>
         </div>
+
+        <div className="px-4 py-3">
+          <div className="grid grid-cols-[1fr_auto] items-center gap-3">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-navy-800">
+                <input
+                  type="checkbox"
+                  checked={adaEnabled}
+                  onChange={(e) => onAdaEnabled(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--color-navy-700)]"
+                />
+                ADA
+              </label>
+              <p className="mt-0.5 text-xs text-navy-600/70">
+                ADA conversion, when it falls to this subcontractor
+              </p>
+            </div>
+            {adaEnabled && (
+              <div className="w-40">
+                <NumberField
+                  ariaLabel="ADA conversion amount"
+                  value={result.ada}
+                  onChange={onAda}
+                  prefix="$"
+                  decimals={2}
+                />
+              </div>
+            )}
+          </div>
+          {adaEnabled && (
+            <p className="mt-2 text-xs text-navy-600/70">
+              Added on top of the award, and written to the purchase order&rsquo;s
+              ADA Conversion field rather than shared across Demolición and Site.
+            </p>
+          )}
+        </div>
       </dl>
 
       <div className="flex items-center justify-between gap-3 border-t-2 border-brand-red bg-navy-800 px-4 py-4">
@@ -198,9 +240,10 @@ export default function AwardPanel({
             Award total
           </p>
           <p className="tabular mt-0.5 text-xs text-navy-200">
-            {chosen
+            {(chosen
               ? `HC ${money(result.hc)} + subs ${money(chosen.amount)} (${pct(chosen.pct)})`
-              : "HC only — no subs tier selected"}
+              : "HC only — no subs tier selected") +
+              (result.ada > 0 ? ` + ADA ${money(result.ada)}` : "")}
           </p>
         </div>
         <p className="tabular text-2xl font-bold text-white">{money(result.award)}</p>

@@ -27,6 +27,7 @@ export const QB_AWARD = {
     date: 77,
     catDemolition: 253,
     catSite: 254,
+    catAdaConversion: 258,
     /* Total Amount (262) is a Quickbase formula over the category fields —
        computed there, never written from here. */
   },
@@ -92,6 +93,8 @@ export interface AwardWriteInput {
   /** Scope totals per coverage, used to split the award across the PO fields. */
   demoTotal: number;
   siteTotal: number;
+  /** ADA conversion work, zero unless it applies to this subcontractor. */
+  ada: number;
   createBills: boolean;
 }
 
@@ -100,27 +103,32 @@ function round(n: number): number {
 }
 
 /**
- * Split the award across the PO's Demolición and Site fields in the same ratio
- * as the CE-DEMO and CE-SITE scope, so the two add up to the award and the
- * Quickbase formula field agrees with the letter.
+ * Split the scope portion of the award across the PO's Demolición and Site
+ * fields, in the same ratio as the CE-DEMO and CE-SITE scope.
+ *
+ * ADA is a separate category on the purchase order (fid 258) and is passed in
+ * here only so it can be held back: Demolición + Site + ADA must come to the
+ * award, or Quickbase's Total Amount formula stops agreeing with the letter.
  *
  * The remainder lands on Site so the pair always totals exactly. With no scope
- * on either side the whole award goes to Site rather than vanishing.
+ * on either side the whole remainder goes to Site rather than vanishing.
  */
 export function splitAward(
   award: number,
   demoTotal: number,
   siteTotal: number,
+  ada = 0,
 ): { demolition: number; site: number } {
+  const spread = round(award - (ada > 0 ? ada : 0));
   const scope = demoTotal + siteTotal;
-  if (!(scope > 0)) return { demolition: 0, site: round(award) };
-  const demolition = round(award * (demoTotal / scope));
-  return { demolition, site: round(award - demolition) };
+  if (!(scope > 0)) return { demolition: 0, site: spread };
+  const demolition = round(spread * (demoTotal / scope));
+  return { demolition, site: round(spread - demolition) };
 }
 
 export function buildPoRecord(input: AwardWriteInput): QbRecord {
   const f = QB_AWARD.pos;
-  const split = splitAward(input.award, input.demoTotal, input.siteTotal);
+  const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
 
   const po: QbRecord = {
     [f.relatedJob]: { value: input.jobRecordId },
@@ -136,6 +144,7 @@ export function buildPoRecord(input: AwardWriteInput): QbRecord {
   if (input.dueDate) po[f.dueDate] = { value: input.dueDate };
   if (split.demolition > 0) po[f.catDemolition] = { value: split.demolition };
   if (split.site > 0) po[f.catSite] = { value: split.site };
+  if (input.ada > 0) po[f.catAdaConversion] = { value: round(input.ada) };
 
   return po;
 }
@@ -186,14 +195,21 @@ export function buildBillRecords(
 
 /** A human-readable summary of exactly what a write would create. */
 export interface AwardPlan {
-  po: { title: string; scope: string; status: string; demolition: number; site: number };
+  po: {
+    title: string;
+    scope: string;
+    status: string;
+    demolition: number;
+    site: number;
+    ada: number;
+  };
   costItem: { title: string; unitCost: number; costType: string; unit: string };
   bills: { title: string; pct: number; amount: number }[];
   billTotal: number;
 }
 
 export function planAward(input: AwardWriteInput): AwardPlan {
-  const split = splitAward(input.award, input.demoTotal, input.siteTotal);
+  const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
   const schedule = scheduleForJobType(input.jobType);
   const amounts = scheduleAmounts(input.award, schedule);
 
@@ -204,6 +220,7 @@ export function planAward(input: AwardWriteInput): AwardPlan {
       status: input.poStatus,
       demolition: split.demolition,
       site: split.site,
+      ada: input.ada > 0 ? round(input.ada) : 0,
     },
     costItem: {
       title: input.title || input.scope,

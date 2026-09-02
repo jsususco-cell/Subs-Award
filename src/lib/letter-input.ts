@@ -36,6 +36,7 @@ export function parseLetterInput(raw: unknown): LetterInput | null {
     lessOandPIsManual: r.lessOandPIsManual === true,
     tierRows,
     hc: num(r.hc),
+    ada: num(r.ada),
     award: num(r.award),
   };
 

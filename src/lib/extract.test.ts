@@ -38,6 +38,8 @@ function settings(over: Partial<AwardSettings> = {}): AwardSettings {
     tiers: [...DEFAULT_TIERS],
     selectedTier: 0,
     hc: DEFAULT_HC,
+    adaEnabled: false,
+    ada: 0,
     ...over,
   };
 }

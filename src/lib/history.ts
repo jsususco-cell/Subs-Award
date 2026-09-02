@@ -29,6 +29,9 @@ export interface HistorySettings {
   tiers: number[];
   selectedTier: number;
   hc: number;
+  /** ADA conversion, when it applied. Absent on records saved before this. */
+  adaEnabled?: boolean;
+  ada?: number;
 }
 
 export interface HistoryTotals {

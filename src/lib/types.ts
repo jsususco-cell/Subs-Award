@@ -79,6 +79,13 @@ export interface AwardSettings {
   selectedTier: number;
   /** Hard-cost allowance, entered as an absolute amount. */
   hc: number;
+  /**
+   * ADA conversion work, when it falls to this subcontractor. Off for most
+   * awards; when on it is an extra scope that adds to the award on top of the
+   * hard costs and the subcontractor's share.
+   */
+  adaEnabled: boolean;
+  ada: number;
 }
 
 export interface AwardResult {
@@ -90,5 +97,7 @@ export interface AwardResult {
   lessOandPIsManual: boolean;
   tierRows: TierRow[];
   hc: number;
+  /** Zero unless ADA is ticked, so callers can add it unconditionally. */
+  ada: number;
   award: number;
 }

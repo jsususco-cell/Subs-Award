@@ -30,6 +30,8 @@ function settings(over: Partial<AwardSettings> = {}): AwardSettings {
     tiers: [50, 60, 70],
     selectedTier: 0,
     hc: EXPECTED.hc,
+    adaEnabled: false,
+    ada: 0,
     ...over,
   };
 }
@@ -122,4 +124,26 @@ test("an empty base selection yields an award of just HC", () => {
   const result = calculateAward(groups, settings({ baseCoverages: [] }));
   assert.equal(result.base, 0);
   assert.equal(result.award, EXPECTED.hc);
+});
+
+test("ADA adds to the award only while it is ticked", () => {
+  const { groups } = load();
+  const base = calculateAward(groups, settings());
+  const on = calculateAward(groups, settings({ adaEnabled: true, ada: 15000 }));
+
+  assert.ok(Math.abs(on.award - (base.award + 15000)) < 0.005, "award grows by the ADA amount");
+  assert.equal(on.ada, 15000);
+
+  // An amount left behind after unticking must not quietly inflate the award.
+  const off = calculateAward(groups, settings({ adaEnabled: false, ada: 15000 }));
+  assert.equal(off.ada, 0);
+  assert.ok(Math.abs(off.award - base.award) < 0.005, "unticked ADA changes nothing");
+
+  // ADA is an extra scope, not part of the subcontractor's percentage.
+  assert.deepEqual(
+    on.tierRows.map((r) => r.amount),
+    base.tierRows.map((r) => r.amount),
+    "the tiers are taken from Less O&P and ADA must not move them",
+  );
+  assert.equal(on.lessOandP, base.lessOandP);
 });

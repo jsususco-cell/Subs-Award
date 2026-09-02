@@ -30,6 +30,8 @@ interface Props {
   award: number;
   demoTotal: number;
   siteTotal: number;
+  /** Zero unless ADA was ticked on the award step. */
+  ada: number;
   /** Set once an award has been written, so it cannot be created twice. */
   created: CreatePoResult | null;
   onCreated: (result: CreatePoResult) => void;
@@ -61,6 +63,7 @@ export default function CreatePoPanel({
   award,
   demoTotal,
   siteTotal,
+  ada,
   created,
   onCreated,
   letter,
@@ -103,6 +106,7 @@ export default function CreatePoPanel({
     award,
     demoTotal,
     siteTotal,
+    ada,
     createBills,
   };
   const plan = planAward(input);
@@ -446,7 +450,10 @@ export default function CreatePoPanel({
                   <Row k="PO" v={`${plan.po.title} — ${plan.po.status}`} />
                   <Row
                     k="Award breakdown"
-                    v={`Demolición ${money(plan.po.demolition)} · Site ${money(plan.po.site)}`}
+                    v={
+                      `Demolición ${money(plan.po.demolition)} · Site ${money(plan.po.site)}` +
+                      (plan.po.ada > 0 ? ` · ADA ${money(plan.po.ada)}` : "")
+                    }
                   />
                   <Row k="Cost Item" v={`${money(plan.costItem.unitCost)} (1 × LS)`} />
                   <Row

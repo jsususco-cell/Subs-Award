@@ -8,6 +8,7 @@ import {
   mobilisationOverage,
   scheduleAmounts,
   scheduleForJobType,
+  scheduleLines,
   scheduleKeyForJobType,
 } from "./schedule";
 
@@ -143,4 +144,68 @@ test("the job type map covers every type the code page mapped", () => {
     "Renovation",
     "Repair",
   ]);
+});
+
+test("Movilización is capped at 10,000 and its share restated", () => {
+  // The figure from the sample letter: 10,000 of 180,800 is 5.53%.
+  const lines = scheduleLines(180800, PAY_SCHEDULES.standard8);
+  assert.equal(lines[0].desc, "Movilización");
+  assert.equal(lines[0].amount, MOBILISATION_CAP);
+  assert.equal(lines[0].pct, 5.53, "the share must describe the capped amount");
+
+  // The balance is spread over the rest, keeping their relative sizes.
+  assert.ok(lines[5].amount > lines[1].amount, "Empañetado (20) still beats Demolición (15)");
+  assert.ok(
+    Math.abs(lines[1].amount / lines[2].amount - 15 / 10) < 0.001,
+    "the 15:10 ratio between stages survives the redistribution",
+  );
+});
+
+test("capping never changes what the subcontractor is owed in total", () => {
+  for (const award of [180800, 178275.23, 100000.01, 250000, 1000000, 99999.99]) {
+    const lines = scheduleLines(award, PAY_SCHEDULES.standard8);
+    const sum = lines.reduce((s, l) => s + l.amount, 0);
+    assert.ok(Math.abs(sum - award) < CENT, `${award} pays out ${sum}`);
+    assert.ok(lines[0].amount <= MOBILISATION_CAP, "mobilisation never exceeds the cap");
+  }
+});
+
+test("under the cap the schedule is left exactly as it was", () => {
+  // 10% of 95,000 is 9,500, so nothing is capped and the round percentages stay.
+  const lines = scheduleLines(95000, PAY_SCHEDULES.standard8);
+  assert.deepEqual(
+    lines.map((l) => l.pct),
+    PAY_SCHEDULES.standard8.map((m) => m.pct),
+  );
+  assert.equal(lines[0].amount, 9500);
+
+  // Exactly at the cap is not over it.
+  const atCap = scheduleLines(100000, PAY_SCHEDULES.standard8);
+  assert.equal(atCap[0].amount, MOBILISATION_CAP);
+  assert.equal(atCap[0].pct, 10);
+});
+
+test("schedules with no mobilisation line are untouched by the cap", () => {
+  for (const key of ["split5050", "split2080"] as const) {
+    const lines = scheduleLines(500000, PAY_SCHEDULES[key]);
+    assert.deepEqual(
+      lines.map((l) => l.pct),
+      PAY_SCHEDULES[key].map((m) => m.pct),
+    );
+    const sum = lines.reduce((s, l) => s + l.amount, 0);
+    assert.ok(Math.abs(sum - 500000) < CENT);
+  }
+});
+
+test("a mobilisation-only schedule keeps the whole award rather than stranding it", () => {
+  // Nowhere to put the balance, so capping would lose it. It stays uncapped.
+  const only = [{ n: 1, desc: "Movilización", pct: 100 }];
+  const lines = scheduleLines(50000, only);
+  assert.equal(lines[0].amount, 50000);
+});
+
+test("a zero award produces no NaN percentages", () => {
+  const lines = scheduleLines(0, PAY_SCHEDULES.standard8);
+  assert.ok(lines.every((l) => Number.isFinite(l.pct) && Number.isFinite(l.amount)));
+  assert.ok(lines.every((l) => l.amount === 0));
 });

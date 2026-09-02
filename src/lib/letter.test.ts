@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderLetter, type LetterInput } from "./letter";
 import { CONDITIONS, LETTER_INTRO, MOBILISATION_NOTE } from "./letter-content";
-import { PAY_SCHEDULES, scheduleAmounts } from "./schedule";
+import { PAY_SCHEDULES, scheduleLines } from "./schedule";
 import { DEFAULT_HC, calculateAward, groupByCoverage } from "./award";
 import { parseWorkbook } from "./parse";
 import { EXPECTED, buildSampleWorkbook } from "./__fixtures__/sample";
@@ -95,8 +95,8 @@ test("the payment schedule follows the job type and totals the award", () => {
   assert.ok(!two.includes("Empañetado"), "20/80 letter must not list milestones");
 
   // Every schedule amount appears, and the total row is the award.
-  const amounts = scheduleAmounts(178275.23, PAY_SCHEDULES.standard8);
-  const last = amounts[amounts.length - 1].toFixed(2);
+  const lines = scheduleLines(178275.23, PAY_SCHEDULES.standard8);
+  const last = lines[lines.length - 1].amount.toFixed(2);
   assert.ok(eight.includes(last.replace(/\B(?=(\d{3})+(?!\d))/g, ",")));
   assert.ok(eight.includes("100.00%"));
 });
@@ -153,6 +153,16 @@ test("the letter shows an ADA line only when ADA applies", () => {
   // Monto Total must be the figure the payment schedule divides, ADA included.
   const plainAward = calculateAward(groups, { ...base, adaEnabled: false, ada: 0 }).award;
   assert.ok(Math.abs(withAda.award - (plainAward + 15000)) < 0.005);
-  const amounts = scheduleAmounts(withAda.award, PAY_SCHEDULES.standard8);
-  assert.ok(Math.abs(amounts.reduce((a, b) => a + b, 0) - withAda.award) < 0.005);
+  const lines = scheduleLines(withAda.award, PAY_SCHEDULES.standard8);
+  assert.ok(Math.abs(lines.reduce((a, l) => a + l.amount, 0) - withAda.award) < 0.005);
+});
+
+test("the letter shows the capped mobilisation, not ten per cent", () => {
+  // 10% of this award is 17,827.52, so the cap bites.
+  const html = renderLetter(input({ jobType: "Reconstruction" }));
+  assert.ok(html.includes("10,000.00"), "Movilización is paid at the cap");
+  assert.ok(!html.includes("17,827.52"), "the uncapped figure must not appear");
+  // Its share is restated to match what is actually paid.
+  assert.ok(html.includes("5.61%"));
+  assert.ok(html.includes("100.00%"));
 });

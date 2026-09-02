@@ -5,7 +5,7 @@ import LookupField from "./LookupField";
 import NumberField from "./NumberField";
 import { loadJobs, loadSubs } from "@/lib/qb-client";
 import PaymentSchedule from "./PaymentSchedule";
-import { scheduleAmounts, scheduleForJobType } from "@/lib/schedule";
+import { scheduleForJobType, scheduleLines } from "@/lib/schedule";
 import { renderLetter, type LetterInput } from "@/lib/letter";
 import SendLetterPanel from "./SendLetterPanel";
 import CreatePoPanel, { type CreatePoResult } from "./CreatePoPanel";
@@ -80,10 +80,9 @@ export default function LetterPanel({
       ? ([["ADA", money(result.ada)]] as [string, string][])
       : []),
     ["Award total", money(result.award)],
-    ...scheduleForJobType(fields.jobType).map((m, i) => [
-      `${m.n}. ${m.desc} (${m.pct}%)`,
-      money(scheduleAmounts(result.award, scheduleForJobType(fields.jobType))[i]),
-    ] as [string, string]),
+    ...scheduleLines(result.award, scheduleForJobType(fields.jobType)).map(
+      (l) => [`${l.n}. ${l.desc} (${l.pct}%)`, money(l.amount)] as [string, string],
+    ),
   ];
 
   function letterInput(): LetterInput {

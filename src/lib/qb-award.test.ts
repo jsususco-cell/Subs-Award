@@ -9,7 +9,7 @@ import {
   splitAward,
   type AwardWriteInput,
 } from "./qb-award";
-import { PAY_SCHEDULES, scheduleAmounts } from "./schedule";
+import { PAY_SCHEDULES, scheduleLines } from "./schedule";
 
 const CENT = 0.005;
 
@@ -122,8 +122,9 @@ test("bill percentages are sent as fractions, never whole numbers", () => {
 
   const bills = buildBillRecords(input(), 9001);
   const f = QB_AWARD.billLines;
-  assert.equal(val(bills[0], f.billPct), 0.1, "Movilización is 0.1, not 10");
-  assert.equal(val(bills[5], f.billPct), 0.2, "Empañetado is 0.2, not 20");
+  // Movilización is capped on this award, so its share is 5.61%, not 10%.
+  assert.equal(val(bills[0], f.billPct), 0.0561);
+  assert.equal(val(bills[5], f.billPct), 0.2098);
   assert.ok(
     bills.every((b) => Number(val(b, f.billPct)) <= 1),
     "no bill may exceed 1, which is 100%",
@@ -133,11 +134,16 @@ test("bill percentages are sent as fractions, never whole numbers", () => {
   const whole = buildBillRecords(input({ jobType: "Repair" }), 9001);
   assert.equal(val(whole[0], f.billPct), 0.5);
 
-  // The fractions still describe the amounts they sit beside.
+  // The stated share must describe the amount actually being paid. Checked in
+  // this direction because the percentage is rounded to two decimals, so the
+  // inverse (amount / pct) carries that rounding magnified by a small pct.
   for (const b of bills) {
-    const pct = Number(val(b, f.billPct));
+    const share = Number(val(b, f.billPct)) * 100;
     const amount = Number(val(b, f.billAmount));
-    assert.ok(Math.abs(amount / pct - 178275.23) < 0.5, "amount / pct is the contract");
+    assert.ok(
+      Math.abs(share - (amount / 178275.23) * 100) <= 0.005 + 1e-9,
+      `${share}% does not describe ${amount}`,
+    );
   }
 });
 
@@ -153,15 +159,15 @@ test("the bills match the payment schedule and total the award", () => {
   const f = QB_AWARD.billLines;
 
   assert.equal(bills.length, 8, "Reconstruction uses the 8-milestone schedule");
-  assert.equal(val(bills[0], f.title), "Movilización (10%)");
-  assert.equal(val(bills[7], f.title), "Inspección Final (10%)");
+  assert.equal(val(bills[0], f.title), "Movilización (5.61%)");
+  assert.equal(val(bills[7], f.title), "Inspección Final (10.49%)");
 
   const total = bills.reduce((s, b) => s + Number(val(b, f.billAmount)), 0);
   assert.ok(Math.abs(total - 178275.23) < CENT, `bills total ${total}`);
 
-  const expected = scheduleAmounts(178275.23, PAY_SCHEDULES.standard8);
+  const expected = scheduleLines(178275.23, PAY_SCHEDULES.standard8);
   bills.forEach((b, i) => {
-    assert.ok(Math.abs(Number(val(b, f.billAmount)) - expected[i]) < CENT);
+    assert.ok(Math.abs(Number(val(b, f.billAmount)) - expected[i].amount) < CENT);
   });
 
   // Every bill points at the cost item, the job, and carries the QuickBooks text.

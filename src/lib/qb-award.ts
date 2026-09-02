@@ -1,4 +1,4 @@
-import { scheduleAmounts, scheduleForJobType } from "./schedule";
+import { scheduleForJobType, scheduleLines } from "./schedule";
 
 /**
  * Building the Quickbase records for an award — PO, Cost Item, Billing Line
@@ -174,17 +174,21 @@ export function buildBillRecords(
   costItemRecordId: number,
 ): QbRecord[] {
   const f = QB_AWARD.billLines;
-  const schedule = scheduleForJobType(input.jobType);
-  const amounts = scheduleAmounts(input.award, schedule);
+  const lines = scheduleLines(input.award, scheduleForJobType(input.jobType));
 
-  return schedule.map((milestone, i) => {
+  return lines.map((line) => {
     const rec: QbRecord = {
       [f.relatedItem]: { value: costItemRecordId },
-      [f.title]: { value: `${milestone.desc} (${milestone.pct}%)` },
+      [f.title]: { value: `${line.desc} (${line.pct}%)` },
       [f.billPct]: {
-        value: QB_AWARD.billPctAsFraction ? milestone.pct / 100 : milestone.pct,
+        // A percentage of two decimals is four as a fraction. Dividing alone
+        // gives 5.61 / 100 = 0.056100000000000004, so round rather than send
+        // float noise into a financial field.
+        value: QB_AWARD.billPctAsFraction
+          ? Math.round((line.pct / 100) * 1e6) / 1e6
+          : line.pct,
       },
-      [f.billAmount]: { value: amounts[i] },
+      [f.billAmount]: { value: line.amount },
       [f.qbLineItem]: { value: QB_AWARD.billLineQbLineItem },
       [f.costType]: { value: QB_AWARD.billLineCostType },
     };
@@ -210,8 +214,7 @@ export interface AwardPlan {
 
 export function planAward(input: AwardWriteInput): AwardPlan {
   const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
-  const schedule = scheduleForJobType(input.jobType);
-  const amounts = scheduleAmounts(input.award, schedule);
+  const lines = scheduleLines(input.award, scheduleForJobType(input.jobType));
 
   return {
     po: {
@@ -229,12 +232,12 @@ export function planAward(input: AwardWriteInput): AwardPlan {
       unit: QB_AWARD.costItemUnit,
     },
     bills: input.createBills
-      ? schedule.map((m, i) => ({
-          title: `${m.desc} (${m.pct}%)`,
-          pct: m.pct,
-          amount: amounts[i],
+      ? lines.map((l) => ({
+          title: `${l.desc} (${l.pct}%)`,
+          pct: l.pct,
+          amount: l.amount,
         }))
       : [],
-    billTotal: input.createBills ? amounts.reduce((s, a) => s + a, 0) : 0,
+    billTotal: input.createBills ? lines.reduce((s, l) => s + l.amount, 0) : 0,
   };
 }

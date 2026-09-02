@@ -7,7 +7,7 @@ import {
   MOBILISATION_NOTE,
   SIGNATORY,
 } from "./letter-content";
-import { scheduleAmounts, scheduleForJobType } from "./schedule";
+import { scheduleForJobType, scheduleLines } from "./schedule";
 import type { AwardResult } from "./types";
 
 export interface LetterInput {
@@ -63,8 +63,8 @@ export function renderLetter(input: LetterInput): string {
   const { result } = input;
   const chosen = result.tierRows.find((r) => r.selected);
   const schedule = scheduleForJobType(input.jobType);
-  const amounts = scheduleAmounts(result.award, schedule);
-  const scheduleTotal = amounts.reduce((s, a) => s + a, 0);
+  const lines = scheduleLines(result.award, schedule);
+  const scheduleTotal = lines.reduce((s, l) => s + l.amount, 0);
 
   const caseRows: [string, string][] = [
     ["Programa", orDash(input.program)],
@@ -182,10 +182,10 @@ export function renderLetter(input: LetterInput): string {
       <tr><th style="width:8%">#</th><th>Etapa</th><th class="num" style="width:14%">%</th><th class="num" style="width:24%">Monto del Pago</th></tr>
     </thead>
     <tbody>
-      ${schedule
+      ${lines
         .map(
-          (m, i) =>
-            `<tr><td>${m.n}</td><td>${m.desc}</td><td class="num">${m.pct.toFixed(2)}%</td><td class="num">${money(amounts[i])}</td></tr>`,
+          (l) =>
+            `<tr><td>${l.n}</td><td>${l.desc}</td><td class="num">${l.pct.toFixed(2)}%</td><td class="num">${money(l.amount)}</td></tr>`,
         )
         .join("\n      ")}
     </tbody>

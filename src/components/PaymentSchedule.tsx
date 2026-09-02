@@ -9,6 +9,7 @@ import {
   mobilisationOverage,
   scheduleAmounts,
   scheduleForJobType,
+  scheduleLines,
   scheduleKeyForJobType,
   type ScheduleKey,
 } from "@/lib/schedule";
@@ -41,9 +42,9 @@ const JOB_TYPES = [
 export default function PaymentSchedule({ jobType, onJobType, amount }: Props) {
   const key: ScheduleKey = scheduleKeyForJobType(jobType);
   const schedule = scheduleForJobType(jobType);
-  const amounts = scheduleAmounts(amount, schedule);
-  const total = amounts.reduce((sum, a) => sum + a, 0);
-  const overage = mobilisationOverage(schedule, amounts);
+  const lines = scheduleLines(amount, schedule);
+  const total = lines.reduce((sum, l) => sum + l.amount, 0);
+  const capped = mobilisationOverage(schedule, scheduleAmounts(amount, schedule));
   const guessing = isUnmappedJobType(jobType) || !jobType.trim();
 
   return (
@@ -103,15 +104,15 @@ export default function PaymentSchedule({ jobType, onJobType, amount }: Props) {
           </tr>
         </thead>
         <tbody>
-          {schedule.map((m, i) => (
-            <tr key={m.n} className="border-b border-navy-50 last:border-0">
-              <td className="tabular px-4 py-1.5 text-navy-600/60">{m.n}</td>
-              <td className="py-1.5 font-medium text-navy-800">{m.desc}</td>
+          {lines.map((l) => (
+            <tr key={l.n} className="border-b border-navy-50 last:border-0">
+              <td className="tabular px-4 py-1.5 text-navy-600/60">{l.n}</td>
+              <td className="py-1.5 font-medium text-navy-800">{l.desc}</td>
               <td className="tabular py-1.5 text-right text-navy-600/80">
-                {pct(m.pct)}
+                {pct(l.pct)}
               </td>
               <td className="tabular px-4 py-1.5 text-right font-medium text-navy-800">
-                {amount > 0 ? money(amounts[i]) : "—"}
+                {amount > 0 ? money(l.amount) : "—"}
               </td>
             </tr>
           ))}
@@ -132,13 +133,12 @@ export default function PaymentSchedule({ jobType, onJobType, amount }: Props) {
         </tfoot>
       </table>
 
-      {overage > 0 && (
-        <p className="border-t border-navy-100 bg-brand-red-50 px-4 py-2.5 text-xs text-brand-red-dark">
-          <strong>Movilización is {money(overage)} over the letter&rsquo;s cap.</strong>{" "}
-          The letter states mobilisation is limited to {money(MOBILISATION_CAP)}, but
-          the schedule pays {pct(PAY_SCHEDULES.standard8[0].pct)} of the award.
-          Quickbase does not apply the cap either — decide which figure is right
-          before sending.
+      {capped > 0 && (
+        <p className="border-t border-navy-100 bg-navy-50 px-4 py-2.5 text-xs text-navy-600/80">
+          <strong>Movilización is capped at {money(MOBILISATION_CAP)}.</strong> At{" "}
+          {pct(PAY_SCHEDULES.standard8[0].pct)} it would have been{" "}
+          {money(MOBILISATION_CAP + capped)}, so the {money(capped)} balance is
+          spread across the remaining stages and every percentage restated.
         </p>
       )}
     </section>

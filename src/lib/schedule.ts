@@ -94,19 +94,79 @@ export function scheduleAmounts(amount: number, schedule: Milestone[]): number[]
   return amounts;
 }
 
-/**
- * The award letter states that the mobilisation payment is capped at $10,000.
- * The code page does not apply that cap when it creates bills, so neither does
- * this — but a breach is worth surfacing rather than leaving it to be spotted
- * on the signed letter.
- */
+/** The award letter caps the mobilisation payment at $10,000. */
 export const MOBILISATION_CAP = 10000;
 
+function mobilisationIndex(schedule: Milestone[]): number {
+  return schedule.findIndex((m) => /^movilizaci/i.test(m.desc));
+}
+
+/** One row of the Desglose de Pagos: what is paid, and what share that is. */
+export interface ScheduleLine {
+  n: number;
+  desc: string;
+  /** The share of the award this line actually is, after any cap. */
+  pct: number;
+  amount: number;
+}
+
+/**
+ * Build the payment schedule for an award, applying the mobilisation cap.
+ *
+ * Movilización is the lesser of its scheduled share and $10,000. When the cap
+ * bites, the balance is spread across the remaining stages in proportion to
+ * their shares, and every percentage is restated from the amount actually
+ * being paid — so Movilización on a $180,800 award reads 5.53%, not 10%.
+ *
+ * The lines always total the award exactly. Capping without redistributing
+ * would bill the subcontractor less than the contract, and the percentages are
+ * derived from the amounts rather than tracked separately so the two cannot
+ * disagree.
+ *
+ * Percentages are each rounded to two decimals and may therefore sum to a
+ * hundredth either side of 100; the total row states 100.00%, as the letters
+ * this mirrors do.
+ */
+export function scheduleLines(amount: number, schedule: Milestone[]): ScheduleLine[] {
+  if (!schedule.length) return [];
+
+  const line = (m: Milestone, value: number): ScheduleLine => ({
+    n: m.n,
+    desc: m.desc,
+    // round() already works to two decimals; scaling again gave four.
+    pct: amount > 0 ? round((value / amount) * 100) : m.pct,
+    amount: value,
+  });
+
+  const uncapped = scheduleAmounts(amount, schedule);
+  const i = mobilisationIndex(schedule);
+  const otherPct = schedule.reduce((sum, m, j) => (j === i ? sum : sum + m.pct), 0);
+
+  // Nothing to cap, or nowhere to move the balance to. A schedule that is
+  // mobilisation alone stays uncapped rather than stranding the difference.
+  if (i === -1 || !(amount > 0) || uncapped[i] <= MOBILISATION_CAP || !(otherPct > 0)) {
+    return schedule.map((m, j) => line(m, uncapped[j]));
+  }
+
+  const remaining = round(amount - MOBILISATION_CAP);
+  const amounts = schedule.map((m, j) =>
+    j === i ? MOBILISATION_CAP : round(remaining * (m.pct / otherPct)),
+  );
+
+  // Drift from rounding lands on the last line that is not the capped one, so
+  // the rows come to the award exactly and Movilización stays on $10,000.
+  const last = i === schedule.length - 1 ? schedule.length - 2 : schedule.length - 1;
+  amounts[last] = round(amounts[last] + (amount - amounts.reduce((s, a) => s + a, 0)));
+
+  return schedule.map((m, j) => line(m, amounts[j]));
+}
+
+/** How much the uncapped schedule would exceed the mobilisation cap by. */
 export function mobilisationOverage(
   schedule: Milestone[],
   amounts: number[],
 ): number {
-  const i = schedule.findIndex((m) => /^movilizaci/i.test(m.desc));
+  const i = mobilisationIndex(schedule);
   if (i === -1) return 0;
   const over = (amounts[i] ?? 0) - MOBILISATION_CAP;
   return over > 0 ? round(over) : 0;

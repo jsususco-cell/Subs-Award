@@ -13,6 +13,7 @@ import {
   type FondoSubmission,
 } from "./fondo";
 import {
+  approvedMail,
   fondoFormUrl,
   formRequestMail,
   returnedMail,
@@ -160,4 +161,48 @@ test("links are refused rather than guessed when the base URL is unset", () => {
   if (had === undefined) delete process.env.APP_BASE_URL;
   else process.env.APP_BASE_URL = had;
   if (hadVercel !== undefined) process.env.VERCEL_PROJECT_PRODUCTION_URL = hadVercel;
+});
+
+test("every message carries both a text and an HTML body", () => {
+  const c = { caseNumber: "PR-BR-50345", subcontractor: "ACME", awardedAmount: 178275.23, formUrl: "https://x/f/1" };
+  for (const m of [
+    formRequestMail(c),
+    reviewRequestMail(c, 150000, "https://x/review"),
+    returnedMail(c, "wrong case"),
+    approvedMail(c),
+  ]) {
+    assert.ok(m.text.length > 40, "text is the fallback for clients that refuse HTML");
+    assert.match(m.html, /^<!DOCTYPE html>/);
+    assert.match(m.html, /BYRDSON/);
+    assert.ok(m.subject.length > 0);
+  }
+});
+
+test("review notes are escaped, not injected into the email as markup", () => {
+  // The reviewer types this freely and the subcontractor receives it.
+  const m = returnedMail(
+    { caseNumber: "C1", subcontractor: "ACME", awardedAmount: 100, formUrl: "https://x/f/1" },
+    '<script>alert("x")</script> & "quoted"',
+  );
+  assert.ok(!m.html.includes("<script>"), "a script tag must not survive into the email");
+  assert.match(m.html, /&lt;script&gt;/);
+  assert.match(m.html, /&amp;/);
+  // The plain-text body keeps it verbatim, which is correct there.
+  assert.match(m.text, /<script>/);
+});
+
+test("the reviewer's email flags a short poliza in the subject line of the card", () => {
+  const c = { caseNumber: "C1", subcontractor: "ACME", awardedAmount: 200, formUrl: "" };
+  const short = reviewRequestMail(c, 50, "https://x/review");
+  assert.match(short.html, /Short by/);
+  assert.match(short.html, /short of the award/);
+
+  const full = reviewRequestMail(c, 200, "https://x/review");
+  assert.match(full.html, /Covers the award/);
+  assert.ok(!full.html.includes("Short by"));
+});
+
+test("an approval carries no action button, because there is nothing to do", () => {
+  const m = approvedMail({ caseNumber: "C1", subcontractor: "ACME", awardedAmount: 100, formUrl: "https://x/f/1" });
+  assert.ok(!m.html.includes("<a href"), "a button here would invite a pointless resubmission");
 });

@@ -142,6 +142,7 @@ export async function POST(request: Request) {
         cc: [],
         subject: mail.subject,
         text: mail.text,
+        html: mail.html,
         attachments: [],
       });
       notified = true;

@@ -147,8 +147,13 @@ export interface SendInput {
   to: string[];
   cc: string[];
   subject: string;
-  /** Plain-text body; a minimal HTML version is derived from it. */
+  /** Plain-text body; also the fallback for clients that refuse HTML. */
   text: string;
+  /**
+   * Optional HTML body. Without it a minimal version is derived from the text,
+   * which is right for a letter but not for a branded message.
+   */
+  html?: string;
   attachments: Attachment[];
 }
 
@@ -164,7 +169,7 @@ export async function sendMail(
     ...(input.cc.length ? { cc: input.cc.join(", ") } : {}),
     subject: input.subject,
     text: input.text,
-    html: textToHtml(input.text),
+    html: input.html ?? textToHtml(input.text),
     attachments: input.attachments,
   });
   return { messageId: info.messageId, mode };
@@ -193,7 +198,7 @@ async function sendViaN8n(input: SendInput): Promise<string> {
       cc: input.cc,
       subject: input.subject,
       text: input.text,
-      html: textToHtml(input.text),
+      html: input.html ?? textToHtml(input.text),
       fromName: MAIL_CONFIG.fromName,
       attachments: input.attachments.map((a) => ({
         filename: a.filename,

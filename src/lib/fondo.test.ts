@@ -6,6 +6,7 @@ import {
   base64Bytes,
   canSubmit,
   coverageOf,
+  currentFile,
   fondoConfigured,
   missingFondoFields,
   rejectReturn,
@@ -220,4 +221,40 @@ test("the reviewer address is read at call time and never guessed", () => {
 
   if (had === undefined) delete process.env.FONDO_REVIEWER_EMAIL;
   else process.env.FONDO_REVIEWER_EMAIL = had;
+});
+
+test("a resubmitted poliza shows the current file, not the first one", () => {
+  // Quickbase keeps every upload as a version, oldest first, and `url` points
+  // at the current one. Reading versions[0] named the FIRST document attached,
+  // so after a resubmission the reviewer saw the previous file's name beside
+  // the current file's link -- a good way to approve the wrong document.
+  const value = {
+    url: "/files/bwa4ktcq6/65/40/2",
+    versions: [
+      { fileName: "POLIZA PREMIER SERVICES LLC.pdf", versionNumber: 1 },
+      { fileName: "poliza-corregida.pdf", versionNumber: 2 },
+    ],
+  };
+  const cur = currentFile(value, "byrdsonservices.quickbase.com");
+  assert.equal(cur.name, "poliza-corregida.pdf");
+  assert.equal(cur.url, "https://byrdsonservices.quickbase.com/up/bwa4ktcq6/a/r65/e40/v2");
+
+  // The url decides, even when the versions are not in order.
+  const jumbled = {
+    url: "/files/bwa4ktcq6/65/40/1",
+    versions: [
+      { fileName: "second.pdf", versionNumber: 2 },
+      { fileName: "first.pdf", versionNumber: 1 },
+    ],
+  };
+  assert.equal(currentFile(jumbled, "r").name, "first.pdf");
+
+  // No url to go on: the highest version wins rather than the first listed.
+  const noUrl = { url: "", versions: [{ fileName: "a.pdf", versionNumber: 1 }, { fileName: "b.pdf", versionNumber: 3 }] };
+  assert.equal(currentFile(noUrl, "r").name, "b.pdf");
+
+  // Nothing attached at all.
+  assert.deepEqual(currentFile({ url: "", versions: [] }, "r"), { name: "", url: "" });
+  assert.deepEqual(currentFile(null, "r"), { name: "", url: "" });
+  assert.deepEqual(currentFile("legacy string", "r"), { name: "", url: "" });
 });

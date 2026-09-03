@@ -3,6 +3,7 @@ import { QB_CONFIG, isConfigured, queryAll } from "./quickbase";
 import { QB_AWARD } from "./qb-award";
 import {
   FONDO_FIELDS,
+  currentFile,
   FONDO_STATUS,
   type FondoCase,
   type FondoStatus,
@@ -40,6 +41,7 @@ function str(v: unknown): string {
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0;
 }
+
 
 /**
  * The vendor an access key belongs to.
@@ -98,13 +100,7 @@ export async function caseForVendor(
   const r = rows[0];
   if (!r) return null;
 
-  const poliza = val(r, FONDO_FIELDS.submittedPoliza);
-  const fileName =
-    poliza && typeof poliza === "object"
-      ? str(
-          (poliza as { versions?: { fileName?: string }[] }).versions?.[0]?.fileName,
-        )
-      : "";
+  const fileName = currentFile(val(r, FONDO_FIELDS.submittedPoliza)).name;
 
   return {
     recordId: num(val(r, ins.recordId)),
@@ -275,18 +271,11 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
 
   return rows
     .map((r) => {
-      const poliza = val(r, FONDO_FIELDS.submittedPoliza);
-      let polizaUrl = "";
-      let polizaName = "";
-      if (poliza && typeof poliza === "object") {
-        const o = poliza as { url?: string; versions?: { fileName?: string }[] };
-        polizaName = str(o.versions?.[0]?.fileName);
-        // {url:"/files/{dbid}/{rid}/{fid}/{ver}"} downloads from /up/...
-        const m = String(o.url ?? "").match(/^\/files\/([a-z0-9]+)\/(\d+)\/(\d+)\/(\d+)/i);
-        if (m) {
-          polizaUrl = `https://${QB_CONFIG.realm}/up/${m[1]}/a/r${m[2]}/e${m[3]}/v${m[4]}`;
-        }
-      }
+      // The current version, not the first: see currentFile above.
+      const { name: polizaName, url: polizaUrl } = currentFile(
+        val(r, FONDO_FIELDS.submittedPoliza),
+        QB_CONFIG.realm,
+      );
       return {
         recordId: num(val(r, ins.recordId)),
         caseNumber: str(val(r, ins.caseNumber)).trim(),

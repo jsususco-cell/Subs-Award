@@ -220,3 +220,40 @@ export function coverageOf(
 function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/**
+ * A Quickbase file field keeps every upload as a version, oldest first, and
+ * `url` points at the current one. Reading `versions[0]` therefore names the
+ * FIRST document ever attached -- so after a resubmission the reviewer would
+ * see the previous file's name beside the current file's link, which is a good
+ * way to approve the wrong document.
+ *
+ * The version in the url wins; failing that, the highest version number.
+ */
+interface QbFileVersion {
+  fileName?: string;
+  versionNumber?: number;
+  uploaded?: string;
+}
+
+export function currentFile(
+  value: unknown,
+  realm = "",
+): { name: string; url: string } {
+  if (!value || typeof value !== "object") return { name: "", url: "" };
+  const o = value as { url?: string; versions?: QbFileVersion[] };
+  const versions = Array.isArray(o.versions) ? o.versions : [];
+  if (!versions.length) return { name: "", url: "" };
+
+  const m = String(o.url ?? "").match(/^\/files\/([a-z0-9]+)\/(\d+)\/(\d+)\/(\d+)/i);
+  const wanted = m ? Number(m[4]) : 0;
+
+  const chosen =
+    versions.find((v) => Number(v.versionNumber) === wanted) ??
+    versions.reduce((a, b) => (Number(b.versionNumber) >= Number(a.versionNumber) ? b : a));
+
+  return {
+    name: String(chosen?.fileName ?? ""),
+    url: m && realm ? `https://${realm}/up/${m[1]}/a/r${m[2]}/e${m[3]}/v${m[4]}` : "",
+  };
+}

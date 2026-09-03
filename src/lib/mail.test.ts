@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isEmail, parseRecipients, sendKeyRequired } from "./mail";
+import { checkRecipients, isEmail, parseRecipients, sendKeyRequired } from "./mail";
 import { parseLetterInput } from "./letter-input";
 import { defaultBody, defaultSubject } from "./letter-email";
 import type { LetterInput } from "./letter";
@@ -186,4 +186,26 @@ test("the send key is required on a hosted deployment, optional locally", () => 
     if (saved.key === undefined) delete process.env.LETTER_SEND_KEY;
     else process.env.LETTER_SEND_KEY = saved.key;
   }
+});
+
+test("the allowlist is read at call time, so it cannot act on a stale value", () => {
+  const had = process.env.LETTER_SEND_ALLOWLIST;
+
+  delete process.env.LETTER_SEND_ALLOWLIST;
+  assert.equal(checkRecipients(["anyone@example.com"]).ok, true, "unset means no restriction");
+
+  // Set AFTER the module was imported: a snapshotted const would miss this,
+  // which is exactly how a rail silently fails to be a rail.
+  process.env.LETTER_SEND_ALLOWLIST = "admin@byrdsonservices.com,jsususco@byrdsonservices.com";
+  const blocked = checkRecipients(["outsider@example.com"]);
+  assert.equal(blocked.ok, false);
+  assert.deepEqual(blocked.blocked, ["outsider@example.com"]);
+
+  assert.equal(checkRecipients(["admin@byrdsonservices.com"]).ok, true);
+  // Case and spacing in the variable must not decide who can be mailed.
+  process.env.LETTER_SEND_ALLOWLIST = "  ADMIN@Byrdsonservices.com , jsususco@byrdsonservices.com ";
+  assert.equal(checkRecipients(["admin@byrdsonservices.com"]).ok, true);
+
+  if (had === undefined) delete process.env.LETTER_SEND_ALLOWLIST;
+  else process.env.LETTER_SEND_ALLOWLIST = had;
 });

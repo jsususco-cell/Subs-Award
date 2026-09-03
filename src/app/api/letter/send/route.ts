@@ -3,7 +3,7 @@ import { renderLetter } from "@/lib/letter";
 import { parseLetterInput } from "@/lib/letter-input";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 import {
-  MAIL_CONFIG,
+  allowlist,
   checkRecipients,
   explainSendError,
   isMailConfigured,
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
     if (check.blocked.length) {
       parts.push(
         `Blocked by LETTER_SEND_ALLOWLIST: ${check.blocked.join(", ")}. ` +
-          `Only ${MAIL_CONFIG.allowlist.join(", ")} can be mailed while the allowlist is set.`,
+          `Only ${allowlist().join(", ")} can be mailed while the allowlist is set.`,
       );
     }
     return NextResponse.json({ ok: false, error: parts.join(" ") }, { status: 400 });

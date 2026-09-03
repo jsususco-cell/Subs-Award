@@ -39,17 +39,25 @@ export const MAIL_CONFIG = {
   pass: process.env.GMAIL_APP_PASSWORD ?? "",
   serviceClient: process.env.GMAIL_SERVICE_ACCOUNT_EMAIL ?? "",
   fromName: process.env.MAIL_FROM_NAME ?? "Byrdson Services",
-  /**
-   * Optional rollout rail. When set, only these addresses can be written to —
-   * everything else is refused rather than delivered. Leave unset in normal
-   * operation; set it while testing so a real subcontractor cannot be mailed
-   * by accident.
-   */
-  allowlist: (process.env.LETTER_SEND_ALLOWLIST ?? "")
+};
+
+/**
+ * Optional rollout rail. When set, only these addresses can be written to —
+ * everything else is refused rather than delivered. Leave unset in normal
+ * operation; set it while testing so a real subcontractor cannot be mailed by
+ * accident.
+ *
+ * Read at call time, not snapshotted at import, for the same reason the send
+ * key is: a rail that acts on a stale value is not a rail. A module-level
+ * const would hold whatever the environment looked like when the function
+ * instance first booted.
+ */
+export function allowlist(): string[] {
+  return (process.env.LETTER_SEND_ALLOWLIST ?? "")
     .split(",")
     .map((a) => a.trim().toLowerCase())
-    .filter(Boolean),
-};
+    .filter(Boolean);
+}
 
 /**
  * The shared secret the browser must present to send. Same pattern as the
@@ -129,10 +137,9 @@ export interface RecipientCheck {
 /** Validate every address and apply the allowlist, if one is configured. */
 export function checkRecipients(addresses: string[]): RecipientCheck {
   const invalid = addresses.filter((a) => !isEmail(a));
-  const blocked = MAIL_CONFIG.allowlist.length
-    ? addresses.filter(
-        (a) => isEmail(a) && !MAIL_CONFIG.allowlist.includes(a.toLowerCase()),
-      )
+  const allowed = allowlist();
+  const blocked = allowed.length
+    ? addresses.filter((a) => isEmail(a) && !allowed.includes(a.toLowerCase()))
     : [];
   return { ok: invalid.length === 0 && blocked.length === 0, invalid, blocked };
 }

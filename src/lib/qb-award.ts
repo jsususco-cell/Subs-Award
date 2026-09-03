@@ -1,4 +1,5 @@
 import { scheduleForJobType, scheduleLines } from "./schedule";
+import { FONDO_FIELDS, FONDO_STATUS } from "./fondo";
 
 /**
  * Building the Quickbase records for an award — PO, Cost Item, Billing Line
@@ -254,6 +255,10 @@ export function buildInsuranceRecord(
     [f.relatedJob]: { value: input.jobRecordId },
     [f.relatedSub]: { value: input.subRecordId },
     [f.source]: { value: QB_AWARD.insuranceSource },
+    // Explicitly "awaiting" rather than left blank: the notifier only picks up
+    // that exact status, which is what keeps the 64 migrated submittals -- all
+    // of which have no status -- out of the mailing.
+    [FONDO_FIELDS.status]: { value: FONDO_STATUS.awaiting },
     // There is no Related PO field on this table, so the tie back to the
     // purchase order lives here rather than being lost.
     [f.comments]: {

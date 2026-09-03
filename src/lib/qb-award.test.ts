@@ -11,6 +11,7 @@ import {
   type AwardWriteInput,
 } from "./qb-award";
 import { PAY_SCHEDULES, scheduleLines } from "./schedule";
+import { FONDO_FIELDS, FONDO_STATUS } from "./fondo";
 
 const CENT = 0.005;
 
@@ -292,6 +293,11 @@ test("the award opens a Fondo submittal the case can be chased on", () => {
   // There is no Related PO field, so the link back is recorded in comments.
   assert.match(String(val(rec, f.comments)), /14541/);
   assert.equal(val(rec, f.source), QB_AWARD.insuranceSource);
+
+  // Without this the notifier, which matches the status exactly, would never
+  // pick the case up -- and a blank status is what the 64 migrated records
+  // carry, so blank cannot be treated as "awaiting".
+  assert.equal(val(rec, FONDO_FIELDS.status), FONDO_STATUS.awaiting);
 });
 
 test("the submittal carries ADA, because the poliza must cover the whole award", () => {

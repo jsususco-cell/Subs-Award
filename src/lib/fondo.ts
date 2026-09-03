@@ -13,11 +13,10 @@ import { QB_AWARD } from "./qb-award";
  */
 
 /**
- * Staging fields added by `scripts/setup-fondo-fields.mjs`.
+ * Staging fields, created on 2026-09-04 by `scripts/setup-fondo-fields.mjs`.
  *
- * Zero means the field does not exist yet. The setup script prints the real
- * ids; until they are filled in here `fondoConfigured()` is false and the
- * routes refuse rather than writing to field 0.
+ * Zero would mean a field does not exist yet, and `fondoConfigured()` is false
+ * while any is missing so the routes refuse rather than writing to field 0.
  */
 export type FondoFieldName =
   | "status"
@@ -31,15 +30,15 @@ export type FondoFieldName =
   | "formSentAt";
 
 export const FONDO_FIELDS: Record<FondoFieldName, number> = {
-  status: 0,
-  submittedAmount: 0,
-  submittedPoliza: 0,
-  submittedPolicyNumber: 0,
-  submittedAt: 0,
-  reviewNotes: 0,
-  reviewedBy: 0,
-  reviewedAt: 0,
-  formSentAt: 0,
+  status: 38,
+  submittedAmount: 39,
+  submittedPoliza: 40,
+  submittedPolicyNumber: 41,
+  submittedAt: 42,
+  reviewNotes: 43,
+  reviewedBy: 44,
+  reviewedAt: 45,
+  formSentAt: 46,
 };
 
 export const FONDO_STATUS = {

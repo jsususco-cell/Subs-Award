@@ -6,6 +6,8 @@ import {
   base64Bytes,
   canSubmit,
   coverageOf,
+  fondoConfigured,
+  missingFondoFields,
   rejectReturn,
   rejectSubmission,
   type FondoSubmission,
@@ -85,13 +87,17 @@ test("returning a submission requires a reason the subcontractor can act on", ()
   assert.equal(rejectReturn("The poliza is for the wrong case number."), null);
 });
 
-test("the staging fields are declared but not yet mapped to Quickbase", () => {
-  // Guards the placeholder: every id must be filled in once the fields exist,
-  // otherwise the routes would write to field 0.
+test("every staging field is mapped to a real Quickbase field", () => {
   const names = Object.keys(FONDO_FIELDS);
   assert.equal(names.length, 9);
-  assert.ok(names.includes("submittedPoliza"));
-  assert.ok(names.includes("status"));
+  // Field 0 does not exist; a zero here would mean a silent write to nowhere.
+  for (const [name, id] of Object.entries(FONDO_FIELDS)) {
+    assert.ok(id > 0, `${name} is not mapped`);
+  }
+  // Distinct ids -- a copy/paste slip would quietly overwrite another field.
+  assert.equal(new Set(Object.values(FONDO_FIELDS)).size, names.length);
+  assert.equal(fondoConfigured(), true);
+  assert.deepEqual(missingFondoFields(), []);
 });
 
 // --- the messages the flow sends -------------------------------------------

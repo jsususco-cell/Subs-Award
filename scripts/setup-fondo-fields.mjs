@@ -23,9 +23,14 @@ const env = Object.fromEntries(
     }),
 );
 
+// Creating fields needs schema rights, which the app's runtime token does not
+// have. QB_ADMIN_TOKEN is used for that and nothing else -- the app itself
+// keeps running as QB_USER_TOKEN.
+const TOKEN = env.QB_ADMIN_TOKEN || env.QB_USER_TOKEN;
+
 const H = {
   "QB-Realm-Hostname": env.QB_REALM,
-  Authorization: `QB-USER-TOKEN ${env.QB_USER_TOKEN}`,
+  Authorization: `QB-USER-TOKEN ${TOKEN}`,
   "Content-Type": "application/json",
 };
 

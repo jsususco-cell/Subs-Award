@@ -349,3 +349,52 @@ export async function vendorById(
     company: str(val(v, VENDOR_COMPANY)).trim(),
   };
 }
+
+/**
+ * Fetch the staged poliza itself, so it can be shown to the reviewer without
+ * sending them to Quickbase.
+ *
+ * The /up/ link only opens for someone with a live Quickbase session, which
+ * the review page cannot assume. Quickbase's file endpoint returns the bytes
+ * base64-encoded to a token holder, so the server reads it and hands it on.
+ * The token stays here; the browser only ever sees the document.
+ */
+export async function polizaFile(recordId: number): Promise<{
+  body: Buffer;
+  contentType: string;
+  fileName: string;
+} | null> {
+  if (!fondoConfigured()) return null;
+
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [QB_AWARD.insurance.recordId, FONDO_FIELDS.submittedPoliza],
+    where: `{${QB_AWARD.insurance.recordId}.EX.${recordId}}`,
+  });
+  const raw = rows[0] ? val(rows[0], FONDO_FIELDS.submittedPoliza) : null;
+  if (!raw || typeof raw !== "object") return null;
+
+  const url = String((raw as { url?: string }).url ?? "");
+  const m = url.match(/^\/files\/([a-z0-9]+)\/(\d+)\/(\d+)\/(\d+)/i);
+  if (!m) return null;
+
+  const res = await fetch(
+    `https://api.quickbase.com/v1/files/${m[1]}/${m[2]}/${m[3]}/${m[4]}`,
+    {
+      headers: {
+        "QB-Realm-Hostname": QB_CONFIG.realm,
+        Authorization: `QB-USER-TOKEN ${QB_CONFIG.token}`,
+      },
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) return null;
+
+  // The endpoint answers with the file base64-encoded, not as raw bytes.
+  const base64 = (await res.text()).trim();
+  return {
+    body: Buffer.from(base64, "base64"),
+    contentType: res.headers.get("content-type") ?? "application/pdf",
+    fileName: currentFile(raw).name || "poliza",
+  };
+}

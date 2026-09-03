@@ -10,6 +10,12 @@ import {
   rejectSubmission,
   type FondoSubmission,
 } from "./fondo";
+import {
+  fondoFormUrl,
+  formRequestMail,
+  returnedMail,
+  reviewRequestMail,
+} from "./fondo-mail";
 
 function sub(over: Partial<FondoSubmission> = {}): FondoSubmission {
   return {
@@ -83,7 +89,69 @@ test("the staging fields are declared but not yet mapped to Quickbase", () => {
   // Guards the placeholder: every id must be filled in once the fields exist,
   // otherwise the routes would write to field 0.
   const names = Object.keys(FONDO_FIELDS);
-  assert.equal(names.length, 8);
+  assert.equal(names.length, 9);
   assert.ok(names.includes("submittedPoliza"));
   assert.ok(names.includes("status"));
+});
+
+// --- the messages the flow sends -------------------------------------------
+
+test("the form request tells the subcontractor the amount that must be covered", () => {
+  const m = formRequestMail({
+    caseNumber: "PR-R3-10266",
+    subcontractor: "ALL POINTS ENVIRONMENTAL LLC",
+    awardedAmount: 178275.23,
+    formUrl: "https://example.com/fondo/abc/1",
+  });
+  assert.match(m.subject, /PR-R3-10266/);
+  assert.match(m.text, /\$178,275\.23/);
+  assert.match(m.text, /https:\/\/example\.com\/fondo\/abc\/1/);
+  // The lever the award letter names, restated where it is actionable.
+  assert.match(m.text, /Inspección Final/);
+});
+
+test("the reviewer is told whether the poliza covers the award", () => {
+  const base = {
+    caseNumber: "PR-R3-10266",
+    subcontractor: "ALL POINTS",
+    awardedAmount: 178275.23,
+    formUrl: "",
+  };
+  const short = reviewRequestMail(base, 150000, "https://example.com/fondo/review");
+  assert.match(short.text, /SHORT by \$28,275\.23/);
+
+  const full = reviewRequestMail(base, 178275.23, "https://example.com/fondo/review");
+  assert.match(full.text, /Covers the award/);
+  assert.ok(!full.text.includes("SHORT"));
+});
+
+test("a returned poliza carries the reason the subcontractor has to act on", () => {
+  const m = returnedMail(
+    {
+      caseNumber: "PR-R3-10266",
+      subcontractor: "ALL POINTS",
+      awardedAmount: 178275.23,
+      formUrl: "https://example.com/fondo/abc/1",
+    },
+    "La póliza es del caso equivocado.",
+  );
+  assert.match(m.text, /La póliza es del caso equivocado\./);
+  assert.match(m.text, /https:\/\/example\.com\/fondo\/abc\/1/);
+});
+
+test("links are refused rather than guessed when the base URL is unset", () => {
+  const had = process.env.APP_BASE_URL;
+  const hadVercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  delete process.env.APP_BASE_URL;
+  delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  // A relative link in an inbox is dead, so an empty string is the signal for
+  // the sender to refuse instead of mailing one.
+  assert.equal(fondoFormUrl("abc", 1), "");
+
+  process.env.APP_BASE_URL = "https://subs-award.vercel.app/";
+  assert.equal(fondoFormUrl("abc", 1), "https://subs-award.vercel.app/fondo/abc/1");
+
+  if (had === undefined) delete process.env.APP_BASE_URL;
+  else process.env.APP_BASE_URL = had;
+  if (hadVercel !== undefined) process.env.VERCEL_PROJECT_PRODUCTION_URL = hadVercel;
 });

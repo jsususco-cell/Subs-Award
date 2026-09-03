@@ -153,3 +153,210 @@ export async function updateSubmittal(
     throw new Error(`Quickbase rejected the update: ${JSON.stringify(errors).slice(0, 300)}`);
   }
 }
+
+/** A case waiting for its form link to go out. */
+export interface PendingNotice {
+  recordId: number;
+  caseNumber: string;
+  subcontractor: string;
+  awardedAmount: number;
+  vendorRecordId: number;
+  accessKey: string;
+  email: string;
+}
+
+/**
+ * Cases awarded but not yet asked for their poliza.
+ *
+ * The Form Sent stamp is what stops a subcontractor being mailed twice for one
+ * case: the sender stamps it immediately after a successful send, so a later
+ * run skips it. Cases whose vendor has no access key or no email address are
+ * left out and reported rather than silently dropped — somebody has to fix
+ * those by hand.
+ */
+export async function pendingNotices(limit = 25): Promise<{
+  ready: PendingNotice[];
+  unreachable: { recordId: number; caseNumber: string; reason: string }[];
+}> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.relatedSub,
+    ],
+    where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.awaiting}'}AND{${FONDO_FIELDS.formSentAt}.EX.''}`,
+  });
+
+  const ready: PendingNotice[] = [];
+  const unreachable: { recordId: number; caseNumber: string; reason: string }[] = [];
+
+  for (const r of rows.slice(0, limit)) {
+    const recordId = num(val(r, ins.recordId));
+    const caseNumber = str(val(r, ins.caseNumber)).trim();
+    const vendorRecordId = num(val(r, ins.relatedSub));
+
+    const vendors = vendorRecordId
+      ? await queryAll({
+          from: VENDOR_TABLE,
+          select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
+          where: `{3.EX.${vendorRecordId}}`,
+        })
+      : [];
+    const v = vendors[0];
+    const accessKey = v ? str(val(v, VENDOR_ACCESS_KEY)).trim() : "";
+    const email = v ? str(val(v, VENDOR_EMAIL)).trim() : "";
+
+    if (!v) {
+      unreachable.push({ recordId, caseNumber, reason: "no subcontractor on the case" });
+      continue;
+    }
+    if (!accessKey) {
+      unreachable.push({ recordId, caseNumber, reason: "the subcontractor has no access key" });
+      continue;
+    }
+    if (!email) {
+      unreachable.push({ recordId, caseNumber, reason: "the subcontractor has no email address" });
+      continue;
+    }
+
+    ready.push({
+      recordId,
+      caseNumber,
+      subcontractor:
+        str(val(r, ins.subcontractorName)).trim() || str(val(v, VENDOR_COMPANY)).trim(),
+      awardedAmount: num(val(r, ins.awardedAmount)),
+      vendorRecordId,
+      accessKey,
+      email,
+    });
+  }
+
+  return { ready, unreachable };
+}
+
+/** One row of the reviewer's queue. */
+export interface ReviewItem {
+  recordId: number;
+  caseNumber: string;
+  jobName: string;
+  subcontractor: string;
+  awardedAmount: number;
+  submittedAmount: number;
+  submittedPolicyNumber: string;
+  submittedBy: string;
+  submittedAt: string;
+  polizaUrl: string;
+  polizaName: string;
+}
+
+/** Everything sitting in "submitted, pending review", oldest first. */
+export async function reviewQueue(): Promise<ReviewItem[]> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      23,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.submittedBy,
+      FONDO_FIELDS.submittedAmount,
+      FONDO_FIELDS.submittedPolicyNumber,
+      FONDO_FIELDS.submittedAt,
+      FONDO_FIELDS.submittedPoliza,
+    ],
+    where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.submitted}'}`,
+  });
+
+  return rows
+    .map((r) => {
+      const poliza = val(r, FONDO_FIELDS.submittedPoliza);
+      let polizaUrl = "";
+      let polizaName = "";
+      if (poliza && typeof poliza === "object") {
+        const o = poliza as { url?: string; versions?: { fileName?: string }[] };
+        polizaName = str(o.versions?.[0]?.fileName);
+        // {url:"/files/{dbid}/{rid}/{fid}/{ver}"} downloads from /up/...
+        const m = String(o.url ?? "").match(/^\/files\/([a-z0-9]+)\/(\d+)\/(\d+)\/(\d+)/i);
+        if (m) {
+          polizaUrl = `https://${QB_CONFIG.realm}/up/${m[1]}/a/r${m[2]}/e${m[3]}/v${m[4]}`;
+        }
+      }
+      return {
+        recordId: num(val(r, ins.recordId)),
+        caseNumber: str(val(r, ins.caseNumber)).trim(),
+        jobName: str(val(r, 23)).trim(),
+        subcontractor: str(val(r, ins.subcontractorName)).trim(),
+        awardedAmount: num(val(r, ins.awardedAmount)),
+        submittedAmount: num(val(r, FONDO_FIELDS.submittedAmount)),
+        submittedPolicyNumber: str(val(r, FONDO_FIELDS.submittedPolicyNumber)),
+        submittedBy: str(val(r, ins.submittedBy)).trim(),
+        submittedAt: str(val(r, FONDO_FIELDS.submittedAt)).slice(0, 19).replace("T", " "),
+        polizaUrl,
+        polizaName,
+      };
+    })
+    .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+}
+
+/** The raw staged values, needed to copy a submission onto the record. */
+export async function stagedFor(recordId: number): Promise<{
+  amount: number;
+  file: unknown;
+  submittedAt: string;
+  caseNumber: string;
+  subcontractor: string;
+  awardedAmount: number;
+  vendorRecordId: number;
+} | null> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.relatedSub,
+      FONDO_FIELDS.submittedAmount,
+      FONDO_FIELDS.submittedAt,
+      FONDO_FIELDS.submittedPoliza,
+    ],
+    where: `{${ins.recordId}.EX.${recordId}}`,
+  });
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    amount: num(val(r, FONDO_FIELDS.submittedAmount)),
+    file: val(r, FONDO_FIELDS.submittedPoliza),
+    submittedAt: str(val(r, FONDO_FIELDS.submittedAt)),
+    caseNumber: str(val(r, ins.caseNumber)).trim(),
+    subcontractor: str(val(r, ins.subcontractorName)).trim(),
+    awardedAmount: num(val(r, ins.awardedAmount)),
+    vendorRecordId: num(val(r, ins.relatedSub)),
+  };
+}
+
+/** A vendor's access key and email, for links and notifications. */
+export async function vendorById(
+  recordId: number,
+): Promise<{ accessKey: string; email: string; company: string } | null> {
+  if (!recordId) return null;
+  const rows = await queryAll({
+    from: VENDOR_TABLE,
+    select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
+    where: `{3.EX.${recordId}}`,
+  });
+  const v = rows[0];
+  if (!v) return null;
+  return {
+    accessKey: str(val(v, VENDOR_ACCESS_KEY)).trim(),
+    email: str(val(v, VENDOR_EMAIL)).trim(),
+    company: str(val(v, VENDOR_COMPANY)).trim(),
+  };
+}

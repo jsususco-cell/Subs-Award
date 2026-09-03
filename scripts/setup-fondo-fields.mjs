@@ -39,6 +39,9 @@ export const FONDO_FIELDS = [
   { label: "Fondo Review Notes", fieldType: "text-multi-line" },
   { label: "Fondo Reviewed By", fieldType: "text" },
   { label: "Fondo Reviewed At", fieldType: "timestamp", fallback: "date" },
+  // Stamped when the form link goes out, so the scheduled sender never mails
+  // the same subcontractor twice for one case.
+  { label: "Fondo Form Sent At", fieldType: "timestamp", fallback: "date" },
 ];
 
 async function create(def) {

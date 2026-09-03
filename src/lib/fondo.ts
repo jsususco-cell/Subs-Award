@@ -27,7 +27,8 @@ export type FondoFieldName =
   | "submittedAt"
   | "reviewNotes"
   | "reviewedBy"
-  | "reviewedAt";
+  | "reviewedAt"
+  | "formSentAt";
 
 export const FONDO_FIELDS: Record<FondoFieldName, number> = {
   status: 0,
@@ -38,6 +39,7 @@ export const FONDO_FIELDS: Record<FondoFieldName, number> = {
   reviewNotes: 0,
   reviewedBy: 0,
   reviewedAt: 0,
+  formSentAt: 0,
 };
 
 export const FONDO_STATUS = {

@@ -18,6 +18,7 @@ import {
   formRequestMail,
   returnedMail,
   reviewRequestMail,
+  reviewerEmail,
 } from "./fondo-mail";
 
 function sub(over: Partial<FondoSubmission> = {}): FondoSubmission {
@@ -205,4 +206,18 @@ test("the reviewer's email flags a short poliza in the subject line of the card"
 test("an approval carries no action button, because there is nothing to do", () => {
   const m = approvedMail({ caseNumber: "C1", subcontractor: "ACME", awardedAmount: 100, formUrl: "https://x/f/1" });
   assert.ok(!m.html.includes("<a href"), "a button here would invite a pointless resubmission");
+});
+
+test("the reviewer address is read at call time and never guessed", () => {
+  const had = process.env.FONDO_REVIEWER_EMAIL;
+
+  delete process.env.FONDO_REVIEWER_EMAIL;
+  assert.equal(reviewerEmail(), "", "unset means nobody is emailed, not a default address");
+
+  // Set after import: a snapshotted const would miss this.
+  process.env.FONDO_REVIEWER_EMAIL = "  jsususco@byrdsonservices.com  ";
+  assert.equal(reviewerEmail(), "jsususco@byrdsonservices.com", "surrounding space must not break it");
+
+  if (had === undefined) delete process.env.FONDO_REVIEWER_EMAIL;
+  else process.env.FONDO_REVIEWER_EMAIL = had;
 });

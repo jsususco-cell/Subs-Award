@@ -9,6 +9,8 @@ import {
   type FondoSubmission,
 } from "@/lib/fondo";
 import { caseForVendor, updateSubmittal, vendorForKey } from "@/lib/fondo-server";
+import { fondoReviewUrl, reviewRequestMail, reviewerEmail } from "@/lib/fondo-mail";
+import { checkRecipients, isMailConfigured, sendMail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -108,5 +110,53 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, recordId: found.recordId });
+  // The submission is recorded. Telling the reviewer is a courtesy on top of
+  // that, never a condition of it: it is already in the queue at /fondo/review,
+  // so a failure here delays attention rather than losing the poliza. The
+  // subcontractor is told their poliza arrived either way -- from where they
+  // stand it did, and an error about our mail would only confuse them.
+  let reviewerNotified = false;
+  let reviewerError: string | null = null;
+  const to = reviewerEmail();
+
+  if (!to) {
+    reviewerError = "FONDO_REVIEWER_EMAIL is not set, so nobody was told.";
+  } else if (!isMailConfigured()) {
+    reviewerError = "Email is not configured on this deployment.";
+  } else if (!checkRecipients([to]).ok) {
+    reviewerError = `${to} is not a valid or allowlisted address.`;
+  } else {
+    const mail = reviewRequestMail(
+      {
+        caseNumber: found.caseNumber,
+        subcontractor: found.subcontractor,
+        awardedAmount: found.awardedAmount,
+        formUrl: "",
+      },
+      submission.insuranceAmount,
+      fondoReviewUrl(),
+    );
+    try {
+      await sendMail({
+        to: [to],
+        cc: [],
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+        attachments: [],
+      });
+      reviewerNotified = true;
+    } catch (e) {
+      reviewerError = e instanceof Error ? e.message : "send failed";
+    }
+  }
+
+  if (reviewerError) console.error("[fondo] reviewer notice:", reviewerError);
+
+  return NextResponse.json({
+    ok: true,
+    recordId: found.recordId,
+    reviewerNotified,
+    reviewerError,
+  });
 }

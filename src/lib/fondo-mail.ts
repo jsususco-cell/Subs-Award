@@ -311,6 +311,18 @@ export function fondoFormUrl(accessKey: string, recordId: number): string {
   return base ? `${base}/fondo/${accessKey}/${recordId}` : "";
 }
 
+/**
+ * Who gets told a poliza is waiting.
+ *
+ * Read at call time so it can be repointed without a rebuild, and unset means
+ * nobody is emailed rather than a default address being guessed. Nothing is
+ * lost when it is unset: the submission is already in the review queue, it
+ * just waits to be noticed rather than announcing itself.
+ */
+export function reviewerEmail(): string {
+  return (process.env.FONDO_REVIEWER_EMAIL ?? "").trim();
+}
+
 export function fondoReviewUrl(): string {
   const base = appBaseUrl();
   return base ? `${base}/fondo/review` : "";

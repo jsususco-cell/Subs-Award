@@ -4,6 +4,7 @@ import {
   QB_AWARD,
   buildBillRecords,
   buildCostItemRecord,
+  buildInsuranceRecord,
   buildPoRecord,
   planAward,
   splitAward,
@@ -28,7 +29,10 @@ function input(over: Partial<AwardWriteInput> = {}): AwardWriteInput {
     demoTotal: 60039.88,
     siteTotal: 88526.72,
     ada: 0,
+    caseNumber: "PR-R3-03073",
+    subcontractorName: "Acme Demolition",
     createBills: true,
+    createInsurance: true,
     ...over,
   };
 }
@@ -262,4 +266,40 @@ test("the contract and the bills carry ADA, because it is part of the award", ()
   const plan = planAward(withAda);
   assert.equal(plan.po.ada, 15000);
   assert.ok(Math.abs(plan.po.demolition + plan.po.site + plan.po.ada - 193275.23) < CENT);
+});
+
+test("the award opens a Fondo submittal the case can be chased on", () => {
+  const rec = buildInsuranceRecord(input(), 14541);
+  const f = QB_AWARD.insurance;
+
+  assert.equal(val(rec, f.caseNumber), "PR-R3-03073");
+  assert.equal(val(rec, f.subcontractorName), "Acme Demolition");
+  assert.equal(val(rec, f.relatedJob), 687);
+  assert.equal(val(rec, f.relatedSub), 2738);
+
+  // The poliza has to cover the contract, so the full award is what is owed.
+  assert.equal(val(rec, f.awardedAmount), 178275.23);
+
+  // Nothing has been submitted yet. Leaving these empty is what makes
+  // Coverage Status read "NO POLICY ON FILE" instead of hiding the case.
+  assert.equal(rec[String(f.insuranceAmount)], undefined);
+  assert.equal(rec[String(f.poliza)], undefined);
+  assert.equal(rec[String(f.dateSubmitted)], undefined, "no submission date for a submission that has not happened");
+
+  // Coverage Status (21) is a formula and must never be written.
+  assert.equal(rec[String(f.coverageStatus)], undefined);
+
+  // There is no Related PO field, so the link back is recorded in comments.
+  assert.match(String(val(rec, f.comments)), /14541/);
+  assert.equal(val(rec, f.source), QB_AWARD.insuranceSource);
+});
+
+test("the submittal carries ADA, because the poliza must cover the whole award", () => {
+  const rec = buildInsuranceRecord(input({ award: 193275.23, ada: 15000 }), 1);
+  assert.equal(val(rec, QB_AWARD.insurance.awardedAmount), 193275.23);
+});
+
+test("an unrounded award is not written to the submittal as a raw float", () => {
+  const rec = buildInsuranceRecord(input({ award: 178275.2272727273 }), 1);
+  assert.equal(val(rec, QB_AWARD.insurance.awardedAmount), 178275.23);
 });

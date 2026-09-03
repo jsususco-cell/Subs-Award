@@ -13,6 +13,10 @@ export interface CreatePoResult {
   poRecordId: number;
   costItemRecordId: number;
   billCount: number;
+  /** The Fondo poliza submittal opened for this award. */
+  insuranceRecordId?: number | null;
+  /** True when one already existed and a second was not created. */
+  insuranceExisting?: boolean;
   /** Who the award letter reached, when it went out with the records. */
   letterSentTo?: string[];
   /** Why it did not, when the records were created anyway. */
@@ -80,6 +84,7 @@ export default function CreatePoPanel({
   const [partial, setPartial] = useState<string | null>(null);
   const [sendKey, setSendKey] = useState("");
   const [keyNeeded, setKeyNeeded] = useState(false);
+  const [createInsurance, setCreateInsurance] = useState(true);
   const [sendLetter, setSendLetter] = useState(true);
   const [to, setTo] = useState("");
   const [toTouched, setToTouched] = useState(false);
@@ -107,7 +112,10 @@ export default function CreatePoPanel({
     demoTotal,
     siteTotal,
     ada,
+    caseNumber: jobName,
+    subcontractorName: subcontractor,
     createBills,
+    createInsurance,
   };
   const plan = planAward(input);
 
@@ -131,6 +139,8 @@ export default function CreatePoPanel({
       poRecordId?: number;
       costItemRecordId?: number;
       billCount?: number;
+      insuranceRecordId?: number | null;
+      insuranceExisting?: boolean;
     };
     try {
       const res = await fetch("/api/qb/award", {
@@ -172,6 +182,8 @@ export default function CreatePoPanel({
       poRecordId: body.poRecordId as number,
       costItemRecordId: body.costItemRecordId as number,
       billCount: body.billCount ?? 0,
+      insuranceRecordId: body.insuranceRecordId ?? null,
+      insuranceExisting: body.insuranceExisting ?? false,
     };
 
     if (willSend) {
@@ -222,6 +234,16 @@ export default function CreatePoPanel({
               created.billCount
                 ? `${created.billCount} created`
                 : "none — generate them in Quickbase"
+            }
+          />
+          <Line
+            label="Fondo poliza"
+            value={
+              created.insuranceRecordId
+                ? created.insuranceExisting
+                  ? `already open — #${created.insuranceRecordId}`
+                  : `submittal #${created.insuranceRecordId} opened`
+                : "not opened"
             }
           />
           <Line
@@ -363,6 +385,15 @@ export default function CreatePoPanel({
                   />
                   Create the {plan.bills.length || "payment"} bills
                 </label>
+                <label className="flex items-center gap-2 text-xs text-navy-700">
+                  <input
+                    type="checkbox"
+                    checked={createInsurance}
+                    onChange={(e) => setCreateInsurance(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--color-navy-700)]"
+                  />
+                  Open the Fondo poliza submittal
+                </label>
               </div>
             </div>
 
@@ -462,6 +493,14 @@ export default function CreatePoPanel({
                       plan.bills.length
                         ? `${plan.bills.length} lines totalling ${money(plan.billTotal)}`
                         : "none"
+                    }
+                  />
+                  <Row
+                    k="Fondo poliza"
+                    v={
+                      createInsurance
+                        ? `submittal opened for ${money(award)}, awaiting the poliza`
+                        : "not opening a submittal"
                     }
                   />
                   <Row

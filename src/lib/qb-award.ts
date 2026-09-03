@@ -13,6 +13,8 @@ export const QB_AWARD = {
     pos: "bukmrrvkz",
     costItems: "bukms5ah7",
     billLines: "bum6mrfti",
+    /** Insurance Policy Submittal — the per-case Fondo (CFSE) poliza. */
+    insurance: "bwa4ktcq6",
   },
   pos: {
     recordId: 3,
@@ -54,6 +56,36 @@ export const QB_AWARD = {
     costType: 50,
   },
   /** Defaults the code page applies on award. */
+  /**
+   * Insurance Policy Submittal (bwa4ktcq6). Awarding a subcontractor obliges
+   * them to produce a Fondo (CFSE) poliza covering the award, so the award
+   * opens the submittal with the amount to be covered already on it.
+   *
+   * Job Name (23) and Subcontractor - Company (31) are lookups: writing the
+   * Related Job and Related Subcontractor ids fills them in.
+   *
+   * Insurance Amount (13), Poliza (14), Date Submitted (11) and Submitted By
+   * (17) are deliberately left empty. Nothing has been submitted yet, and the
+   * Coverage Status formula reads a missing poliza as "NO POLICY ON FILE" --
+   * which is the point: the case shows up as outstanding the moment it is
+   * awarded. Dating a submission that has not happened would hide it.
+   */
+  insurance: {
+    recordId: 3,
+    caseNumber: 6,
+    subcontractorName: 8,
+    dateSubmitted: 11,
+    awardedAmount: 12,
+    insuranceAmount: 13,
+    poliza: 14,
+    comments: 16,
+    source: 18,
+    coverageStatus: 21,
+    relatedJob: 22,
+    relatedSub: 30,
+  },
+  insuranceSource: "Subcontractor Award System",
+
   costItemCostType: "Subcontractor",
   costItemUnit: "LS",
   /**
@@ -95,6 +127,11 @@ export interface AwardWriteInput {
   siteTotal: number;
   /** ADA conversion work, zero unless it applies to this subcontractor. */
   ada: number;
+  /** Case number for the insurance submittal, i.e. the job name. */
+  caseNumber: string;
+  /** Subcontractor name as awarded, recorded on the submittal. */
+  subcontractorName: string;
+  createInsurance: boolean;
   createBills: boolean;
 }
 
@@ -195,6 +232,33 @@ export function buildBillRecords(
     if (input.jobRecordId) rec[f.relatedJob] = { value: input.jobRecordId };
     return rec;
   });
+}
+
+/**
+ * Open the Fondo poliza submittal for this award.
+ *
+ * The amount written is the full award, because the poliza has to cover the
+ * contract -- the purchase order's Required Fondo Coverage is the award plus
+ * approved change orders, so anything less would read as short.
+ */
+export function buildInsuranceRecord(
+  input: AwardWriteInput,
+  poRecordId: number,
+): QbRecord {
+  const f = QB_AWARD.insurance;
+  return {
+    [f.caseNumber]: { value: input.caseNumber },
+    [f.subcontractorName]: { value: input.subcontractorName },
+    [f.awardedAmount]: { value: round(input.award) },
+    [f.relatedJob]: { value: input.jobRecordId },
+    [f.relatedSub]: { value: input.subRecordId },
+    [f.source]: { value: QB_AWARD.insuranceSource },
+    // There is no Related PO field on this table, so the tie back to the
+    // purchase order lives here rather than being lost.
+    [f.comments]: {
+      value: `Opened by the Subcontractor Award System on award. Purchase order #${poRecordId}. Awaiting the Fondo (CFSE) poliza.`,
+    },
+  };
 }
 
 /** A human-readable summary of exactly what a write would create. */

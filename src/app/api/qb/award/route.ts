@@ -4,6 +4,7 @@ import {
   QB_AWARD,
   buildBillRecords,
   buildCostItemRecord,
+  buildInsuranceRecord,
   buildPoRecord,
   type AwardWriteInput,
   type QbRecord,
@@ -57,6 +58,38 @@ async function createRecords(
   return ids;
 }
 
+/**
+ * Is there already a Fondo submittal for this job and subcontractor?
+ *
+ * A job can have several subcontractors, each owing their own poliza, so the
+ * pair is the key rather than the case number alone. Re-running an award must
+ * not leave two submittals for one obligation.
+ */
+async function existingSubmittal(
+  jobRecordId: number,
+  subRecordId: number,
+): Promise<number | null> {
+  const res = await fetch("https://api.quickbase.com/v1/records/query", {
+    method: "POST",
+    headers: {
+      "QB-Realm-Hostname": QB_CONFIG.realm,
+      Authorization: `QB-USER-TOKEN ${QB_CONFIG.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: QB_AWARD.tables.insurance,
+      select: [QB_AWARD.insurance.recordId],
+      where: `{${QB_AWARD.insurance.relatedJob}.EX.${jobRecordId}}AND{${QB_AWARD.insurance.relatedSub}.EX.${subRecordId}}`,
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data?: Record<string, { value: unknown }>[] };
+  const first = body.data?.[0];
+  const id = first?.[String(QB_AWARD.insurance.recordId)]?.value;
+  return typeof id === "number" ? id : null;
+}
+
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
@@ -88,7 +121,10 @@ function parseInput(raw: unknown): AwardWriteInput | null {
     demoTotal: num(o.demoTotal),
     siteTotal: num(o.siteTotal),
     ada: num(o.ada),
+    caseNumber: str(o.caseNumber),
+    subcontractorName: str(o.subcontractorName),
     createBills: o.createBills !== false,
+    createInsurance: o.createInsurance !== false,
   };
 }
 
@@ -141,6 +177,7 @@ export async function POST(request: Request) {
 
   let poId: number | null = null;
   let costItemId: number | null = null;
+  let billsCreated = false;
 
   try {
     [poId] = await createRecords(
@@ -162,6 +199,26 @@ export async function POST(request: Request) {
         buildBillRecords(input, costItemId),
         [QB_AWARD.billLines.recordId],
       );
+      billsCreated = billIds.length > 0;
+    }
+
+    // The Fondo submittal is the continuation of awarding: the subcontractor
+    // now owes a poliza covering the award. Opening it here is what puts the
+    // case on the insurance page as outstanding.
+    let insuranceId: number | null = null;
+    let insuranceExisting = false;
+    if (input.createInsurance) {
+      const already = await existingSubmittal(input.jobRecordId, input.subRecordId);
+      if (already) {
+        insuranceId = already;
+        insuranceExisting = true;
+      } else {
+        [insuranceId] = await createRecords(
+          QB_AWARD.tables.insurance,
+          [buildInsuranceRecord(input, poId)],
+          [QB_AWARD.insurance.recordId],
+        );
+      }
     }
 
     return NextResponse.json({
@@ -170,6 +227,8 @@ export async function POST(request: Request) {
       costItemRecordId: costItemId,
       billRecordIds: billIds,
       billCount: billIds.length,
+      insuranceRecordId: insuranceId,
+      insuranceExisting,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Quickbase write failed";
@@ -180,6 +239,7 @@ export async function POST(request: Request) {
     const created: string[] = [];
     if (poId) created.push(`PO record ${poId}`);
     if (costItemId) created.push(`Cost Item record ${costItemId}`);
+    if (billsCreated) created.push("the billing lines");
 
     return NextResponse.json(
       {
@@ -188,10 +248,12 @@ export async function POST(request: Request) {
         costItemRecordId: costItemId,
         error: message,
         partial: created.length
-          ? `Already created in Quickbase: ${created.join(" and ")}. ${
-              costItemId
-                ? "The bills did not get created — generate them from the Quickbase award page, or delete the PO and start again."
-                : "That PO has no cost item, so it carries no contract amount — delete it in Quickbase before retrying, or this award will exist twice."
+          ? `Already created in Quickbase: ${created.join(", ")}. ${
+              !costItemId
+                ? "That PO has no cost item, so it carries no contract amount — delete it in Quickbase before retrying, or this award will exist twice."
+                : billsCreated
+                  ? "The Fondo poliza submittal was not opened, so this case will not show as outstanding on the insurance page — add it there, or delete the PO and start again."
+                  : "The bills did not get created — generate them from the Quickbase award page, or delete the PO and start again."
             }`
           : null,
       },

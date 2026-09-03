@@ -79,6 +79,7 @@ export const QB_AWARD = {
     insuranceAmount: 13,
     poliza: 14,
     comments: 16,
+    submittedBy: 17,
     source: 18,
     coverageStatus: 21,
     relatedJob: 22,

@@ -164,7 +164,17 @@ export function buildSubmissionRecord(
  */
 export function buildApprovalRecord(
   recordId: number,
-  staged: { amount: number; file: unknown; submittedAt: string },
+  staged: {
+    amount: number;
+    /**
+     * The document to copy, as Quickbase accepts it for WRITING: a name and
+     * base64. The shape a query returns ({url, versions}) is not writable --
+     * sending that uploads nothing, silently, and the case goes on reading
+     * "NO POLICY ON FILE" while looking approved.
+     */
+    file: { fileName: string; data: string } | null;
+    submittedAt: string;
+  },
   reviewer: string,
 ): Record<string, { value: unknown }> {
   const f = FONDO_FIELDS;
@@ -178,9 +188,9 @@ export function buildApprovalRecord(
     [f.reviewedAt]: { value: new Date().toISOString() },
     [f.reviewNotes]: { value: "" },
   };
-  // A file field is copied by writing the same {fileName, data} payload; when
-  // the staged value cannot be re-sent the amount still lands, so the case
-  // stops reading as "no policy on file".
+  // Coverage Status is a formula that reads "NO POLICY ON FILE" whenever the
+  // Poliza field is empty, so without this the case never counts as covered no
+  // matter what the amount says. The caller has to have fetched the bytes.
   if (staged.file) rec[ins.poliza] = { value: staged.file };
   return rec;
 }

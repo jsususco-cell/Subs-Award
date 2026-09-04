@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   FONDO_FIELDS,
+  buildApprovalRecord,
   FONDO_STATUS,
   base64Bytes,
   canSubmit,
@@ -13,6 +14,9 @@ import {
   rejectSubmission,
   type FondoSubmission,
 } from "./fondo";
+import { QB_AWARD } from "./qb-award";
+
+const val = (rec: Record<string, { value: unknown }>, fid: number) => rec[String(fid)]?.value;
 import {
   approvedMail,
   fondoFormUrl,
@@ -257,4 +261,37 @@ test("a resubmitted poliza shows the current file, not the first one", () => {
   assert.deepEqual(currentFile({ url: "", versions: [] }, "r"), { name: "", url: "" });
   assert.deepEqual(currentFile(null, "r"), { name: "", url: "" });
   assert.deepEqual(currentFile("legacy string", "r"), { name: "", url: "" });
+});
+
+test("approval writes the document, not a reference to it", () => {
+  // Coverage Status reads "NO POLICY ON FILE" while Poliza (14) is empty, so
+  // an approval that copies only the amount records a decision that changes
+  // nothing: the case still shows uncovered. Quickbase writes files as
+  // {fileName, data}; the {url, versions} shape a query returns uploads
+  // nothing at all, and does so silently.
+  const rec = buildApprovalRecord(
+    66,
+    {
+      amount: 178275.23,
+      file: { fileName: "poliza.pdf", data: "JVBERi0=" },
+      submittedAt: "2026-09-04T14:06:18Z",
+    },
+    "Jem Sususco",
+  );
+  const ins = QB_AWARD.insurance;
+
+  assert.deepEqual(val(rec, ins.poliza), { fileName: "poliza.pdf", data: "JVBERi0=" });
+  assert.equal(val(rec, ins.insuranceAmount), 178275.23);
+  assert.equal(val(rec, ins.dateSubmitted), "2026-09-04");
+  assert.equal(val(rec, FONDO_FIELDS.status), FONDO_STATUS.approved);
+  assert.equal(val(rec, FONDO_FIELDS.reviewedBy), "Jem Sususco");
+
+  // Coverage Status (21) and Coverage Difference (20) are formulas.
+  assert.equal(rec[String(ins.coverageStatus)], undefined);
+  assert.equal(rec["20"], undefined);
+
+  // With no document there is nothing to write, and the caller must refuse
+  // rather than approve into an empty Poliza field.
+  const none = buildApprovalRecord(66, { amount: 1, file: null, submittedAt: "" }, "X");
+  assert.equal(none[String(ins.poliza)], undefined);
 });

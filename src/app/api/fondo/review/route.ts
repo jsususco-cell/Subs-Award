@@ -7,7 +7,7 @@ import {
   missingFondoFields,
   rejectReturn,
 } from "@/lib/fondo";
-import { stagedFor, updateSubmittal, vendorById } from "@/lib/fondo-server";
+import { polizaFile, stagedFor, updateSubmittal, vendorById } from "@/lib/fondo-server";
 import { approvedMail, fondoFormUrl, returnedMail } from "@/lib/fondo-mail";
 import {
   checkRecipients,
@@ -100,10 +100,34 @@ export async function POST(request: Request) {
     );
   }
 
+  // Approving has to carry the document across, not just the figure. Coverage
+  // Status reads "NO POLICY ON FILE" while the Poliza field is empty, so an
+  // approval without the bytes would record a decision that changes nothing.
+  // The bytes have to be fetched: what a query returns is a reference, and
+  // writing a reference back uploads nothing.
+  let file: { fileName: string; data: string } | null = null;
+  if (action === "approve") {
+    const fetched = await polizaFile(recordId);
+    if (!fetched) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "The submitted document could not be read, so approving would leave the case showing no policy on file. Nothing was changed.",
+        },
+        { status: 502 },
+      );
+    }
+    file = {
+      fileName: fetched.fileName,
+      data: fetched.body.toString("base64"),
+    };
+  }
+
   try {
     await updateSubmittal(
       action === "approve"
-        ? buildApprovalRecord(recordId, staged, reviewer)
+        ? buildApprovalRecord(recordId, { ...staged, file }, reviewer)
         : buildReturnRecord(recordId, notes, reviewer),
     );
   } catch (e) {

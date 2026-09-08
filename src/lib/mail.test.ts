@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkRecipients, isEmail, parseRecipients, sendKeyRequired } from "./mail";
+import {
+  archiveBcc,
+  checkRecipients,
+  isEmail,
+  parseRecipients,
+  sendKeyRequired,
+} from "./mail";
 import { parseLetterInput } from "./letter-input";
 import { defaultBody, defaultSubject } from "./letter-email";
 import type { LetterInput } from "./letter";
@@ -208,4 +214,24 @@ test("the allowlist is read at call time, so it cannot act on a stale value", ()
 
   if (had === undefined) delete process.env.LETTER_SEND_ALLOWLIST;
   else process.env.LETTER_SEND_ALLOWLIST = had;
+});
+
+test("the archive bcc is read at call time and validated", () => {
+  const had = process.env.LETTER_ARCHIVE_BCC;
+
+  delete process.env.LETTER_ARCHIVE_BCC;
+  assert.deepEqual(archiveBcc(), [], "unset means nobody is copied, not a guessed default");
+
+  process.env.LETTER_ARCHIVE_BCC = " admin@byrdsonservices.com ";
+  assert.deepEqual(archiveBcc(), ["admin@byrdsonservices.com"], "surrounding space must not break it");
+
+  process.env.LETTER_ARCHIVE_BCC = "admin@byrdsonservices.com,not-an-email,ops@byrdsonservices.com";
+  assert.deepEqual(
+    archiveBcc(),
+    ["admin@byrdsonservices.com", "ops@byrdsonservices.com"],
+    "a malformed entry is dropped rather than failing the whole send",
+  );
+
+  if (had === undefined) delete process.env.LETTER_ARCHIVE_BCC;
+  else process.env.LETTER_ARCHIVE_BCC = had;
 });

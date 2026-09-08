@@ -10,6 +10,7 @@ import {
 import { polizaFile, stagedFor, updateSubmittal, vendorById } from "@/lib/fondo-server";
 import { approvedMail, fondoFormUrl, returnedMail } from "@/lib/fondo-mail";
 import {
+  archiveBcc,
   checkRecipients,
   isMailConfigured,
   sendKey,
@@ -160,10 +161,15 @@ export async function POST(request: Request) {
       formUrl: fondoFormUrl(vendor.accessKey, recordId),
     };
     const mail = action === "approve" ? approvedMail(shape) : returnedMail(shape, notes);
+    // Only the approval is archived. A correction notice is a back-and-forth
+    // with the subcontractor, not a record of what was granted.
+    const bcc =
+      action === "approve" ? archiveBcc().filter((a) => a !== vendor.email) : [];
     try {
       await sendMail({
         to: [vendor.email],
         cc: [],
+        bcc,
         subject: mail.subject,
         text: mail.text,
         html: mail.html,

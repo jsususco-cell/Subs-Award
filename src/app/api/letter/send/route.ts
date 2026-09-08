@@ -4,6 +4,7 @@ import { parseLetterInput } from "@/lib/letter-input";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 import {
   allowlist,
+  archiveBcc,
   checkRecipients,
   explainSendError,
   isMailConfigured,
@@ -103,9 +104,13 @@ export async function POST(request: Request) {
 
   try {
     const pdf = await htmlToPdf(renderLetter(input));
+    // The office keeps a blind copy of every award letter that goes out.
+    const bcc = archiveBcc().filter((a) => !to.includes(a) && !cc.includes(a));
+
     const { messageId, mode } = await sendMail({
       to,
       cc,
+      bcc,
       subject,
       text,
       attachments: [

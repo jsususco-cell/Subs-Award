@@ -52,6 +52,21 @@ export const MAIL_CONFIG = {
  * const would hold whatever the environment looked like when the function
  * instance first booted.
  */
+/**
+ * Who is blind-copied on every letter that goes to a subcontractor, so the
+ * office keeps a copy of what was sent.
+ *
+ * Read at call time and unset means nobody, for the same reason the reviewer
+ * address is: a copy rule that quietly points at a stale address is worse than
+ * none, and guessing a default would mail someone who never asked for it.
+ */
+export function archiveBcc(): string[] {
+  return (process.env.LETTER_ARCHIVE_BCC ?? "")
+    .split(",")
+    .map((a) => a.trim())
+    .filter((a) => isEmail(a));
+}
+
 export function allowlist(): string[] {
   return (process.env.LETTER_SEND_ALLOWLIST ?? "")
     .split(",")
@@ -161,6 +176,11 @@ export interface SendInput {
    * which is right for a letter but not for a branded message.
    */
   html?: string;
+  /**
+   * Blind copies. Blind matters: the archive address is internal and must not
+   * be disclosed to a subcontractor, which a Cc would do.
+   */
+  bcc?: string[];
   attachments: Attachment[];
 }
 
@@ -174,6 +194,7 @@ export async function sendMail(
     from: `"${MAIL_CONFIG.fromName}" <${MAIL_CONFIG.user}>`,
     to: input.to.join(", "),
     ...(input.cc.length ? { cc: input.cc.join(", ") } : {}),
+    ...(input.bcc?.length ? { bcc: input.bcc.join(", ") } : {}),
     subject: input.subject,
     text: input.text,
     html: input.html ?? textToHtml(input.text),
@@ -203,6 +224,7 @@ async function sendViaN8n(input: SendInput): Promise<string> {
     body: JSON.stringify({
       to: input.to,
       cc: input.cc,
+      bcc: input.bcc ?? [],
       subject: input.subject,
       text: input.text,
       html: input.html ?? textToHtml(input.text),

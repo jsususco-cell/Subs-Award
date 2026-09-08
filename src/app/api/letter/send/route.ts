@@ -129,6 +129,9 @@ export async function POST(request: Request) {
       mode,
       to,
       cc,
+      // Reported so the archive copy is verifiable. A blind copy that silently
+      // stopped being applied would otherwise look identical to one that works.
+      bcc,
       attachment: pdfFileName(input.jobName),
       bytes: pdf.byteLength,
     });

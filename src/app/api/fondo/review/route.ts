@@ -189,5 +189,6 @@ export async function POST(request: Request) {
     recordId,
     notified,
     notifyError,
+    archivedTo: notified ? archiveBcc() : [],
   });
 }

@@ -1,0 +1,715 @@
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Byrdson — Puerto Rico Command Center</title>
+<!-- ============================================================
+     BYRDSON SERVICES / EXCELLO HOMES
+     MASTER DASHBOARD  ·  Quickbase Code Page
+     ------------------------------------------------------------
+     HOW IT WORKS
+       • Shows a grid of panels (one per dashboard).
+       • Click a panel  -> that dashboard opens IN THE SAME PAGE
+         inside a frame, with a "Back to menu" button.
+       • No page reload, no leaving the dashboard.
+     >>> THE ONLY THING YOU NEED TO EDIT IS THE  DASHBOARDS  ARRAY
+         BELOW (in the SCRIPT section near the bottom).  Paste each
+         existing dashboard's Code Page URL into the "url" field.
+     ============================================================ -->
+<style>
+  :root{
+    --navy:#0f2438;
+    --navy-2:#16344f;
+    --blue:#2f6fb0;
+    --blue-light:#4f93d8;
+    --gold:#d8a23a;
+    --bg:#eef2f6;
+    --card:#ffffff;
+    --ink:#1d2b39;
+    --muted:#6a7b8c;
+    --line:#dde5ed;
+    --radius:14px;
+    --shadow:0 6px 22px rgba(15,36,56,.10);
+    --shadow-hover:0 14px 34px rgba(15,36,56,.20);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- Top bar ---------- */
+  .topbar{
+    background:linear-gradient(135deg,var(--navy) 0%,var(--navy-2) 100%);
+    color:#fff;
+    padding:18px 26px;
+    display:flex;align-items:center;gap:16px;
+    box-shadow:0 2px 10px rgba(0,0,0,.18);
+    position:sticky;top:0;z-index:50;
+  }
+  .brand-logo{
+    height:40px;width:auto;flex:none;display:block;
+    background:#fff;border-radius:8px;padding:6px 10px;
+    box-shadow:0 3px 8px rgba(0,0,0,.22);
+  }
+  .brand-text h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.3px}
+  .brand-text p{margin:0;font-size:12px;color:#a9c0d6;letter-spacing:1px;text-transform:uppercase;font-weight:600}
+  .topbar .spacer{flex:1}
+  .back-btn{
+    display:none;align-items:center;gap:8px;
+    background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+    color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+    padding:9px 16px;border-radius:9px;transition:.18s;
+  }
+  .back-btn:hover{background:rgba(255,255,255,.22)}
+  a.back-btn{text-decoration:none}
+  .back-btn svg{width:15px;height:15px}
+  .crumb{display:none;font-size:13px;color:#bcd2e6}
+  .crumb b{color:#fff}
+  /* ---------- Live KTO strip ---------- */
+  .kto-strip{
+    display:none;align-items:center;gap:22px;flex-wrap:wrap;
+    background:linear-gradient(135deg,#12283e 0%,#1d3f5e 100%);
+    color:#fff;border-radius:var(--radius);padding:16px 22px;margin:0 2px 26px;
+    box-shadow:var(--shadow);text-decoration:none;transition:transform .18s,box-shadow .18s;
+  }
+  .kto-strip:hover{transform:translateY(-2px);box-shadow:var(--shadow-hover)}
+  .kto-strip.ready{display:flex}
+  .kto-lead{display:flex;flex-direction:column;gap:2px;min-width:190px}
+  .kto-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--gold)}
+  .kto-sub{font-size:13px;color:#bcd2e6}
+  .kto-stats{display:flex;gap:26px;flex-wrap:wrap;flex:1}
+  .kto-stat{display:flex;flex-direction:column;gap:1px}
+  .kto-num{font-size:24px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+  .kto-num.warn{color:#f6c453}
+  .kto-num.crit{color:#ff8f7a}
+  .kto-lbl{font-size:11px;color:#a9c0d6;letter-spacing:.4px;text-transform:uppercase;font-weight:600}
+  .kto-go{font-size:13px;font-weight:600;color:#cfe0f0;white-space:nowrap}
+  .stage-strip{background:linear-gradient(135deg,#3d2a0b 0%,#7a4c0e 100%)}
+  .stage-strip .kto-sub{color:#efd9b3}
+  .stage-strip .kto-lbl{color:#e4c995}
+  .stage-strip .kto-go{color:#f5e6c8}
+  @media (max-width:760px){.kto-stats{gap:18px}.kto-num{font-size:20px}}
+  /* ---------- Menu (grid) view ---------- */
+  #menuView{padding:30px 26px 50px;max-width:1180px;margin:0 auto}
+  .hero{margin:6px 2px 26px}
+  .hero h2{margin:0;font-size:24px;font-weight:700;color:var(--navy)}
+  .hero p{margin:6px 0 0;font-size:14px;color:var(--muted);max-width:640px}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+    gap:20px;
+  }
+  .panel{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 22px 20px;
+    cursor:pointer;text-align:left;width:100%;
+    box-shadow:var(--shadow);transition:transform .18s,box-shadow .18s,border-color .18s;
+    position:relative;overflow:hidden;
+    display:flex;flex-direction:column;min-height:182px;
+  }
+  .panel:before{
+    content:"";position:absolute;left:0;top:0;height:100%;width:5px;
+    background:var(--accent,var(--blue));
+  }
+  .panel:hover{transform:translateY(-4px);box-shadow:var(--shadow-hover);border-color:var(--accent,var(--blue))}
+  .panel:focus-visible{outline:3px solid var(--blue-light);outline-offset:2px}
+  a.panel{text-decoration:none;color:inherit}
+  .p-icon{
+    width:48px;height:48px;border-radius:12px;flex:none;
+    background:var(--accent-soft,#eaf2fb);color:var(--accent,var(--blue));
+    display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+  }
+  .p-icon svg{width:26px;height:26px}
+  .panel h3{margin:0 0 6px;font-size:17px;font-weight:700;color:var(--navy)}
+  .panel p{margin:0;font-size:13px;line-height:1.5;color:var(--muted);flex:1}
+  .p-open{
+    margin-top:14px;font-size:12.5px;font-weight:700;color:var(--accent,var(--blue));
+    display:flex;align-items:center;gap:6px;letter-spacing:.3px;
+  }
+  .p-open svg{width:14px;height:14px;transition:transform .18s}
+  .panel:hover .p-open svg{transform:translateX(4px)}
+  .footer-note{margin:30px 2px 0;font-size:12px;color:var(--muted)}
+  .section-title{
+    margin:30px 2px 14px;font-size:13px;font-weight:800;letter-spacing:1.2px;
+    text-transform:uppercase;color:var(--navy);display:flex;align-items:center;gap:12px;
+  }
+  #sections > .section-title:first-child{margin-top:4px}
+  .section-title:after{content:"";flex:1;height:1px;background:var(--line)}
+  /* ---------- Frame (report) view ---------- */
+  #frameView{display:none;flex-direction:column;position:fixed;inset:0;top:78px;background:#fff}
+  .frame-wrap{position:relative;flex:1;min-height:0}
+  #frameView iframe{width:100%;height:100%;border:0;display:block}
+  .frame-loading{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:14px;color:var(--muted);font-size:14px;background:#fff;
+  }
+  .spinner{
+    width:34px;height:34px;border-radius:50%;
+    border:3px solid var(--line);border-top-color:var(--blue);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (max-width:560px){
+    .topbar{padding:14px 16px}
+    #menuView{padding:22px 16px 40px}
+    .crumb{display:none !important}
+  }
+</style>
+</head>
+<body>
+  <!-- ============ TOP BAR ============ -->
+  <div class="topbar">
+    <img class="brand-logo"
+         src="https://byrdsonservices.com/wp-content/uploads/2013/10/cropped-cropped-cropped-cropped-ByrdsonServicesLogoHort2.png"
+         alt="Byrdson Services">
+    <div class="brand-text">
+      <p>Puerto Rico Command Center</p>
+    </div>
+    <div class="spacer"></div>
+    <span class="crumb" id="crumb"></span>
+    <a class="back-btn" id="newTabBtn" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>
+      Open in a new tab
+    </a>
+    <button class="back-btn" id="backBtn" onclick="showMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      Back to menu
+    </button>
+  </div>
+  <!-- ============ MENU (GRID) VIEW ============ -->
+  <div id="menuView">
+    <div class="hero">
+      <h2>Pick your lane</h2>
+      <p>Coordinators, Permits, Finance, Closeout. Each panel opens right here; use <b>Back to menu</b> to return. Start with <b>My Work</b>.</p>
+    </div>
+    <!-- Live KTO closeout status. Reads KTO Readiness with the signed-in QB session
+         (same legacy-API pattern as pages 89/91/102) - no user token prompt. -->
+    <a class="kto-strip" id="ktoStrip" href="https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pageID=105">
+      <div class="kto-lead">
+        <span class="kto-eyebrow">Key Turnover &mdash; live</span>
+        <span class="kto-sub" id="ktoSub">Loading closeout queue&hellip;</span>
+      </div>
+      <div class="kto-stats" id="ktoStats"></div>
+      <span class="kto-go">Open KTO Queue &rsaquo;</span>
+    </a>
+
+    <!-- Live PR stage funnel. Reads Jobs PR Stage (fid 1474) with the signed-in session. Hidden unless the read succeeds. -->
+    <a class="kto-strip stage-strip" id="stageStrip" href="https://byrdsonservices.quickbase.com/db/buskqh27b?a=q&query={35.EX.'OPEN'}AND{11.EX.'Puerto Rico'}AND{1474.XEX.''}&clist=6.490.34.880.1474.1476.1477.1295.1116.1136&slist=1475.1477&options=sortorder-D">
+      <div class="kto-lead">
+        <span class="kto-eyebrow">Open PR jobs by stage &mdash; live</span>
+        <span class="kto-sub" id="stageSub">Loading stages&hellip;</span>
+      </div>
+      <div class="kto-stats" id="stageStats"></div>
+      <span class="kto-go">Open the list &rsaquo;</span>
+    </a>
+    <div id="sections"><!-- sections injected by JS --></div>
+    <div class="footer-note" id="footNote"></div>
+  </div>
+  <!-- ============ FRAME (REPORT) VIEW ============ -->
+  <div id="frameView">
+    <div class="frame-wrap">
+      <div class="frame-loading" id="frameLoading"><div class="spinner"></div><span>Loading dashboard…</span></div>
+      <iframe id="dashFrame" title="Dashboard" referrerpolicy="same-origin"></iframe>
+    </div>
+  </div>
+<script>
+/* ================================================================
+   ▼▼▼  EDIT ONLY THIS LIST  ▼▼▼
+   For each dashboard, paste its Quickbase Code Page URL into "url".
+   A code-page URL usually looks like:
+     https://YOURREALM.quickbase.com/db/APP_DBID?a=dbpage&pageID=12
+   (You can also use a relative URL like  /db/APP_DBID?a=dbpage&pageID=12 )
+   Add or remove items freely — the grid rebuilds automatically.
+   ================================================================ */
+const QB = "https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pageID=";
+/* Lanes, one per role. Order inside a lane = the order people use them on a normal day.
+   Rebuilt 2026-08-22: orphaned pages 41 and 75 linked, 57/58 merged into 118, permits put on one lane. */
+const DASHBOARDS = [
+    { key:"prtransition", section:"Coordinators — every case, every day",
+          title:"PR EXISTING PROJECT WORK QUEUE",
+    desc:"Start here to bring existing Puerto Rico projects up to date, confirm Canopy stage and route, attach evidence, and send the transition for review.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r/ad506c1a-ac25-4967-b1e0-5f1d7f38d591?a=showpage&pageIdV2=52d055d1-9a0a-4a62-98cf-29eceb37c42c", color:"#b4235a", soft:"#fde7f0",
+    icon:'<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8"/>' },
+/* ---------------- Coordinators ---------------- */
+  { key:"mywork", section:"Coordinators — every case, every day",
+    title:"My Work — everything you owe",
+    desc:"Opens straight onto your own list from your Quickbase sign-in. Every open item you own across every case, most overdue first.",
+    url:QB+"114", color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"precontasks", section:"Coordinators — every case, every day",
+    title:"My Precon Tasks — what is on your plate",
+    desc:"Your open pre-construction tasks across every case, most urgent first, with the internal target date worked out from the Task Order. Coordinators, permits and PM seats are assigned; pick a person to see theirs.",
+    url:QB+"119", color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"grantsigning", section:"Coordinators — every case, every day",
+    title:"Grant Signing Day Sheet",
+    desc:"Every home still waiting on the Grant Agreement signature: schedule the visit, check off the no-price scope and plans, mark it signed.",
+    url:QB+"122", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>' },
+  { key:"directives", section:"Coordinators — every case, every day",
+    title:"Field Directives — site notes the sub must act on",
+    desc:"Every open directive on every PR case: drafts pulled from daily logs to review and send, subs that owe an answer, work reported done that needs a site check, escalations. Raise new ones from the Case Cockpit.",
+    url:QB+"137", color:"#a93226", soft:"#f7e2df",
+    icon:'<path d="M4 4h16v12H8l-4 4z"/><path d="M8 8h8M8 12h5"/>' },
+  { key:"sitewalks", section:"Coordinators — every case, every day",
+    title:"Site Walk Scheduler — get the walk on the calendar",
+    desc:"Every reconstruction and repair case still waiting for its initial site walk: homeowner phone, log each call, set the date. Estimator and superintendent get calendar invites; the shared PR site-visit calendar updates by itself; unanswered homeowners get flagged.",
+    url:QB+"138", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M9 16l2 2 4-4"/>' },
+  { key:"playbook", section:"Coordinators — every case, every day",
+    title:"How This System Works",
+    desc:"The playbook: awards, draws, the construction clock, weather delays, change orders, and every automatic email — in plain language.",
+    url:QB+"121", color:"#1f6feb", soft:"#e3edfb",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+  { key:"cockpit", section:"Coordinators — every case, every day",
+    title:"Case Cockpit — one project",
+    desc:"One page per case: milestone ladder with dates, what is next and who owns it, binder and documents, roof and bond chain, what is blocking.",
+    url:QB+"113", color:"#0f766e", soft:"#e0f2f0",
+    icon:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>' },
+  { key:"prstage", section:"Coordinators — every case, every day",
+    title:"Open PR Jobs by Stage",
+    desc:"Every open Puerto Rico job with its stage (read from Canopy, nobody types it) and how many days it has been there. Longest-waiting first.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh27b?a=q&query={35.EX.'OPEN'}AND{11.EX.'Puerto Rico'}AND{1474.XEX.''}&clist=6.490.34.880.1474.1476.1477.1295.1116.1136&slist=1475.1477&options=sortorder-D",
+    color:"#b8741a", soft:"#f7ebd5",
+    icon:'<path d="M4 19h16"/><path d="M6 16V9"/><path d="M10 16V5"/><path d="M14 16v-6"/><path d="M18 16v-3"/>' },
+  { key:"casedocs", section:"Coordinators — every case, every day",
+    title:"Case Documents — everything one house needs",
+    desc:"Every document a case will ever need, in one list, with what is already on file and what is missing. Says what is not set up rather than pretending nothing is needed.",
+    url:QB+"117", color:"#1b7f5a", soft:"#dff0e8",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>' },
+  { key:"precon", section:"Coordinators — every case, every day",
+    title:"Precon Command",
+    desc:"Every PR case in pre-construction: stage, task progress, permits, kickback SLAs. Filter by PM firm, employee, stage.",
+    url:QB+"55", color:"#e4573d", soft:"#fdeeea",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>' },
+  { key:"prschedule", section:"Coordinators — every case, every day",
+    title:"PR Schedule Spine",
+    desc:"Per-job schedule items, phase gates and task actions for Puerto Rico templates.",
+    url:QB+"41", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+  { key:"prscoping", section:"Coordinators — every case, every day",
+    title:"Scoping",
+    desc:"Feasibility, Xactimate scopes, takeoffs and pre-construction scope reviews, from the Canopy scoping export.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pagename=PR_Scoping_Dashboard.html",
+    color:"#2aa6a0", soft:"#e3f4f3",
+    icon:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>' },
+  { key:"canopystatus", section:"Coordinators — every case, every day",
+    title:"Canopy Case Status (NTP clocks)",
+    desc:"Construction clocks, permit deadlines and milestone ages over the Canopy all-cases export. Check the export date before quoting a number.",
+    url:QB+"28", color:"#3d7ea6", soft:"#e7f1f8",
+    icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>' },
+  { key:"engplans", section:"Coordinators — every case, every day",
+    title:"Engineering Plans Documents",
+    desc:"Engineering set-of-plans documents per case (PR Tracker). Same page as Paypoint Documents, different view.",
+    url:QB+"118&view=engplans", color:"#6b6a2e", soft:"#efeedd",
+    icon:'<path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/>' },
+
+  /* ---------------- Permits ---------------- */
+  { key:"recyclingplans", section:"Permits",
+    title:"Recycling Plans (DRNA)",
+    desc:"The Plan de Reduccion, Reutilizacion y Reciclaje filed per case with DRNA at construccion@drna.pr.gov. Open a case's plan and press Generar Formulario DRNA to print the completed application and the carta de compromiso. A plan is one of the five documents an OGPe permit package needs.",
+    url:"https://byrdsonservices.quickbase.com/db/bwa4yn4gi?a=q&query={3.GT.0}&clist=31.16.29.17.28.23&slist=29&opts=nos.", color:"#166534", soft:"#dcf0e2",
+    icon:'<path d="M7 19a4 4 0 0 1-3.4-6.1L7 7"/><path d="M17 5a4 4 0 0 1 3.4 6.1L17 17"/><path d="M9 21l-2-2 2-2"/><path d="M15 3l2 2-2 2"/>' },
+  { key:"wastehaulers", section:"Permits",
+    title:"Waste haulers & disposal sites",
+    desc:"DRNA-permitted collection companies and the landfills and markets they deliver to. Pick from here on a recycling plan so the permit number is never retyped.",
+    url:"https://byrdsonservices.quickbase.com/db/bwa4ynmxi?a=q&query={3.GT.0}&clist=6.7.8.9.10.14&slist=6&opts=nos.", color:"#6b7280", soft:"#eceef1",
+    icon:'<path d="M3 7h13v8H3z"/><path d="M16 10h4l1 3v2h-5z"/><circle cx="7" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>' },
+  { key:"pmnotes", section:"Field Ops",
+    title:"Job Notes — what the PMs can see",
+    desc:"Smartsheet stays as the window ICF, IEM and Tetra Tech read our job notes through. This shows whether what they can see is current: the newest site note a person wrote in Quickbase against the last one published to them. System-generated log entries are excluded so it compares real site narrative with real site narrative.",
+    url:QB+"129", color:"#7c2d12", soft:"#f3e3d8",
+    icon:'<path d="M4 4h13l3 3v13H4z"/><path d="M8 10h8M8 14h6"/>' },
+  { key:"permitcompliance", section:"Permits",
+    title:"Permits & Compliance — the daily worklist",
+    desc:"Every permit package and what it is still missing, plus which subcontractor Fondo policies do not cover their award. Click a red document chip and the PDF uploads straight onto the case. This replaces the Smartsheet permit and insurance trackers.",
+    url:QB+"124", color:"#0f766e", soft:"#dcf1ee",
+    icon:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"permitrunner", section:"Permits",
+    title:"In-House Permit Runner",
+    desc:"File permits ourselves, no PA: the 13 steps in order with due dates, what is next on every case, correction notices on the 48-hour clock, and a one-click switch to take any PA case in-house. Our engineer seals the plans either way.",
+    url:QB+"123", color:"#6d28d9", soft:"#ece6f8",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"permitcases", section:"Permits",
+    title:"Permit Cases — system of record",
+    desc:"Station pipeline, kickbacks, filed and issued dates and the coordinator on each case. Precon Command reads the same table.",
+    url:"https://byrdsonservices.quickbase.com/db/bv68ybxt4?a=q&query={8.XEX.''}&clist=6.8.9.34.11.63.71.31.32&slist=8.6",
+    color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M9 12l2 2 4-4"/><path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6z"/>' },
+  { key:"directory", section:"Finance — awards, draws, invoices",
+    title:"Directory & Documents",
+    desc:"Byrdson's contact book and the controlled-document register, searchable in one place instead of two Smartsheets. Contacts are cross-checked against the purchase-order vendor records, so where the phone book and the vendor file disagree about who to write to, it says so rather than leaving it to be found by an email that goes nowhere.",
+    url:QB+"132", color:"#3f6212", soft:"#e7efdc",
+    icon:'<path d="M4 4h13l3 3v13H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>' },
+
+  /* ---------------- Finance ---------------- */
+  { key:"scopechange", section:"Finance — awards, draws, invoices",
+    title:"Scope Changes",
+    desc:"Every scope change in flight, oldest first, next to what its job is worth and what we have already committed to spend on it — the one thing the Smartsheet can never show. Assign it, price it, note it and send it to QC without leaving Quickbase. Eight have never been assigned, the oldest waiting eighteen days.",
+    url:QB+"131", color:"#7a5c1c", soft:"#f3ebd8",
+    icon:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>' },
+  { key:"integrity", section:"Finance — awards, draws, invoices",
+    title:"Data Integrity",
+    desc:"Eleven checks, run live against the app every time you open it: template purchase orders that were never filled in, duplicates still counting as money, vendors nobody can write to, task orders the program cut after we committed. It exists because a number reached a screen before anyone looked at the records behind it — three jobs read as underwater by $218,845 that had never been paid a cent.",
+    url:QB+"133", color:"#155e75", soft:"#daecf2",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M9.5 12.5l2 2 3.5-4"/>' },
+  { key:"jobpnl", section:"Finance — awards, draws, invoices",
+    title:"Job Profitability",
+    desc:"What each job is worth against everything we have committed to spend on it. Contract value comes from the program task order — a number that only exists in Quickbase because we migrated All Cases Export. Sorted worst first, so the jobs already committed past their contract are at the top. Click a job for the purchase orders and card spend behind the figure. Margin is before Byrdson\'s own labour.",
+    url:QB+"130", color:"#b42318", soft:"#f7e2e0",
+    icon:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>' },
+  { key:"subinsurance", section:"Finance — awards, draws, invoices",
+    title:"Subcontractor Insurance & Audit Credit",
+    desc:"Every subcontractor policy we hold, and how much of what we paid them was actually performed while a certificate was in force. What is not evidenced gets rated as Byrdson's own work at our GL and auto audit.",
+    url:QB+"125", color:"#155e75", soft:"#dbeef4",
+    icon:'<path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"insurancedocs", section:"Finance — awards, draws, invoices",
+    title:"Insurance Documents",
+    desc:"Every insurance document Byrdson holds, with the file one click away. The Fondo (CFSE) poliza issued per case — all 64 submissions and 78 files from the Insurance Policy Submittal Smartsheet — alongside the subcontractors' own general liability, workers' comp and COI certificates, and the policies read out of them. Says plainly where each file is stored.",
+    url:QB+"134", color:"#0f766e", soft:"#d7eeeb",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M8 12h8M12 8v8"/>' },
+  { key:"coiintake", section:"Finance — awards, draws, invoices",
+    title:"COI Intake — file a certificate",
+    desc:"The inbound side of the insurance chase. Every subcontractor with live Puerto Rico work, what we actually hold for them, and what it is costing in held first payments. When a certificate comes back, file it here in one step — the PDF is stored on the vendor and the policy is marked verified by a person.",
+    url:QB+"127", color:"#0e7490", soft:"#d9eff4",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M12 8v6"/><path d="M9 11h6"/>' },
+  { key:"ccreceipts", section:"Finance — awards, draws, invoices",
+    title:"Credit Card Receipts — submit & review",
+    desc:"Replaces the Smartsheet receipt form. Submit a company-card receipt with the file attached, and — unlike the old form — tie it to the job it belongs to instead of typing the case number into the note. All 92 historic receipts and 106 files were migrated on 24 Aug 2026 and reconcile to the cent.",
+    url:QB+"128", color:"#7c3aed", soft:"#eae4fb",
+    icon:'<path d="M2 7h20v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><path d="M2 11h20"/><path d="M6 16h4"/>' },
+  { key:"subsaward", section:"Finance — awards, draws, invoices",
+    title:"Contractor Award — Start Here",
+    desc:"Open the Case Cockpit, select the project, then use + Sub Award. Canopy source, compliance, independent review, approval and controlled letter delivery are enforced.",
+    url:QB+"113",
+    color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M12 2l3 6 6 1-4.5 4 1 6-5.5-3-5.5 3 1-6L3 9l6-1z"/>' },
+  { key:"paypoints", section:"Finance — awards, draws, invoices",
+    title:"Paypoint Documents",
+    desc:"Pay point documents per case (PR Tracker). Same page as Engineering Plans, different view.",
+    url:QB+"118&view=paypoints", color:"#2e7d4f", soft:"#e2f1e7",
+    icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>' },
+  { key:"invoicetracker", section:"Finance — awards, draws, invoices",
+    title:"Puerto Rico Invoice Tracker",
+    desc:"Pick a PR job and see its owner invoices, with a prefilled add-invoice link.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pagename=Puerto_Rico_Invoice_Tracker.html",
+    color:"#0f766e", soft:"#e0f2f0",
+    icon:'<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/>' },
+  { key:"oikanban", section:"Finance — awards, draws, invoices",
+    title:"Owner Invoices Kanban",
+    desc:"Drag owner invoices between Submitted, Program Approved and Paid; edit amounts inline. This page writes to Owner Invoices.",
+    url:QB+"75", color:"#a8322d", soft:"#f6e3e2",
+    icon:'<rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/>' },
+  { key:"backcharge", section:"Finance — awards, draws, invoices",
+    title:"CM-Furnished & Back-Charges",
+    desc:"CM-furnished purchases and back-charge deductions against sub draws.",
+    url:QB+"110", color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M3 6h18"/><path d="M5 6l1 14h12l1-14"/><path d="M10 11v5M14 11v5"/>' },
+  { key:"subperf", section:"Finance — awards, draws, invoices",
+    title:"Sub Performance",
+    desc:"180-day clocks per sub, milestone pace, failed inspections and $500 charges.",
+    url:QB+"120", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>' },
+  { key:"trackerdocs", section:"Coordinators — every case, every day",
+    title:"Tracker Documents",
+    desc:"Paypoint packages, engineering plans and form links from the Puerto Rico Tracker — the old Paypoints and Engineering pages both point here.",
+    url:QB+"118", color:"#0369a1", soft:"#e0f0fa",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>' },
+  { key:"finanalytics", section:"Analytics — money & progress",
+    title:"PR Financial (AP & Vendors)",
+    desc:"Committed vs invoiced vs paid, AP aging, top vendors and spend categories across the PR portfolio.",
+    url:QB+"31", color:"#16697a", soft:"#e0eff3",
+    icon:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
+  { key:"profitability", section:"Analytics — money & progress",
+    title:"PR Profitability",
+    desc:"Contract value, committed POs and gross profit per job, by program and job type.",
+    url:QB+"32", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>' },
+  { key:"pmdash", section:"Analytics — money & progress",
+    title:"PM Dashboard (All Cases)",
+    desc:"Every Canopy case by status, team workload, cost variance and award mix.",
+    url:QB+"33", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' },
+  { key:"dailylogs", section:"Analytics — money & progress",
+    title:"Daily Logs",
+    desc:"Field logging coverage and freshness per case, with the most recent site notes.",
+    url:QB+"34", color:"#b45309", soft:"#f7ebd5",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/>' },
+  { key:"prinventory", section:"Finance — awards, draws, invoices",
+    title:"Inventory Tracker",
+    desc:"PR warehouse: receive, issue, order, count, house material sets.",
+    url:QB+"109", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>' },
+  { key:"selections", section:"Finance — awards, draws, invoices",
+    title:"Homeowner Selections",
+    desc:"Selections per case with the material takeoff lines behind each one.",
+    url:QB+"112", color:"#2aa6a0", soft:"#e3f4f3",
+    icon:'<path d="M4 4h16v16H4z"/><path d="M9 9l2 2 4-4"/><path d="M9 15l2 2 4-4"/>' },
+
+  /* ---------------- Closeout ---------------- */
+  { key:"ktohome", section:"Closeout & Warranty (KTO)",
+    title:"KTO Home — start here",
+    desc:"Every open closeout case and what it still owes: certifications, binder sections, diligences.",
+    url:QB+"105", color:"#12283e", soft:"#e3e8ee",
+    icon:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>' },
+  { key:"handout", section:"Closeout & Warranty (KTO)",
+    title:"Hand Out Work — assign it and date it",
+    desc:"Give open work a named person and a real due date, one case or one seat at a time. The only page that assigns.",
+    url:QB+"116", color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>' },
+  { key:"ktoqueue", section:"Closeout & Warranty (KTO)",
+    title:"KTO Queue",
+    desc:"Post-substantial cases: fill the gaps that block certifications, case by case.",
+    url:QB+"102", color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>' },
+  { key:"ktoboard", section:"Closeout & Warranty (KTO)",
+    title:"KTO Closeout Board",
+    desc:"One case: readiness, the nine PRDOH documents, binder progress, signatures.",
+    url:QB+"89", color:"#0f766e", soft:"#e0f2f0",
+    icon:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>' },
+  { key:"fileevidence", section:"Closeout & Warranty (KTO)",
+    title:"File Evidence",
+    desc:"Upload a signed certification, a binder section or a diligence document to the case's KTO Closeout folder in Drive.",
+    url:QB+"104", color:"#1b7f5a", soft:"#dff0e8",
+    icon:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>' },
+  { key:"ktomgmt", section:"Closeout & Warranty (KTO)",
+    title:"KTO Management Dashboard",
+    desc:"Portfolio view: closeout pipeline, exceptions queue, generation log.",
+    url:QB+"91", color:"#3d7ea6", soft:"#e7f1f8",
+    icon:'<path d="M4 19h16"/><path d="M6 16V9M10 16V5M14 16v-6M18 16v-3"/>' },
+  { key:"warrantybinder", section:"Closeout & Warranty (KTO)",
+    title:"Warranty Binder Schedule",
+    desc:"Binder sections per case, what is filed, what inherits from the equipment library.",
+    url:QB+"93", color:"#6b6a2e", soft:"#efeedd",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+  { key:"ktoequipment", section:"Closeout & Warranty (KTO)",
+    title:"Equipment & Serials",
+    desc:"Installed equipment per case with model and serial, matched to the library.",
+    url:QB+"92", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' },
+
+  /* ---------------- Subcontractor Award System ---------------- */
+  { key:"subsawardapp", section:"Subcontractor Award System",
+    title:"Subcontractor Award System",
+    desc:"Upload a scope export, work out the award, create the purchase order, cost item and bills, and send the award letter.",
+    url:"https://subs-award.vercel.app/", color:"#1F3864", soft:"#e3e8f2",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>' },
+  { key:"fondoreview", section:"Subcontractor Award System",
+    title:"Fondo Polizas to Review",
+    desc:"Polizas subcontractors have sent in: read the document, then approve it or send it back.",
+    url:"https://subs-award.vercel.app/fondo/review", color:"#0f766e", soft:"#e0f2f0",
+    icon:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>' },
+
+  /* ---------------- Tools ---------------- */
+  { key:"vendoraccess", section:"Tools & Utilities",
+    title:"Vendor Access Manager",
+    desc:"Invite and manage sub/vendor access.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pagename=Vendor%20Access%20Manager.html",
+    color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/>' },
+  { key:"raindelay", section:"Tools & Utilities",
+    title:"Rain Delay Report Generator",
+    desc:"Generate rain delay reports for weather-impacted schedule days. (Opens in a new tab.)",
+    url:"https://sites.google.com/byrdsonservices.com/raindelaytool/home", external:true,
+    color:"#3d7ea6", soft:"#e7f1f8",
+    icon:'<path d="M20 16.2A5 5 0 0018 7h-1.26A8 8 0 104 15.25"/><path d="M8 19v2M12 19v3M16 19v2"/>' },
+  { key:"wikiPR", section:"Tools & Utilities",
+    title:"Byrdson WIKI",
+    desc:"Process notes and how-tos.",
+    url:QB+"77", color:"#6b6a2e", soft:"#efeedd",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' }
+];
+
+/* ▲▲▲  STOP EDITING  ▲▲▲ ============================================ */
+/* ---- render panels grouped into sections ---- */
+const sectionsEl = document.getElementById('sections');
+const SVG = inner => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+inner+'</svg>';
+const arrow = SVG('<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>');
+const order=[], groups={};
+DASHBOARDS.forEach(d=>{const sec=d.section||'Dashboards';if(!groups[sec]){groups[sec]=[];order.push(sec);}groups[sec].push(d);});
+order.forEach(sec=>{
+  const h=document.createElement('h3');h.className='section-title';h.textContent=sec;sectionsEl.appendChild(h);
+  const g=document.createElement('div');g.className='grid';sectionsEl.appendChild(g);
+  groups[sec].forEach(d=>{
+    const label=d.external?'Open tool':'Open';
+    const b=document.createElement(d.external?'a':'button');
+    b.className='panel';
+    b.style.setProperty('--accent',d.color);
+    b.style.setProperty('--accent-soft',d.soft);
+    if(d.external){ b.href=d.url; b.target='_blank'; b.rel='noopener noreferrer'; }
+    else { b.onclick=()=>openDash(d.key); }
+    b.innerHTML='<div class="p-icon">'+SVG(d.icon)+'</div>'+
+      '<h3>'+d.title+'</h3>'+
+      '<p>'+d.desc+'</p>'+
+      '<div class="p-open">'+label+' '+arrow+'</div>';
+    g.appendChild(b);
+  });
+});
+/* ---- navigation logic (same-page swap) ---- */
+const menuView=document.getElementById('menuView');
+const frameView=document.getElementById('frameView');
+const frame=document.getElementById('dashFrame');
+const loading=document.getElementById('frameLoading');
+const backBtn=document.getElementById('backBtn');
+const newTabBtn=document.getElementById('newTabBtn');
+const crumb=document.getElementById('crumb');
+function openDash(key){
+  const d=DASHBOARDS.find(x=>x.key===key);
+  if(!d) return;
+  if(!d.url || d.url.startsWith('PASTE_')){
+    alert('No URL set yet for "'+d.title+'".\n\nOpen this code page and paste the dashboard\'s Code Page URL into the DASHBOARDS list.');
+    return;
+  }
+  if(d.external){ window.open(d.url,'_blank','noopener'); return; }
+  loading.style.display='flex';
+  frame.src=d.url;
+  frame.onload=()=>{ loading.style.display='none'; };
+  menuView.style.display='none';
+  frameView.style.display='flex';
+  backBtn.style.display='flex';
+  /* This page is sandboxed without allow-downloads, so a download started
+     inside the embedded frame silently does nothing. Always offer the way out. */
+  newTabBtn.href=d.url; newTabBtn.style.display='flex';
+  crumb.style.display='inline';
+  crumb.innerHTML='Dashboards&nbsp; / &nbsp;<b>'+d.title+'</b>';
+  if(location.hash!=='#'+key) history.replaceState(null,'','#'+key);
+  window.scrollTo(0,0);
+}
+function showMenu(){
+  frameView.style.display='none';
+  frame.src='about:blank';
+  menuView.style.display='block';
+  backBtn.style.display='none';
+  newTabBtn.style.display='none'; newTabBtn.removeAttribute('href');
+  crumb.style.display='none';
+  history.replaceState(null,'','#');
+}
+/* deep-link support: open with #operations etc. */
+window.addEventListener('DOMContentLoaded',()=>{
+  const h=location.hash.replace('#','');
+  if(h && DASHBOARDS.some(d=>d.key===h)) openDash(h);
+});
+/* footer hint shows which panels still need a URL */
+const missing=DASHBOARDS.filter(d=>!d.url||d.url.startsWith('PASTE_')).map(d=>d.title);
+document.getElementById('footNote').textContent =
+  missing.length ? '⚠ URLs still needed for: '+missing.join(', ')+'. Edit the DASHBOARDS list in this code page.' : '';
+/* ---- live KTO closeout numbers -------------------------------------------
+   Uses the signed-in Quickbase session (credentials:'same-origin'), the same
+   way pages 89/91/102 do, so nobody is asked to paste a user token here.
+   The strip stays hidden unless the read succeeds - a dead query must never
+   leave a wrong number on the command centre. -------------------------------*/
+(function(){
+  var APPTOKEN='c3ehy5gdh85tybw592yedx9u9vw', T_READINESS='bv9yseirg';
+  var F_COORD=128, F_BLOCKED=147, F_DAYS=149, F_INQUEUE=152;
+  function q(dbid,clist,query){
+    var xml='<qdbapi><apptoken>'+APPTOKEN+'</apptoken><clist>'+clist+'</clist><fmt>structured</fmt>'+
+            (query?'<query>'+query+'</query>':'')+'</qdbapi>';
+    return fetch('/db/'+dbid,{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/xml','QUICKBASE-ACTION':'API_DoQuery'},body:xml})
+      .then(function(r){return r.text();}).then(function(t){
+        var d=new DOMParser().parseFromString(t,'text/xml');
+        var ec=d.querySelector('errcode');
+        if(ec&&ec.textContent!=='0') throw new Error('errcode '+ec.textContent);
+        return Array.prototype.slice.call(d.querySelectorAll('record'));
+      });
+  }
+  function val(rec,fid){var e=rec.querySelector('f[id="'+fid+'"]');return e?e.textContent:'';}
+  q(T_READINESS,[F_COORD,F_BLOCKED,F_DAYS,F_INQUEUE].join('.'),'{'+F_INQUEUE+'.EX.1}')
+    .then(function(recs){
+      var waiting=recs.length, oldest=0, blocked=0, unassigned=0;
+      recs.forEach(function(r){
+        var d=parseFloat(val(r,F_DAYS))||0; if(d>oldest) oldest=d;
+        if((parseFloat(val(r,F_BLOCKED))||0)>0) blocked++;
+        if(!val(r,F_COORD).trim()) unassigned++;
+      });
+      var stats=[
+        {n:waiting,    l:'packages waiting'},
+        {n:oldest+'d', l:'oldest in queue', c:oldest>180?'crit':(oldest>90?'warn':'')},
+        {n:blocked,    l:'blocked on data', c:blocked>0?'warn':''},
+        {n:unassigned, l:'no coordinator',  c:unassigned>0?'crit':''}
+      ];
+      document.getElementById('ktoStats').innerHTML=stats.map(function(s){
+        return '<div class="kto-stat"><span class="kto-num '+(s.c||'')+'">'+s.n+
+               '</span><span class="kto-lbl">'+s.l+'</span></div>';
+      }).join('');
+      document.getElementById('ktoSub').textContent = waiting
+        ? 'Cases past substantial inspection awaiting turnover'
+        : 'Nothing waiting on closeout right now';
+      document.getElementById('ktoStrip').classList.add('ready');
+    })
+    .catch(function(e){ if(window.console) console.log('[PR Command Center] KTO strip skipped:',e.message); });
+})();
+/* ---- live PR stage funnel (Jobs fid 1474, formula from Canopy summaries) ---- */
+(function(){
+  var T_JOBS='buskqh27b', F_STAGE=1474, F_DAYS=1477;
+  var xml='<qdbapi><apptoken>'+'c3ehy5gdh85tybw592yedx9u9vw'+'</apptoken><clist>'+F_STAGE+'.'+F_DAYS+'</clist><fmt>structured</fmt>'+
+          "<query>{35.EX.'OPEN'}AND{11.EX.'Puerto Rico'}</query></qdbapi>";
+  fetch('/db/'+T_JOBS,{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/xml','QUICKBASE-ACTION':'API_DoQuery'},body:xml})
+  .then(function(r){return r.text();}).then(function(t){
+    var d=new DOMParser().parseFromString(t,'text/xml');
+    var ec=d.querySelector('errcode'); if(ec&&ec.textContent!=='0') throw new Error('errcode '+ec.textContent);
+    var recs=Array.prototype.slice.call(d.querySelectorAll('record'));
+    if(!recs.length) throw new Error('no rows');
+    var order=['1','3','4','5','6','8'], names={'1':'Intake','3':'Design','4':'Permit','5':'NTP','6':'Construction','8':'Closeout'};
+    var counts={}, old={}, unlinked=0;
+    recs.forEach(function(r){
+      var s=r.querySelector('f[id="'+F_STAGE+'"]'); s=s?s.textContent:'';
+      var k=s.charAt(0);
+      var days=parseFloat((r.querySelector('f[id="'+F_DAYS+'"]')||{}).textContent)||0;
+      if(!s){return;}
+      if(k==='0'){unlinked++;return;}
+      if(names[k]){counts[k]=(counts[k]||0)+1; if(days>180) old[k]=(old[k]||0)+1;}
+    });
+    var stats=order.map(function(k){
+      var n=counts[k]||0, o=old[k]||0;
+      return '<div class="kto-stat"><span class="kto-num '+(o>0?'warn':'')+'">'+n+'</span><span class="kto-lbl">'+names[k]+(o?' · '+o+' over 180d':'')+'</span></div>';
+    });
+    if(unlinked) stats.push('<div class="kto-stat"><span class="kto-num crit">'+unlinked+'</span><span class="kto-lbl">not linked to Canopy</span></div>');
+    document.getElementById('stageStats').innerHTML=stats.join('');
+    var counted=recs.length-recs.filter(function(r){var e=r.querySelector('f[id="'+F_STAGE+'"]');return !(e&&e.textContent);}).length;
+    document.getElementById('stageSub').textContent=counted+' open Puerto Rico cases (templates excluded). Stage comes from Canopy status; the day count from the last Canopy status change where one exists.';
+    document.getElementById('stageStrip').classList.add('ready');
+  })
+  .catch(function(e){ if(window.console) console.log('[PR Command Center] stage strip skipped:',e.message); });
+})();
+</script>
+</body>
+</html>
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

@@ -367,3 +367,25 @@ test("only Puerto Rico owes a Fondo poliza", () => {
   }
 });
 
+
+test("the mainland lists every subcontractor in region, not just the bench", () => {
+  /*
+   * "Eligible for Award" is the approved bench in Puerto Rico, where 20
+   * vendors carry it. On the mainland only 2 do — and both only qualify
+   * through Region "Both" — so filtering on it left almost nobody to award
+   * to. Dropping it takes the list from 2 to 183.
+   */
+  assert.equal(REGIONS.PR.awardEligibleOnly, true);
+  for (const key of MAINLAND) {
+    assert.equal(REGIONS[key].awardEligibleOnly, false);
+  }
+});
+
+test("dropping the eligibility filter does not drop the region filter", () => {
+  // A Florida screen must never offer a Puerto Rico vendor, bench or no bench.
+  for (const key of MAINLAND) {
+    assert.deepEqual(REGIONS[key].vendorRegions, ["Mainland", "Both"]);
+    assert.ok(!REGIONS[key].vendorRegions.includes("Puerto Rico"));
+    assert.ok(!REGIONS[key].vendorRegions.includes("No work on file"));
+  }
+});

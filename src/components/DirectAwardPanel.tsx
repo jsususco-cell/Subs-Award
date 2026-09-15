@@ -204,7 +204,7 @@ export default function DirectAwardPanel({
               Assignment
             </h2>
             <p className="mt-0.5 text-xs text-navy-600/70">
-              {cfg.label} jobs and award-eligible subcontractors.
+              {cfg.label} jobs and subcontractors.
             </p>
           </header>
 
@@ -268,7 +268,7 @@ export default function DirectAwardPanel({
             </div>
 
             <LookupField
-              label="Subcontractor (award-eligible)"
+              label={cfg.awardEligibleOnly ? "Subcontractor (award-eligible)" : "Subcontractor"}
               value={fields.subcontractor}
               placeholder="Company name"
               onChange={(v, extra) => {

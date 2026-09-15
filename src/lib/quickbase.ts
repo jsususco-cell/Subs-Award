@@ -196,12 +196,21 @@ export async function fetchSubs(
   if (f.region) select.push(f.region);
   if (f.email) select.push(f.email);
 
-  const eligible = `{${f.eligible}.EX.true}`;
+  /*
+   * "Eligible for Award" is the approved bench in Puerto Rico. On the mainland
+   * the field is barely maintained — two vendors carry it — so filtering on it
+   * there leaves almost nobody to award to, and the region alone is the filter.
+   */
+  const eligible = region.awardEligibleOnly ? `{${f.eligible}.EX.true}` : "";
   const regionOr = region.vendorRegions
     .map((v) => `{${f.region}.EX.'${v.replace(/'/g, "")}'}`)
     .join("OR");
   const regional =
-    f.region && regionOr ? `${eligible}AND(${regionOr})` : eligible;
+    f.region && regionOr
+      ? eligible
+        ? `${eligible}AND(${regionOr})`
+        : `(${regionOr})`
+      : eligible;
 
   const read = async (where: string) => {
     const rows = await queryAll({
@@ -224,7 +233,7 @@ export async function fetchSubs(
   if (!f.region) {
     return {
       items: await read(eligible),
-      warning: `Showing all award-eligible vendors — not filtered to ${region.label}. Set QB_VENDOR_REGION_FID (see npm run qb:vendor-regions).`,
+      warning: `Showing every vendor — not filtered to ${region.label}. Set QB_VENDOR_REGION_FID (see npm run qb:vendor-regions).`,
     };
   }
 
@@ -239,15 +248,15 @@ export async function fetchSubs(
    * only whisper about it in a warning. An empty list that says why is safer
    * than a plausible list that is wrong.
    */
-  const eligibleCount = (await read(eligible)).length;
+  const marked = region.vendorRegions.map((v) => `"${v}"`).join(" or ");
   return {
     items: [],
-    warning:
-      `No subcontractor is both award-eligible and marked ${region.vendorRegions
-        .map((v) => `"${v}"`)
-        .join(" or ")} on the Subs/Vendors table, so there is nobody to award ` +
-      `${region.label} work to. ${eligibleCount} vendor${eligibleCount === 1 ? " is" : "s are"} ` +
-      `award-eligible overall — none of them in this region. Set Eligible for Award ` +
-      `and Region in Quickbase, then reopen this list.`,
+    warning: region.awardEligibleOnly
+      ? `No subcontractor is both award-eligible and marked ${marked} on the ` +
+        `Subs/Vendors table, so there is nobody to award ${region.label} work ` +
+        `to. Set Eligible for Award and Region in Quickbase, then reopen this list.`
+      : `No subcontractor is marked ${marked} on the Subs/Vendors table, so ` +
+        `there is nobody to award ${region.label} work to. Set Region on the ` +
+        `vendors who work there, then reopen this list.`,
   };
 }

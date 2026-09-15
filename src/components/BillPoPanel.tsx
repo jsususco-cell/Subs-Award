@@ -355,13 +355,13 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
             Select vendor &amp; PO
           </h2>
           <p className="mt-0.5 text-xs text-navy-600/70">
-            {cfg.label} purchase orders for an award-eligible subcontractor.
+            {cfg.label} purchase orders for a subcontractor.
           </p>
         </header>
 
         <div className="grid gap-3 p-4 sm:grid-cols-2">
           <LookupField
-            label="Subcontractor (award-eligible)"
+            label={cfg.awardEligibleOnly ? "Subcontractor (award-eligible)" : "Subcontractor"}
             value={sub}
             placeholder="Company name"
             onChange={(v, extra) => {

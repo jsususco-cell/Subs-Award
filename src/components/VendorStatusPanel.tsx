@@ -69,7 +69,7 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
         </header>
         <div className="p-4 sm:max-w-md">
           <LookupField
-            label="Subcontractor (award-eligible)"
+            label={cfg.awardEligibleOnly ? "Subcontractor (award-eligible)" : "Subcontractor"}
             value={sub}
             placeholder="Company name"
             onChange={(v, extra) => {

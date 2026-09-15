@@ -111,6 +111,20 @@ export interface RegionConfig {
   routes: AwardRoute[];
   /** How the money is entered — see AwardEntry. */
   awardEntry: AwardEntry;
+  /**
+   * Whether the subcontractor list is restricted to vendors ticked "Eligible
+   * for Award" (fid 182).
+   *
+   * True for Puerto Rico, where 20 vendors are marked and the list is the
+   * approved bench. False on the mainland, where only 2 are marked — and both
+   * only qualify through Region "Both" — so the filter left almost nobody to
+   * award to. Until that field is maintained for mainland vendors, the list is
+   * every subcontractor in the region instead of a bench of two.
+   *
+   * The region filter still applies either way: a Florida screen never offers
+   * a Puerto Rico vendor.
+   */
+  awardEligibleOnly: boolean;
 }
 
 /**
@@ -140,6 +154,7 @@ const MAINLAND = {
    */
   routes: ["award-po", "bill-po", "vendor-status"],
   awardEntry: "contract",
+  awardEligibleOnly: false,
 } satisfies Omit<RegionConfig, "key" | "label" | "jobRegion">;
 
 function mainland(key: RegionKey, label: string): RegionConfig {
@@ -159,6 +174,7 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
     defaultProgram: "PR R3",
     routes: ["canopy", "award-po", "bill-po"],
     awardEntry: "categories",
+    awardEligibleOnly: true,
   },
   FL: mainland("FL", "Florida"),
   NC: mainland("NC", "North Carolina"),

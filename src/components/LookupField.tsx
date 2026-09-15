@@ -51,6 +51,7 @@ export default function LookupField({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function ensureLoaded(force = false) {
     if (!force && state !== "idle") return;
@@ -95,7 +96,9 @@ export default function LookupField({
         )}
       </label>
 
+      <div className="relative">
       <input
+        ref={inputRef}
         id={id}
         type="text"
         value={value}
@@ -132,8 +135,41 @@ export default function LookupField({
             setOpen(false);
           }
         }}
-        className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+        className={`w-full rounded-md border border-navy-200 py-2 pl-2.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 ${
+          value ? "pr-9" : "pr-2.5"
+        }`}
       />
+
+      {value && (
+        <button
+          type="button"
+          aria-label={`Clear ${label.toLowerCase()}`}
+          title="Clear"
+          // Beat the input's blur so the click registers, the same way the
+          // options below do — otherwise the field closes before this fires.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            if (blurTimer.current) clearTimeout(blurTimer.current);
+          }}
+          onClick={() => {
+            /*
+             * Clearing sends an empty value with NO extra, which is what tells
+             * the caller to drop the Quickbase record id it picked up. Leaving
+             * that behind would point a purchase order at a record whose name
+             * is no longer on screen.
+             */
+            onChange("");
+            setActive(0);
+            setOpen(true);
+            void ensureLoaded();
+            inputRef.current?.focus();
+          }}
+          className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded px-1.5 pb-0.5 text-lg leading-none text-navy-400 transition hover:bg-navy-50 hover:text-brand-red focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/30"
+        >
+          ×
+        </button>
+      )}
+      </div>
 
       {showList && (
         <ul

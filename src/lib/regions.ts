@@ -27,6 +27,15 @@ export type ScheduleSetKey = "pr" | "us";
 /** What the subcontractor owes after being awarded. */
 export type InsuranceKind = "fondo" | "none";
 
+/**
+ * How an award can be started in a region.
+ *
+ * - `canopy` — upload the scope export and derive the award from it.
+ * - `award-po` — no scope file; the award breakdown is entered directly.
+ * - `bill-po` — draw bills against a purchase order that already exists.
+ */
+export type AwardRoute = "canopy" | "award-po" | "bill-po";
+
 export interface RegionConfig {
   key: RegionKey;
   /** How the region is named on screen. */
@@ -81,6 +90,13 @@ export interface RegionConfig {
    * plausible wrong one carried over from Puerto Rico.
    */
   defaultProgram: string;
+  /**
+   * The ways an award can be started here, in the order they are offered. The
+   * first is the default. A route left out is not shown at all rather than
+   * shown and disabled — there is nothing to fix, it simply is not how work
+   * arrives in that region.
+   */
+  routes: AwardRoute[];
 }
 
 /**
@@ -102,6 +118,13 @@ const MAINLAND = {
   insurance: "none",
   qboLocation: "US",
   defaultProgram: "",
+  /*
+   * No Canopy upload on the mainland. Scope exports come out of the Puerto
+   * Rico estimating pipeline; mainland awards are raised straight against a
+   * purchase order, so offering an upload step would be offering a route that
+   * never has a file to feed it.
+   */
+  routes: ["award-po", "bill-po"],
 } satisfies Omit<RegionConfig, "key" | "label" | "jobRegion">;
 
 function mainland(key: RegionKey, label: string): RegionConfig {
@@ -119,6 +142,7 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
     insurance: "fondo",
     qboLocation: "PR",
     defaultProgram: "PR R3",
+    routes: ["canopy", "award-po", "bill-po"],
   },
   FL: mainland("FL", "Florida"),
   NC: mainland("NC", "North Carolina"),
@@ -131,6 +155,26 @@ export const REGION_KEYS: RegionKey[] = ["PR", "FL", "NC", "TX", "LA"];
 
 /** Puerto Rico is where this system started and where every saved award is. */
 export const DEFAULT_REGION: RegionKey = "PR";
+
+/** Can an award be started this way here? */
+export function allowsRoute(region: RegionConfig, route: AwardRoute): boolean {
+  return region.routes.includes(route);
+}
+
+/** The route a region opens on — the first it offers. */
+export function defaultRoute(region: RegionConfig): AwardRoute {
+  return region.routes[0];
+}
+
+/**
+ * The route to use after a change of region: the current one where the new
+ * region offers it, otherwise that region's default. Keeps someone who is
+ * raising purchase orders on that step when they switch states, and moves
+ * them off a route the new region does not have.
+ */
+export function routeFor(region: RegionConfig, current: AwardRoute): AwardRoute {
+  return allowsRoute(region, current) ? current : defaultRoute(region);
+}
 
 export function isRegionKey(value: unknown): value is RegionKey {
   return typeof value === "string" && value in REGIONS;

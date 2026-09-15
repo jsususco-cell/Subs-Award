@@ -1,17 +1,15 @@
 "use client";
 
-import { REGIONS, REGION_KEYS, missingSetup, type RegionKey } from "@/lib/regions";
+import {
+  REGIONS,
+  REGION_KEYS,
+  missingSetup,
+  type AwardRoute,
+  type RegionKey,
+} from "@/lib/regions";
 
-/**
- * How an award gets made.
- *
- * - `canopy` is the usual route: the scope export comes out of Canopy and the
- *   award figures are derived from it.
- * - `award-po` skips the scope entirely — the Award Breakdown is typed in and
- *   the purchase order, cost item and bills are created from that.
- * - `bill-po` draws against a purchase order that already exists.
- */
-export type Mode = "canopy" | "award-po" | "bill-po";
+/** Kept as the component's own name for the route being taken. */
+export type Mode = AwardRoute;
 
 const MODES: { id: Mode; label: string; hint: string }[] = [
   {
@@ -48,6 +46,10 @@ interface Props {
 export default function StartBar({ region, onRegion, mode, onMode }: Props) {
   const cfg = REGIONS[region];
   const missing = missingSetup(cfg);
+  // Only the routes this region actually has, in its own order.
+  const offered = cfg.routes
+    .map((id) => MODES.find((m) => m.id === id))
+    .filter((m): m is (typeof MODES)[number] => Boolean(m));
 
   return (
     <div className="no-print mb-5 rounded-xl border border-navy-200 bg-white shadow-sm">
@@ -89,8 +91,18 @@ export default function StartBar({ region, onRegion, mode, onMode }: Props) {
 
       <fieldset className="border-t border-navy-100 px-4 py-3">
         <legend className="sr-only">What are you doing?</legend>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {MODES.map((m) => {
+        {!cfg.routes.includes("canopy") && (
+          <p className="mb-2 text-xs text-navy-600/70">
+            {cfg.label} awards are raised straight against a purchase order —
+            there is no Canopy scope upload here.
+          </p>
+        )}
+        <div
+          className={`grid gap-2 ${
+            offered.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+          }`}
+        >
+          {offered.map((m) => {
             const active = mode === m.id;
             return (
               <label

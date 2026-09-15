@@ -12,9 +12,26 @@ file is ever uploaded to a server.
 
 ## Three ways in
 
-After the region, pick what you are doing. The choice sits at the top of the
-page and each route keeps its own state, so switching between them to compare
-does not throw work away.
+After the region, pick what you are doing. **Which of these a region offers is
+part of the region**, not a UI condition — a route that is not how work arrives
+there is not shown at all, rather than shown and disabled.
+
+| | Puerto Rico | Mainland |
+| --- | --- | --- |
+| **Upload from Canopy** | yes | — |
+| **Award a new PO** | yes | yes (default) |
+| **Bill an existing PO** | yes | yes |
+
+**The mainland has no Canopy upload.** Scope exports come out of the Puerto
+Rico estimating pipeline, so on the mainland there is never a file to feed that
+step; awards there are raised straight against a purchase order.
+
+Changing region keeps the route where the new region has it and moves off it
+where it does not — switching to Florida mid-upload lands on the purchase
+order, and switching back to Puerto Rico does not drag you back to the upload.
+
+Each route keeps its own state, so switching between them to compare does not
+throw work away.
 
 | | Where the figures come from | What it creates |
 | --- | --- | --- |

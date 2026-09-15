@@ -33,7 +33,13 @@ import {
   type Prefs,
   type PrefsStore,
 } from "@/lib/prefs";
-import { DEFAULT_REGION, regionFor, type RegionKey } from "@/lib/regions";
+import {
+  DEFAULT_REGION,
+  defaultRoute,
+  regionFor,
+  routeFor,
+  type RegionKey,
+} from "@/lib/regions";
 import { refreshLookups } from "@/lib/qb-client";
 import {
   getServerSnapshot,
@@ -125,7 +131,9 @@ export default function AwardApp() {
    * Which route this award is taking. Each keeps its own state, so flipping
    * between them to compare does not throw away work in the other.
    */
-  const [mode, setMode] = useState<Mode>("canopy");
+  const [mode, setMode] = useState<Mode>(() =>
+    defaultRoute(regionFor(DEFAULT_REGION)),
+  );
   const [direct, setDirect] = useState<DirectAwardFields>(() =>
     emptyDirectAward(DEFAULT_REGION),
   );
@@ -169,6 +177,13 @@ export default function AwardApp() {
       regionRef.current = next;
       setRegionState(next);
       applyRegionPrefs(next);
+      /*
+       * Stay on the same route where the new region has it, and move off it
+       * where it does not — the mainland has no Canopy upload, so switching
+       * to Florida mid-upload lands on the purchase order instead of a step
+       * that region never uses.
+       */
+      setMode((current) => routeFor(regionFor(next), current));
       // The job and vendor lists are per region and cached per region, but
       // dropping the cache keeps a stale warning from following the switch.
       refreshLookups();

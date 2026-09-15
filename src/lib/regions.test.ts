@@ -4,9 +4,12 @@ import {
   DEFAULT_REGION,
   REGIONS,
   REGION_KEYS,
+  allowsRoute,
+  defaultRoute,
   isRegionKey,
   missingSetup,
   regionFor,
+  routeFor,
 } from "./regions";
 import { canRenderLetter, renderLetter } from "./letter";
 import { templateFor } from "./letter-content";
@@ -265,6 +268,44 @@ test("the $10,000 cap applies to the English stage name too", () => {
   assert.equal(lines[0].desc, "Mobilization");
   assert.equal(lines[0].amount, 10000, "Mobilization must be capped, not 10%");
   assert.ok(Math.abs(lines.reduce((s, l) => s + l.amount, 0) - 180800) < 0.005);
+});
+
+test("the mainland is raised straight against a purchase order", () => {
+  // Scope exports come out of the Puerto Rico pipeline; there is no Canopy
+  // file to upload on the mainland, so that route is not offered at all.
+  for (const key of MAINLAND) {
+    assert.deepEqual(REGIONS[key].routes, ["award-po", "bill-po"]);
+    assert.ok(!allowsRoute(REGIONS[key], "canopy"));
+    assert.equal(defaultRoute(REGIONS[key]), "award-po");
+  }
+
+  assert.deepEqual(REGIONS.PR.routes, ["canopy", "award-po", "bill-po"]);
+  assert.ok(allowsRoute(REGIONS.PR, "canopy"));
+  assert.equal(defaultRoute(REGIONS.PR), "canopy");
+});
+
+test("changing region keeps the route where it exists, moves off where it does not", () => {
+  // Raising a PO in Puerto Rico, then switching to Florida: stay put.
+  assert.equal(routeFor(REGIONS.FL, "award-po"), "award-po");
+  assert.equal(routeFor(REGIONS.FL, "bill-po"), "bill-po");
+  // Mid-upload in Puerto Rico, then switching to Florida: there is no upload.
+  assert.equal(routeFor(REGIONS.FL, "canopy"), "award-po");
+  // And back again — Puerto Rico offers all three, so nothing is forced.
+  for (const route of ["canopy", "award-po", "bill-po"] as const) {
+    assert.equal(routeFor(REGIONS.PR, route), route);
+  }
+});
+
+test("every region offers at least one route, and only real ones", () => {
+  const known = ["canopy", "award-po", "bill-po"];
+  for (const key of REGION_KEYS) {
+    const { routes } = REGIONS[key];
+    assert.ok(routes.length > 0, `${key} offers nothing`);
+    assert.deepEqual([...new Set(routes)], routes, `${key} repeats a route`);
+    for (const r of routes) assert.ok(known.includes(r), `${key} offers ${r}`);
+    // Every region can always raise a purchase order.
+    assert.ok(routes.includes("award-po"));
+  }
 });
 
 test("each region posts to its own QuickBooks location", () => {

@@ -210,9 +210,9 @@ export default function DirectAwardPanel({
 
           <div className="space-y-3 p-4">
             <LookupField
-              label="Project"
+              label="Job name"
               value={fields.jobName}
-              placeholder={cfg.key === "PR" ? "PR-R3-03073" : "Case number"}
+              placeholder={cfg.key === "PR" ? "PR-R3-03073" : "Search by job name"}
               onChange={(v, extra) =>
                 onField({
                   jobName: v,

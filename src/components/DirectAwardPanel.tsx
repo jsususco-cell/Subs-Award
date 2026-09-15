@@ -198,7 +198,7 @@ export default function DirectAwardPanel({
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="space-y-5">
-        <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
+        <section className="rounded-xl border border-navy-200 bg-white shadow-sm">
           <header className="border-b border-navy-100 px-4 py-3">
             <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
               Assignment

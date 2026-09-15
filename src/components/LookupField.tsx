@@ -29,6 +29,13 @@ interface Props {
  * A text field that offers Quickbase matches once they load, and stays a plain
  * text field if the lookup is unavailable. It is never a hard dependency —
  * whatever is typed is what the letter uses.
+ *
+ * DO NOT WRAP THIS IN AN ELEMENT WITH `overflow-hidden`. The list below is
+ * absolutely positioned, so any ancestor that clips will hide it — and it hides
+ * SILENTLY: the options are in the DOM and answer querySelectorAll, they are
+ * simply not on screen. Section cards elsewhere carry `overflow-hidden` to clip
+ * a coloured header to the rounded corners; a card holding one of these has to
+ * leave it off.
  */
 export default function LookupField({
   label,

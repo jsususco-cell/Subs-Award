@@ -79,17 +79,17 @@ export default function LetterPanel({
   const ready = detailsFilled && canRenderLetter(region);
 
   /*
-   * The form collects what goes into the letter's own fields, so it borrows the
-   * letter's labels — "Programa" and "Fecha de Inicio" on a Puerto Rico award.
-   * A region with no template falls back to plain English rather than asking a
-   * Florida user for a "Fecha de Finalizacion".
+   * The form collects what goes into the letter's own fields, so it borrows
+   * that letter's labels — "Programa" on a Puerto Rico award, "Program" on a
+   * Florida one. Taken from the template rather than from whether a template
+   * exists: keying off existence was right while Puerto Rico was the only
+   * region with one, and put Spanish labels on the English letter the moment
+   * the mainland got its own.
    */
   const L = template?.labels;
-  // Spanish accents are dropped here but not in the letter: these are form
-  // labels in an English UI, and they match how the fields read today.
-  const programLabel = L ? "Programa" : "Program";
-  const startLabel = L ? "Fecha de Inicio" : "Start date";
-  const endLabel = L ? "Fecha de Finalizacion" : "Completion date";
+  const programLabel = L?.caseProgram ?? "Program";
+  const startLabel = L?.caseStartDate ?? "Start date";
+  const endLabel = L?.caseEndDate ?? "Completion date";
 
   const merge: [string, string][] = [
     ["Job name", fields.jobName || "—"],
@@ -287,7 +287,7 @@ export default function LetterPanel({
               label={programLabel}
               value={fields.program}
               onChange={(v) => onField({ program: v })}
-              placeholder={cfg.defaultProgram || "Programme name"}
+              placeholder={cfg.defaultProgram || "Program name"}
             />
             <DateField
               label={startLabel}

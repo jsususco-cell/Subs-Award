@@ -109,8 +109,15 @@ test("a bill matching neither convention is flagged rather than re-based", () =>
   assert.ok(rows[0].amountDiffers, "the difference must be reported");
 });
 
-test("a region with no schedule has no milestones to bill", () => {
-  assert.deepEqual(billRows("FL", "Reconstruction", 100000, []), []);
+test("a mainland PO bills against the English milestones", () => {
+  const rows = billRows("FL", "Reconstruction", 100000, []);
+  assert.equal(rows.length, 8);
+  assert.equal(rows[0].desc, "Mobilization");
+  assert.equal(rows[7].desc, "Final Inspection");
+  assert.ok(Math.abs(rows.reduce((s, r) => s + r.amount, 0) - 100000) < 0.005);
+  // A Spanish bill title never matches an English milestone, so a Puerto Rico
+  // PO's bills can never be mistaken for a mainland PO's.
+  assert.equal(matchBill("Mobilization", 10, [bill()]), null);
 });
 
 test("a back charge nets the bill down and never below zero", () => {

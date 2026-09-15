@@ -158,8 +158,8 @@ components.
 | --- | --- | --- | --- | --- | --- |
 | Jobs on file | 403 | 252 | 170 | 73 | 9 |
 | Award-eligible vendors | 20 | 2 | 2 | 2 | 2 |
-| Award letter | Spanish | — | — | — | — |
-| Payment schedule | 8 / 50-50 / 20-80 | — | — | — | — |
+| Award letter | Spanish | English | English | English | English |
+| Payment schedule | 8 / 50-50 / 20-80 | same, in English | same | same | same |
 | Fondo (CFSE) poliza | yes | no | no | no | no |
 | QB Line Item | 182 | — | — | — | — |
 
@@ -172,11 +172,10 @@ A region carries six things:
   No work on file` — so all four mainland states currently match the same
   vendors. Splitting it by state means adding those choices in Quickbase and
   re-tagging 536 records. `Both` counts for every region.
-- **`letter`** — the template. `null` means **no letter can be produced at
-  all**, and the buttons stay disabled. It never falls back to another region's
-  wording: the Puerto Rico letter is in Spanish and its twenty conditions bind
-  the subcontractor to CFSE coverage, OGPe permits and PRDOH programme rules, so
-  sending it to a Florida vendor would be a contract nobody meant to offer.
+- **`letter`** — which template. `pr-es` is the Spanish letter, `us-en` the
+  English one. A region set to `null` produces **no letter at all** and the
+  buttons stay disabled; it never falls back to another region's wording,
+  because the two are not interchangeable — see below.
 - **`schedule`** — the payment milestones, which drive both the letter's
   breakdown and the Billing Line Items. `null` means no breakdown and no bills.
 - **`insurance`** — `fondo` only for Puerto Rico. Mainland awards open no
@@ -193,18 +192,51 @@ records belong to the region they were picked from. The parsed scope stays, and
 preferences (O&P, tiers, HC) are kept per region so a Puerto Rico hard-cost
 allowance is not carried onto a Florida award.
 
-### Adding the mainland letter
+### The mainland letter
 
-1. Add a `"us-en"` entry to `LETTER_TEMPLATES` in `src/lib/letter-content.ts`
-   with its wording, conditions and labels.
+`src/lib/letter-us.ts` is the English letter, translated from the Spanish one.
+The commercial terms are deliberately identical — same 180-day term, same $150
+per day liquidated damages, same $10,000 mobilisation cap, same stages and
+percentages, same twenty conditions under the same numbers, so "under Condition
+11" means the same thing in both.
+
+**Three conditions are not translations.** They bound the subcontractor to
+Puerto Rico bodies with no mainland equivalent, so translating them literally
+would have produced an obligation nobody could satisfy:
+
+| | Puerto Rico | Mainland |
+| --- | --- | --- |
+| 2 | "Responsabilidad Pública" | Commercial General Liability — the same cover under its usual name here |
+| 12 | Póliza del Fondo (CFSE), Puerto Rico's monopoly workers' compensation insurer | Workers' compensation under the law of the state where the work is performed. Retainage and the final payment are still held until compliance is evidenced |
+| 17 | OGPe permits, PRDOH programme guides | The authority having jurisdiction, and the administering state agency. **CDBG-DR is kept** — all four states run CDBG-DR programmes |
+
+**Three things still need a human decision**, all marked `TO CONFIRM` in
+`letter-us.ts`: the CM address on the letterhead (currently the Puerto Rico
+corporate address), the signatory (currently the Puerto Rico project manager),
+and whether the mainland programme really caps mobilisation at $10,000. And the
+whole thing is a drafting exercise, not legal advice — have counsel read it
+before the first letter reaches a subcontractor.
+
+The milestone names are translated too (`US_SCHEDULES` in `src/lib/schedule.ts`):
+Mobilization, Demolition, Foundation, Walls, Roof, Plastering, Finishes, Final
+Inspection. The cap is found by matching the milestone's name, and that match
+covers both spellings — matching only "Movilizaci" would have left the mainland
+schedule uncapped while its letter promised a cap, and nothing would have
+failed.
+
+Form labels follow the region's own letter, so a Florida award asks for a
+"Program" and an "Estimated Start Date" where a Puerto Rico one asks for a
+"Programa" and a "Fecha de Inicio Estimada".
+
+### Adding another letter
+
+1. Add the template to `LETTER_TEMPLATES` in `src/lib/letter-content.ts`.
 2. Add its milestones to `SCHEDULE_SETS` in `src/lib/schedule.ts`.
-3. Set `letter`, `schedule` and `qbLineItem` on those regions in
-   `src/lib/regions.ts`.
+3. Point the regions at both in `src/lib/regions.ts`.
 
 The renderer is the skeleton, not the words — every label it prints comes from
-the template. If the supplied letter turns out to have a different *structure*
-rather than different words, give it its own renderer and dispatch on the key
-in `letter.ts`.
+the template. A letter with a different *structure* rather than different words
+should get its own renderer, dispatched on the key in `letter.ts`.
 
 ### Who can be awarded work
 
@@ -333,9 +365,10 @@ have the server render arbitrary markup.
 
 ## Desglose de Pagos (payment breakdown)
 
-**Puerto Rico only.** The mainland states have no schedule, so their awards get
-no payment breakdown and no billing lines, and the UI says so rather than
-showing Puerto Rico's milestones.
+The mainland runs the same stages under English names — Mobilization,
+Demolition, Foundation, Walls, Roof, Plastering, Finishes, Final Inspection —
+with identical percentages and the same $10,000 cap. Everything below describes
+both.
 
 The award letter carries the payment schedule from the Quickbase Puerto Rico
 award code page, so this letter and the Billing Line Items that page creates

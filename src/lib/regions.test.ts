@@ -8,10 +8,10 @@ import {
   missingSetup,
   regionFor,
 } from "./regions";
-import { NoLetterTemplateError, canRenderLetter, renderLetter } from "./letter";
+import { canRenderLetter, renderLetter } from "./letter";
 import { templateFor } from "./letter-content";
 import { parseLetterInput } from "./letter-input";
-import { scheduleForJobType, scheduleSetFor } from "./schedule";
+import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import {
   awardBlockers,
   buildBillRecords,
@@ -124,15 +124,66 @@ test('"Both" counts as in region on every side, never just one', () => {
   assert.ok(!REGIONS.PR.vendorRegions.includes("Mainland"));
 });
 
-test("a mainland region never produces a letter, and never Puerto Rico's", () => {
+test("a mainland region produces the English letter, never Puerto Rico's", () => {
   for (const key of MAINLAND) {
-    assert.equal(templateFor(REGIONS[key]), null);
-    assert.equal(canRenderLetter(key), false);
-    assert.throws(
-      () => renderLetter(letterInput({ region: key })),
-      NoLetterTemplateError,
-      `${key} must refuse rather than fall back`,
-    );
+    assert.equal(templateFor(REGIONS[key])?.lang, "en");
+    assert.equal(canRenderLetter(key), true);
+
+    const html = renderLetter(letterInput({ region: key }));
+    assert.match(html, /<html lang="en">/);
+    assert.match(html, /General Conditions/);
+    assert.match(html, /Payment Breakdown/);
+
+    // Not one word of the Spanish letter may reach a mainland subcontractor.
+    for (const spanish of [
+      "Condiciones Generales",
+      "Desglose de Pagos",
+      "Adjudicación",
+      "Subcontratista",
+      "Movilización",
+      "Empañetado",
+    ]) {
+      assert.ok(!html.includes(spanish), `${key} letter still contains "${spanish}"`);
+    }
+  }
+});
+
+test("the mainland letter drops what only binds in Puerto Rico", () => {
+  const html = renderLetter(letterInput({ region: "FL" }));
+  /*
+   * CFSE is Puerto Rico's monopoly workers' compensation insurer, OGPe its
+   * permitting office and PRDOH its housing department. None of them can bind
+   * a Florida subcontractor, so none of them may appear.
+   */
+  for (const term of ["CFSE", "OGPe", "PRDOH", "Fondo del Seguro"]) {
+    assert.ok(!html.includes(term), `mainland letter still cites ${term}`);
+  }
+  // What replaced them.
+  assert.match(html, /Workers' Compensation Coverage/);
+  assert.match(html, /authority having jurisdiction/);
+  assert.match(html, /administering state agency/);
+  // CDBG-DR stays: these four states run CDBG-DR programmes too.
+  assert.match(html, /CDBG-DR/);
+});
+
+test("both letters carry the same bargain, only in different words", () => {
+  const pr = templateFor(REGIONS.PR)!;
+  const us = templateFor(REGIONS.FL)!;
+
+  assert.equal(us.conditions.length, pr.conditions.length);
+  // Numbered the same, so "under Condition 11" means the same thing in both.
+  assert.deepEqual(
+    us.conditions.map((c) => c.n),
+    pr.conditions.map((c) => c.n),
+  );
+
+  const prHtml = renderLetter(letterInput({ region: "PR" }));
+  const usHtml = renderLetter(letterInput({ region: "FL" }));
+  // The commercial terms are identical and must not drift apart.
+  for (const html of [prHtml, usHtml]) {
+    assert.match(html, /180/);
+    assert.match(html, /\$150\.00/);
+    assert.match(html, /\$10,000\.00/);
   }
 });
 
@@ -154,13 +205,45 @@ test("a letter payload without a valid region is rejected outright", () => {
   assert.equal(parseLetterInput({ ...letterInput(), region: "FL" })?.region, "FL");
 });
 
-test("a mainland region has no payment schedule, so it bills nothing", () => {
+test("the mainland schedule is the same milestones in English", () => {
   for (const key of MAINLAND) {
-    assert.equal(scheduleSetFor(REGIONS[key]), null);
-    assert.equal(scheduleForJobType("Reconstruction", REGIONS[key]), null);
+    const schedule = scheduleForJobType("Reconstruction", REGIONS[key]);
+    assert.equal(schedule?.length, 8);
+    assert.deepEqual(
+      schedule?.map((m) => m.desc),
+      [
+        "Mobilization",
+        "Demolition",
+        "Foundation",
+        "Walls",
+        "Roof",
+        "Plastering",
+        "Finishes",
+        "Final Inspection",
+      ],
+    );
+    // Same percentages as Puerto Rico — only the names are translated.
+    assert.deepEqual(
+      schedule?.map((m) => m.pct),
+      scheduleForJobType("Reconstruction", REGIONS.PR)?.map((m) => m.pct),
+    );
   }
-  assert.ok(scheduleSetFor(REGIONS.PR));
-  assert.equal(scheduleForJobType("Reconstruction", REGIONS.PR)?.length, 8);
+});
+
+test("the $10,000 cap applies to the English stage name too", () => {
+  /*
+   * The cap is found by matching the milestone's name. It used to match only
+   * "Movilizaci", which would have left the mainland schedule uncapped while
+   * its letter promised a cap — and nothing would have failed.
+   */
+  const lines = scheduleLines(
+    180800,
+    scheduleForJobType("Reconstruction", REGIONS.FL),
+    scheduleSetFor(REGIONS.FL)?.mobilisationCap ?? null,
+  );
+  assert.equal(lines[0].desc, "Mobilization");
+  assert.equal(lines[0].amount, 10000, "Mobilization must be capped, not 10%");
+  assert.ok(Math.abs(lines.reduce((s, l) => s + l.amount, 0) - 180800) < 0.005);
 });
 
 test("a region with no account is blocked before anything is written", () => {
@@ -198,9 +281,10 @@ test("only Puerto Rico owes a Fondo poliza", () => {
 test("what is missing is reported per region, so the UI can say so", () => {
   for (const key of MAINLAND) {
     const missing = missingSetup(REGIONS[key]);
-    assert.equal(missing.length, 3);
-    assert.ok(missing.some((m) => m.includes("award letter template")));
-    assert.ok(missing.some((m) => m.includes("payment schedule")));
-    assert.ok(missing.some((m) => m.includes("QB Line Item")));
+    // The letter and the schedule landed; only the cost account is open.
+    assert.deepEqual(missing, [
+      "the QB Line Item account mainland cost posts to",
+    ]);
   }
+  assert.deepEqual(missingSetup(REGIONS.PR), []);
 });

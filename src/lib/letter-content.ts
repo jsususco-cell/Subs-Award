@@ -7,6 +7,7 @@
  * the two are not linked at runtime.
  */
 
+import { US_LETTER } from "./letter-us";
 import type { LetterTemplateKey, RegionConfig } from "./regions";
 
 export const LETTER_HEADER = [
@@ -273,21 +274,20 @@ export const PR_LETTER: LetterTemplate = {
 /**
  * Every letter this system can produce.
  *
- * Deliberately partial. A region whose key is absent produces no letter at
- * all — `renderLetter` refuses rather than substituting another region's
- * wording, because the Puerto Rico conditions bind a subcontractor to CFSE
- * coverage, OGPe permits and PRDOH programme rules that do not apply on the
- * mainland. Sending them to a Florida vendor would be a contract nobody meant
- * to offer.
+ * Still deliberately partial: a region whose key is absent produces no letter
+ * at all, and `renderLetter` refuses rather than substituting another
+ * region's wording. That matters because the two templates are not
+ * interchangeable — the Puerto Rico conditions bind a subcontractor to CFSE
+ * coverage, OGPe permits and PRDOH programme rules that mean nothing in
+ * Florida, and the mainland letter drops all three.
  *
- * To add the mainland letter: add a `"us-en"` entry here with its own wording,
- * conditions and labels, then set `letter: "us-en"` on those regions in
- * src/lib/regions.ts. If the supplied letter turns out to have a different
- * skeleton rather than different words, give it its own renderer and dispatch
- * on the key in letter.ts — the registry is what makes either possible.
+ * A letter with a different *skeleton* rather than different words should get
+ * its own renderer, dispatched on the key in letter.ts. Both of these share
+ * one, because they are the same document in two languages.
  */
 export const LETTER_TEMPLATES: Partial<Record<LetterTemplateKey, LetterTemplate>> = {
   "pr-es": PR_LETTER,
+  "us-en": US_LETTER,
 };
 
 /** The template for a region, or null when none exists yet. */

@@ -19,10 +19,10 @@
 export type RegionKey = "PR" | "FL" | "NC" | "TX" | "LA";
 
 /** Award letter wording. A region with no template cannot produce a letter. */
-export type LetterTemplateKey = "pr-es";
+export type LetterTemplateKey = "pr-es" | "us-en";
 
-/** Payment milestone set. A region with none has no Desglose and no bills. */
-export type ScheduleSetKey = "pr";
+/** Payment milestone set. A region with none has no breakdown and no bills. */
+export type ScheduleSetKey = "pr" | "us";
 
 /** What the subcontractor owes after being awarded. */
 export type InsuranceKind = "fondo" | "none";
@@ -92,8 +92,14 @@ export interface RegionConfig {
  */
 const MAINLAND = {
   vendorRegions: ["Mainland", "Both"],
-  letter: null,
-  schedule: null,
+  /*
+   * The English letter, translated from the Puerto Rico one. Three of its
+   * twenty conditions could not be translated literally because they bind the
+   * subcontractor to Puerto Rico institutions — see US_CONDITIONS in
+   * src/lib/letter-content.ts for what replaced them.
+   */
+  letter: "us-en",
+  schedule: "us",
   insurance: "none",
   qbLineItem: null,
   defaultProgram: "",

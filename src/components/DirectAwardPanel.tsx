@@ -13,7 +13,8 @@ import {
   categoriesTotal,
   type PoCategories,
 } from "@/lib/qb-award";
-import type { LetterInput } from "@/lib/letter";
+import { canRenderLetter, renderLetter, type LetterInput } from "@/lib/letter";
+import { templateFor } from "@/lib/letter-content";
 import { regionFor, type RegionKey } from "@/lib/regions";
 import type { AwardResult } from "@/lib/types";
 
@@ -79,7 +80,10 @@ export default function DirectAwardPanel({
   onCreated,
 }: Props) {
   const cfg = regionFor(region);
+  const template = templateFor(cfg);
   const [subEmail, setSubEmail] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [letterError, setLetterError] = useState<string | null>(null);
 
   const total = categoriesTotal(fields.categories);
   const linked = Boolean(fields.jobRecordId && fields.subRecordId);
@@ -119,6 +123,60 @@ export default function DirectAwardPanel({
     result,
     issuedOn: new Date().toISOString(),
   };
+
+  /*
+   * The letter can be read before anything is written. The route can email it
+   * along with the purchase order, but a contract nobody looked at first is
+   * not something to put in front of a subcontractor.
+   */
+  const letterReady =
+    canRenderLetter(region) &&
+    fields.jobName.trim() !== "" &&
+    fields.subcontractor.trim() !== "";
+
+  function openLetter() {
+    const win = window.open("", "_blank");
+    if (!win) {
+      setLetterError(
+        "The browser blocked the letter window. Allow pop-ups for this site, or use Download.",
+      );
+      return;
+    }
+    setLetterError(null);
+    win.document.write(renderLetter(letter));
+    win.document.close();
+  }
+
+  async function downloadPdf() {
+    setPdfBusy(true);
+    setLetterError(null);
+    try {
+      const res = await fetch("/api/letter/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(letter),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setLetterError(body.error ?? "Could not render the PDF.");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download =
+        (fields.jobName.trim() || "award").replace(/[^\w.-]+/g, "-") +
+        (template?.fileSuffix ?? ".pdf");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setLetterError("Could not reach the server to render the PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -341,6 +399,54 @@ export default function DirectAwardPanel({
           letter={letter}
           suggestedTo={subEmail}
         />
+
+        <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
+          <header className="border-b border-navy-100 px-4 py-3">
+            <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
+              Award letter
+            </h2>
+          </header>
+          <div className="p-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={!letterReady}
+                onClick={openLetter}
+                className={`flex-1 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
+                  letterReady
+                    ? "bg-navy-700 hover:bg-navy-800"
+                    : "cursor-not-allowed bg-navy-300"
+                }`}
+              >
+                Generate Award Letter
+              </button>
+              <button
+                type="button"
+                disabled={!letterReady || pdfBusy}
+                onClick={downloadPdf}
+                className={`rounded-md border px-3 py-2.5 text-sm font-semibold transition ${
+                  letterReady
+                    ? "border-navy-200 bg-white text-navy-700 hover:bg-navy-50"
+                    : "cursor-not-allowed border-navy-100 text-navy-300"
+                }`}
+              >
+                {pdfBusy ? "Rendering…" : "Download PDF"}
+              </button>
+            </div>
+            {letterError && (
+              <p role="alert" className="mt-2 text-xs font-semibold text-brand-red">
+                {letterError}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-navy-600/70">
+              {!template
+                ? `There is no award letter template for ${cfg.label} yet.`
+                : letterReady
+                  ? "Read it before anything is created. Its breakdown itemises the award categories above, not a scope derivation."
+                  : "Fill in the project and subcontractor to produce the letter."}
+            </p>
+          </div>
+        </section>
 
         <PaymentSchedule
           region={region}

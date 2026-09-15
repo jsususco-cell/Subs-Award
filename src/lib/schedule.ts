@@ -90,6 +90,33 @@ export interface ScheduleSet {
   fallback: ScheduleKey;
 }
 
+/**
+ * The mainland milestones — the Puerto Rico schedule with English stage names
+ * and the same percentages, so a mainland letter and its bills read the same
+ * way the Spanish one does without asking a Florida subcontractor to invoice
+ * for "Empañetado".
+ */
+export const US_SCHEDULES: Record<ScheduleKey, Milestone[]> = {
+  standard8: [
+    { n: 1, desc: "Mobilization", pct: 10 },
+    { n: 2, desc: "Demolition", pct: 15 },
+    { n: 3, desc: "Foundation", pct: 10 },
+    { n: 4, desc: "Walls", pct: 10 },
+    { n: 5, desc: "Roof", pct: 10 },
+    { n: 6, desc: "Plastering", pct: 20 },
+    { n: 7, desc: "Finishes", pct: 15 },
+    { n: 8, desc: "Final Inspection", pct: 10 },
+  ],
+  split5050: [
+    { n: 1, desc: "Initial Payment", pct: 50 },
+    { n: 2, desc: "Final Payment", pct: 50 },
+  ],
+  split2080: [
+    { n: 1, desc: "Initial Payment", pct: 20 },
+    { n: 2, desc: "Final Payment", pct: 80 },
+  ],
+};
+
 export const PR_SCHEDULE_SET: ScheduleSet = {
   schedules: PAY_SCHEDULES,
   jobTypes: JOB_TYPE_SCHEDULE,
@@ -102,8 +129,23 @@ export const PR_SCHEDULE_SET: ScheduleSet = {
  * Deliberately partial: a region key that is absent has no payment schedule,
  * and every caller must handle null rather than being handed Puerto Rico's.
  */
+export const US_SCHEDULE_SET: ScheduleSet = {
+  schedules: US_SCHEDULES,
+  jobTypes: JOB_TYPE_SCHEDULE,
+  unmapped: UNMAPPED_JOB_TYPES,
+  /*
+   * The same $10,000 cap the Puerto Rico letter states, because the mainland
+   * letter is a translation of it and says the same thing. If the mainland
+   * programme does not cap mobilisation, set this to null — the schedule then
+   * pays the flat percentage and the letter's note should go with it.
+   */
+  mobilisationCap: 10000,
+  fallback: "standard8",
+};
+
 export const SCHEDULE_SETS: Partial<Record<ScheduleSetKey, ScheduleSet>> = {
   pr: PR_SCHEDULE_SET,
+  us: US_SCHEDULE_SET,
 };
 
 export function scheduleSetFor(region: RegionConfig): ScheduleSet | null {
@@ -160,8 +202,15 @@ export function scheduleAmounts(
  */
 export const MOBILISATION_CAP = 10000;
 
+/**
+ * Which milestone the cap applies to.
+ *
+ * Matches the Spanish and the English stage name. Matching only "Movilizaci"
+ * would leave the mainland schedule uncapped without anything failing — the
+ * letter would promise a $10,000 cap and the bills would quietly ignore it.
+ */
 function mobilisationIndex(schedule: Milestone[]): number {
-  return schedule.findIndex((m) => /^movilizaci/i.test(m.desc));
+  return schedule.findIndex((m) => /^(movilizaci|mobiliz)/i.test(m.desc));
 }
 
 /** One row of the Desglose de Pagos: what is paid, and what share that is. */

@@ -14,6 +14,7 @@ import DirectAwardPanel, {
   type DirectAwardFields,
 } from "./DirectAwardPanel";
 import BillPoPanel from "./BillPoPanel";
+import VendorStatusPanel from "./VendorStatusPanel";
 import StepRail, { type Step } from "./StepRail";
 import {
   DEFAULT_ADA,
@@ -443,6 +444,8 @@ export default function AwardApp() {
         />
       ) : mode === "bill-po" ? (
         <BillPoPanel region={region} />
+      ) : mode === "vendor-status" ? (
+        <VendorStatusPanel region={region} />
       ) : (
         <>
       <StepRail steps={steps} current={step} onSelect={(id) => setStep(id as StepId)} />

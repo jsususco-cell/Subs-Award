@@ -30,11 +30,35 @@ export const QB_AWARD = {
     jobType: 172,
     /** "Job - State" lookup — the region a purchase order belongs to. */
     jobState: 129,
+    /*
+     * Vendor status. All three are computed by Quickbase and never written:
+     * Billing Line Item Status is a formula over Total Paid Bill %, which is
+     * itself Total Amount Paid / Total Builder Cost, and Total Amount Paid is
+     * a rollup of the bills.
+     */
+    billingStatus: 224,
+    totalAmountPaid: 225,
+    totalPaidPct: 226,
     dueDate: 173,
     lienWaiver: 181,
     expenseClass: 187,
     date: 77,
+    /**
+     * A ROLLUP of the cost items (mode: summary) — never written from here.
+     * It says what has been broken down into line items so far, which on a
+     * mainland award is not the same as what the contract is worth.
+     */
     totalCost: 88,
+    /**
+     * What the subcontract is worth in total. Added 2026-09-16 because there
+     * was nowhere to keep it: every other writable currency field on the table
+     * either feeds the Total Amount formula (259, 260), is Puerto Rico
+     * specific (313), or belongs to the compliance flow (292).
+     *
+     * Only written for regions whose awardEntry is "contract". Puerto Rico
+     * carries its figure in the Award Breakdown categories instead.
+     */
+    contractPrice: 318,
     /*
      * The Award Breakdown. Total Amount (262) is a Quickbase formula over
      * exactly these seven and is never written from here:
@@ -178,6 +202,36 @@ export const EMPTY_CATEGORIES: PoCategories = {
   revisedTotal: 0,
 };
 
+/**
+ * One line of a hand-entered payment breakdown.
+ *
+ * Each becomes a PO line item (a Cost Item). `pct` is the share of the
+ * contract the line represents and is carried for the letter and the screen;
+ * `amount` is what actually gets written, because the money is the thing that
+ * has to add up.
+ */
+export interface BreakdownRow {
+  desc: string;
+  pct: number;
+  amount: number;
+}
+
+/** What the breakdown comes to. */
+export function breakdownTotal(rows: BreakdownRow[]): number {
+  return round(rows.reduce((sum, r) => sum + (r.amount || 0), 0));
+}
+
+/**
+ * What is left of the contract to break down.
+ *
+ * Never negative in display terms, but the raw difference is returned so an
+ * over-allocation is visible rather than clamped away — a breakdown that comes
+ * to more than the contract is a mistake someone needs to see.
+ */
+export function breakdownBalance(contractPrice: number, rows: BreakdownRow[]): number {
+  return round(contractPrice - breakdownTotal(rows));
+}
+
 /** The seven categories, in the order the award breakdown shows them. */
 export const CATEGORY_FIELDS: {
   key: keyof PoCategories;
@@ -229,6 +283,14 @@ export interface AwardWriteInput {
    * Demolition and Site in the ratio of the extracted scope.
    */
   categories?: PoCategories;
+  /**
+   * What the whole subcontract is worth, for a region that enters one figure
+   * and breaks it down by hand. Written to the PO so a later visit can work
+   * out what is left; the cost items only say what has been broken down.
+   */
+  contractPrice?: number;
+  /** The hand-entered breakdown, one PO line item per row. */
+  breakdown?: BreakdownRow[];
   /** "House" on the PO — the job's Canopy model home type. */
   house?: string;
   itemsNotIncluded?: string;
@@ -296,6 +358,21 @@ export function buildPoRecord(input: AwardWriteInput): QbRecord {
 
   if (input.dueDate) po[f.dueDate] = { value: input.dueDate };
   if (input.house?.trim()) po[f.house] = { value: input.house.trim() };
+  /*
+   * A contract-entry award carries its total on the purchase order and no cost
+   * categories at all — those are the Puerto Rico Award Breakdown, and Total
+   * Amount (262) is a formula over them, so leaving them empty is what makes
+   * it read as $0 rather than as a wrong figure.
+   *
+   * Returned before the exclusions text as well as the categories: that field
+   * is part of the same Puerto Rico block, and a caller passing it by mistake
+   * should not be able to put it on a mainland purchase order.
+   */
+  if (input.contractPrice !== undefined) {
+    po[f.contractPrice] = { value: round(input.contractPrice) };
+    return po;
+  }
+
   if (input.itemsNotIncluded?.trim()) {
     po[f.itemsNotIncluded] = { value: input.itemsNotIncluded.trim() };
   }
@@ -356,6 +433,37 @@ export function buildCostItemRecord(
     [f.relatedSub]: { value: input.subRecordId },
     [f.relatedQbLineItem]: { value: account.id },
   };
+}
+
+/**
+ * A PO line item for each row of the breakdown.
+ *
+ * The Puerto Rico flow writes one cost item for the whole award and bills it
+ * in milestones. This writes one per breakdown row instead, which is why a
+ * mainland purchase order can carry several — and why Total Cost, a rollup of
+ * these, climbs as more of the contract is broken down.
+ *
+ * Rows worth nothing are dropped rather than written: a $0 line item is noise
+ * in the ledger and the Cost Items table would take it happily.
+ */
+export function buildBreakdownCostItems(
+  input: AwardWriteInput,
+  poRecordId: number,
+  account: CostAccount,
+): QbRecord[] {
+  const f = QB_AWARD.costItems;
+  return (input.breakdown ?? [])
+    .filter((row) => row.amount > 0)
+    .map((row) => ({
+      [f.relatedPO]: { value: poRecordId },
+      [f.title]: { value: row.desc.trim() || input.title || input.scope },
+      [f.costType]: { value: QB_AWARD.costItemCostType },
+      [f.unitCost]: { value: round(row.amount) },
+      [f.qty]: { value: 1 },
+      [f.unit]: { value: QB_AWARD.costItemUnit },
+      [f.relatedSub]: { value: input.subRecordId },
+      [f.relatedQbLineItem]: { value: account.id },
+    }));
 }
 
 export function buildBillRecords(

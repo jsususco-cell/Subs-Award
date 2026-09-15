@@ -6,7 +6,10 @@ import {
   buildBillRecords,
   buildCostItemRecord,
   buildInsuranceRecord,
+  buildBreakdownCostItems,
   buildPoRecord,
+  breakdownBalance,
+  breakdownTotal,
   categoriesTotal,
   planAward,
   splitAward,
@@ -414,4 +417,90 @@ test("the plan reports the categories a direct award would set", () => {
   assert.equal(plan.po.total, 1000);
   // The bills still divide the contract amount.
   assert.ok(Math.abs(plan.billTotal - 1000) < 0.005);
+});
+
+/* ---------------------------------------------------------------------------
+ * A mainland award: one contract price, broken down by hand into line items.
+ * ------------------------------------------------------------------------ */
+
+const ROWS = [
+  { desc: "Mobilization", pct: 10, amount: 10000 },
+  { desc: "Rough-in", pct: 25, amount: 25000 },
+];
+
+test("the contract price goes on the PO, and no cost categories do", () => {
+  const po = buildPoRecord(
+    input({ region: "FL", contractPrice: 100000, breakdown: ROWS, award: 100000 }),
+  );
+  const f = QB_AWARD.pos;
+
+  assert.equal(val(po, f.contractPrice), 100000);
+  // Total Amount (262) is a formula over the seven categories. Leaving them
+  // empty is what makes it read as $0 rather than as a wrong figure.
+  for (const fid of [
+    f.catDemolition, f.catSite, f.catSeptic, f.catHome,
+    f.catAdaConversion, f.catChangeOrder, f.catRevisedTotal,
+  ]) {
+    assert.equal(val(po, fid), undefined);
+  }
+  // Total Cost (88) is a rollup of the line items and is never written.
+  assert.equal(val(po, f.totalCost), undefined);
+});
+
+test("each breakdown row becomes its own PO line item", () => {
+  const items = buildBreakdownCostItems(
+    input({ region: "FL", contractPrice: 100000, breakdown: ROWS, award: 100000 }),
+    777,
+    { id: 181, label: "Subcontractors" },
+  );
+  const f = QB_AWARD.costItems;
+
+  assert.equal(items.length, 2);
+  assert.equal(val(items[0], f.title), "Mobilization");
+  assert.equal(val(items[0], f.unitCost), 10000);
+  assert.equal(val(items[1], f.title), "Rough-in");
+  assert.equal(val(items[1], f.unitCost), 25000);
+  for (const item of items) {
+    assert.equal(val(item, f.relatedPO), 777);
+    assert.equal(val(item, f.qty), 1);
+    assert.equal(val(item, f.relatedQbLineItem), 181);
+  }
+});
+
+test("a row worth nothing is dropped rather than written as a $0 line", () => {
+  const items = buildBreakdownCostItems(
+    input({
+      region: "FL",
+      contractPrice: 100000,
+      breakdown: [...ROWS, { desc: "Not yet priced", pct: 0, amount: 0 }],
+      award: 100000,
+    }),
+    777,
+    { id: 181, label: "Subcontractors" },
+  );
+  assert.equal(items.length, 2);
+});
+
+test("the breakdown may cover part of the contract, and the balance says so", () => {
+  // The whole point: a first pass need not consume the contract.
+  assert.equal(breakdownTotal(ROWS), 35000);
+  assert.equal(breakdownBalance(100000, ROWS), 65000);
+  assert.equal(breakdownBalance(35000, ROWS), 0);
+  // Over-allocation is reported as negative rather than clamped away.
+  assert.equal(breakdownBalance(30000, ROWS), -5000);
+});
+
+test("a contract award carries no exclusions text", () => {
+  // "Items or Materials Not Included" is a Puerto Rico field and the mainland
+  // award does not collect it; the PO builder returns before reaching it.
+  const po = buildPoRecord(
+    input({
+      region: "FL",
+      contractPrice: 5000,
+      breakdown: [{ desc: "All", pct: 100, amount: 5000 }],
+      award: 5000,
+      itemsNotIncluded: "Cistern",
+    }),
+  );
+  assert.equal(val(po, QB_AWARD.pos.itemsNotIncluded), undefined);
 });

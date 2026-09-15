@@ -25,7 +25,12 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
   {
     id: "bill-po",
     label: "Bill an existing PO",
-    hint: "Draw against a PO already on file: pick the milestones to bill, add back charges.",
+    hint: "Break down more of a contract, or bill the milestones already on it.",
+  },
+  {
+    id: "vendor-status",
+    label: "Vendor status",
+    hint: "What a subcontractor is owed across their purchase orders, and what has been paid.",
   },
 ];
 
@@ -99,7 +104,7 @@ export default function StartBar({ region, onRegion, mode, onMode }: Props) {
         )}
         <div
           className={`grid gap-2 ${
-            offered.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            offered.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"
           }`}
         >
           {offered.map((m) => {

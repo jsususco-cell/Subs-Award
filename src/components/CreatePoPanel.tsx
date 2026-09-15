@@ -6,6 +6,7 @@ import {
   CATEGORY_FIELDS,
   planAward,
   type AwardWriteInput,
+  type BreakdownRow,
   type PoCategories,
 } from "@/lib/qb-award";
 import { defaultBody, defaultSubject } from "@/lib/letter-email";
@@ -51,6 +52,15 @@ interface Props {
   /** "House" on the purchase order, prefilled from the job. */
   house?: string;
   itemsNotIncluded?: string;
+  /**
+   * Contract entry: what the whole subcontract is worth, and the hand-entered
+   * breakdown that becomes one PO line item per row. The breakdown may cover
+   * only part of the contract — the rest is added later.
+   */
+  contractPrice?: number;
+  breakdown?: BreakdownRow[];
+  /** Something upstream is wrong, so nothing may be written yet. */
+  blocked?: boolean;
   /** Set once an award has been written, so it cannot be created twice. */
   created: CreatePoResult | null;
   onCreated: (result: CreatePoResult) => void;
@@ -76,6 +86,9 @@ export default function CreatePoPanel({
   categories,
   house,
   itemsNotIncluded,
+  contractPrice,
+  breakdown,
+  blocked = false,
   jobRecordId,
   subRecordId,
   jobName,
@@ -121,7 +134,13 @@ export default function CreatePoPanel({
 
   // The server narrows these the same way; doing it here as well keeps the
   // summary the user confirms identical to what actually gets written.
-  const willCreateBills = createBills && hasSchedule;
+  /*
+   * A contract entry has no milestone schedule: its breakdown rows are PO line
+   * items, not draws, so there is nothing to bill on creation.
+   */
+  const isContract = contractPrice !== undefined;
+  const willCreateBills = createBills && hasSchedule && !isContract;
+  const lineItemCount = (breakdown ?? []).filter((r) => r.amount > 0).length;
   const willCreateInsurance = createInsurance && wantsFondo;
 
   // Follows the subcontractor's Quickbase address until the field is edited.
@@ -150,6 +169,7 @@ export default function CreatePoPanel({
     siteTotal,
     ada,
     ...(categories ? { categories } : {}),
+    ...(contractPrice !== undefined ? { contractPrice, breakdown: breakdown ?? [] } : {}),
     house,
     itemsNotIncluded,
     caseNumber: jobName,
@@ -606,10 +626,10 @@ export default function CreatePoPanel({
               <>
                 <button
                   type="button"
-                  disabled={!(award > 0) || stage === "working"}
+                  disabled={!(award > 0) || stage === "working" || blocked || (isContract && lineItemCount === 0)}
                   onClick={() => setStage("confirming")}
                   className={`w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
-                    award > 0 && stage !== "working"
+                    award > 0 && stage !== "working" && !blocked && !(isContract && lineItemCount === 0)
                       ? "bg-navy-700 hover:bg-navy-800"
                       : "cursor-not-allowed bg-navy-300"
                   }`}
@@ -623,7 +643,9 @@ export default function CreatePoPanel({
                         : "Create PO"}
                 </button>
                 <p className="mt-2 text-xs text-navy-600/70">
-                  {award > 0
+                  {isContract && lineItemCount === 0 && award > 0
+                    ? "Add at least one breakdown line — that is what becomes the PO line item."
+                    : award > 0
                       ? `${money(award)} contract${
                           plan.bills.length ? `, split into ${plan.bills.length} payments` : ""
                       }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`

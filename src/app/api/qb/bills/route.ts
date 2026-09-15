@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { QB_CONFIG, isConfigured, queryAll } from "@/lib/quickbase";
-import { QB_AWARD } from "@/lib/qb-award";
+import {
+  QB_AWARD,
+  breakdownTotal,
+  buildBreakdownCostItems,
+  type BreakdownRow,
+} from "@/lib/qb-award";
 import { trySubcontractorAccount } from "@/lib/qb-accounts";
 import {
   backChargeProblem,
@@ -104,6 +109,38 @@ async function billsFor(costItemRecordId: number): Promise<ExistingBill[]> {
   }));
 }
 
+/** The PO's line items, and what the contract says it should come to. */
+async function lineItemsFor(poRecordId: number) {
+  const f = QB_AWARD.costItems;
+  const p = QB_AWARD.pos;
+
+  const [items, pos] = await Promise.all([
+    queryAll({
+      from: QB_AWARD.tables.costItems,
+      select: [f.recordId, f.title, f.unitCost, f.qty],
+      where: `{${f.relatedPO}.EX.${poRecordId}}`,
+      sortBy: [{ fieldId: f.recordId, order: "ASC" }],
+    }),
+    queryAll({
+      from: QB_AWARD.tables.pos,
+      select: [p.recordId, p.poNumber, p.contractPrice, p.totalCost],
+      where: `{${p.recordId}.EX.${poRecordId}}`,
+    }),
+  ]);
+
+  const po = (pos[0] ?? {}) as Raw;
+  return {
+    contractPrice: num(po, p.contractPrice),
+    totalCost: num(po, p.totalCost),
+    poNumber: str(po, p.poNumber),
+    items: (items as Raw[]).map((r) => ({
+      recordId: num(r, f.recordId),
+      title: str(r, f.title),
+      amount: num(r, f.unitCost) * (num(r, f.qty) || 1),
+    })),
+  };
+}
+
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const region = regionFor(params.get("region"));
@@ -135,8 +172,12 @@ export async function GET(request: Request) {
           f.title,
           f.poStatus,
           f.totalCost,
+          f.contractPrice,
           f.relatedJob,
           f.jobState,
+          f.billingStatus,
+          f.totalAmountPaid,
+          f.totalPaidPct,
         ],
         // Region-filtered on the PO's own "Job - State" lookup, so a Florida
         // vendor is never offered a Puerto Rico purchase order.
@@ -152,10 +193,29 @@ export async function GET(request: Request) {
         title: str(r, f.title),
         status: str(r, f.poStatus),
         totalCost: num(r, f.totalCost),
+        contractPrice: num(r, f.contractPrice),
         jobRecordId: num(r, f.relatedJob),
+        billingStatus: str(r, f.billingStatus),
+        totalAmountPaid: num(r, f.totalAmountPaid),
+        totalPaidPct: num(r, f.totalPaidPct),
       }));
 
       return NextResponse.json({ ok: true, configured: true, items });
+    }
+
+    if (resource === "lineitems") {
+      const poRecordId = Number(params.get("po")) || 0;
+      if (!poRecordId) {
+        return NextResponse.json(
+          { ok: false, error: "A purchase order is required." },
+          { status: 400 },
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        configured: true,
+        ...(await lineItemsFor(poRecordId)),
+      });
     }
 
     if (resource === "bills") {
@@ -197,7 +257,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(
-      { ok: false, error: "resource must be 'pos' or 'bills'" },
+      { ok: false, error: "resource must be 'pos', 'bills' or 'lineitems'" },
       { status: 400 },
     );
   } catch (e) {
@@ -262,6 +322,83 @@ export async function POST(request: Request) {
 
   const poRecordId = Number(body.poRecordId) || 0;
   const jobType = typeof body.jobType === "string" ? body.jobType : "";
+
+  /*
+   * Adding PO line items to break down more of the contract. A separate action
+   * from billing: these are what the purchase order is worth, not draws
+   * against it, and the regions that use them have no milestone schedule.
+   */
+  if (body.action === "line-items") {
+    const rows: BreakdownRow[] = Array.isArray(body.breakdown)
+      ? body.breakdown.slice(0, 60).map((entry) => {
+          const o = (entry ?? {}) as Record<string, unknown>;
+          return {
+            desc: typeof o.desc === "string" ? o.desc.slice(0, 500) : "",
+            pct: Number(o.pct) || 0,
+            amount: Number(o.amount) || 0,
+          };
+        })
+      : [];
+
+    const worth = rows.filter((r) => r.amount > 0);
+    if (!poRecordId || !worth.length) {
+      return NextResponse.json(
+        { ok: false, error: "A purchase order and at least one line worth something are required." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const current = await lineItemsFor(poRecordId);
+      const already = current.items.reduce((s, i) => s + i.amount, 0);
+      const adding = breakdownTotal(worth);
+
+      /*
+       * Re-checked here against what the purchase order actually carries, not
+       * against what the browser believed — two people adding lines at once
+       * would otherwise each see room for the same money.
+       */
+      if (current.contractPrice > 0 && already + adding - current.contractPrice > 0.005) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              `That would take the line items to ${(already + adding).toFixed(2)} against a ` +
+              `contract of ${current.contractPrice.toFixed(2)}. ${(current.contractPrice - already).toFixed(2)} is left to break down. Nothing was written.`,
+          },
+          { status: 400 },
+        );
+      }
+
+      const created = await write(
+        QB_AWARD.tables.costItems,
+        buildBreakdownCostItems(
+          {
+            region: region.key,
+            subRecordId: Number(body.subRecordId) || 0,
+            title: "",
+            scope: "",
+            breakdown: worth,
+          } as never,
+          poRecordId,
+          account,
+        ) as Raw[],
+      );
+
+      return NextResponse.json({
+        ok: true,
+        createdRecordIds: created,
+        created: created.length,
+        brokenDown: already + adding,
+        contractPrice: current.contractPrice,
+        balance: current.contractPrice - (already + adding),
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Quickbase write failed";
+      console.error("[qb/bills] line-items", message);
+      return NextResponse.json({ ok: false, error: message }, { status: 502 });
+    }
+  }
   if (!poRecordId) {
     return NextResponse.json(
       { ok: false, error: "A purchase order is required." },

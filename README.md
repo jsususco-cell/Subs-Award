@@ -88,6 +88,62 @@ bills yet uses the capped schedule, which is what this app's letters promise.
 A bill matching neither reading — part-paid, or edited by hand — is flagged and
 left alone. The figure on file is what the subcontractor was told.
 
+## How the mainland enters an award
+
+Puerto Rico and the mainland enter the money differently, and the region says
+which (`awardEntry`).
+
+| | Puerto Rico (`categories`) | Mainland (`contract`) |
+| --- | --- | --- |
+| Figure entered | Seven Award Breakdown categories | One **Total Contract Price** |
+| Where it lives on the PO | 253–260; Total Amount (262) sums them | **Total Contract Price (318)** |
+| Payment breakdown | Fixed milestones by Job Type | **Typed in, line by line** |
+| What a breakdown row becomes | A Billing Line Item (a draw) | **A Cost Item — a PO line item** |
+| Exclusions text (261) | collected | not collected |
+
+### Why a breakdown row is a PO line item
+
+`Total Cost` (88) on the purchase order is a **rollup of the cost items**, not a
+writable field, and `Total Amount` (262) is a **formula over the seven Puerto
+Rico categories**. Neither can hold a mainland contract figure. So the contract
+goes in its own field and the breakdown becomes the line items that roll up
+beneath it — which is why a mainland PO can carry several, and why POs with
+2–11 cost items already exist in the data.
+
+### The breakdown need not consume the contract
+
+That is the normal first pass. Enter an amount or a percentage — each restates
+the other against the contract price — and whatever is left shows as the
+balance. The purchase order can be created on a partial breakdown; the rest is
+added later from **Bill an existing PO**, which loads the line items already
+there, counts them against the contract, and offers the remaining balance.
+
+A breakdown may come to **less** than the contract, never more. Over-allocation
+is reported rather than clamped, and nothing is written. The server re-checks
+against what the PO actually carries rather than what the browser believed, so
+two people adding lines at once cannot each spend the same balance.
+
+A PO raised before field 318 existed carries no contract price. The screen says
+so instead of inventing a balance from the rollup.
+
+### One purchase order per job per subcontractor
+
+Awarding the same subcontractor on the same job again is the same contract
+being broken down further, not a new one. The award route looks for an existing
+PO **before creating anything** and refuses with a 409 naming it, pointing at
+"Bill an existing PO". Deliberately not filtered by status — a released PO is
+still the one that exists. `allowDuplicate` overrides it. If the check itself
+fails, nothing is created: a failed duplicate check must not become a silent
+second PO.
+
+### Vendor status
+
+Beside billing, and read-only. Every figure is computed by Quickbase — Total
+Amount Paid rolls up the bills, Total Paid Bill % divides it by builder cost,
+and the status is a formula over that — so writing any of them here would put a
+number on screen that Quickbase disagrees with the moment a bill changes.
+Puerto Rico reads the same thing on code page 59.
+
 ## The Canopy flow
 
 **Upload → Extract → Preview → Award → Award Letter.**

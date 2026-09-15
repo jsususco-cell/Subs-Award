@@ -25,6 +25,13 @@ export interface PoOption {
   /** The PO's Total Cost, used when the cost item carries no unit cost. */
   totalCost: number;
   jobRecordId: number;
+  /** What the subcontract is worth, where the region records it. */
+  contractPrice: number;
+  /** Computed by Quickbase: "Paid" / "Partially Paid" / "No Payment". */
+  billingStatus: string;
+  totalAmountPaid: number;
+  /** A fraction — 1 is fully paid. */
+  totalPaidPct: number;
 }
 
 /** A Billing Line Item already on the cost item. */

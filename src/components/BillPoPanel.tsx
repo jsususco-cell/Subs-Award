@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BreakdownEditor from "./BreakdownEditor";
 import LookupField from "./LookupField";
 import { money, pct as fmtPct } from "@/lib/format";
 import { loadSubs } from "@/lib/qb-client";
@@ -13,7 +14,8 @@ import {
   type ExistingBill,
   type PoOption,
 } from "@/lib/bills";
-import { regionFor, type RegionKey } from "@/lib/regions";
+import { breakdownTotal, type BreakdownRow } from "@/lib/qb-award";
+import { isContractEntry, regionFor, type RegionKey } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
 
 const KEY_STORE = "subs-award:send-key";
@@ -45,6 +47,12 @@ interface Draft {
 export default function BillPoPanel({ region }: { region: RegionKey }) {
   const cfg = regionFor(region);
   const hasSchedule = scheduleSetFor(cfg) !== null;
+  /*
+   * A contract-entry region has no milestones to tick. Coming back to a
+   * purchase order there means breaking down more of the contract into PO line
+   * items, not drawing against a schedule.
+   */
+  const contractEntry = isContractEntry(cfg);
 
   const [sub, setSub] = useState("");
   const [subRecordId, setSubRecordId] = useState("");
@@ -59,6 +67,11 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
   const [loadingBills, setLoadingBills] = useState(false);
 
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
+  const [lineItems, setLineItems] = useState<
+    { recordId: number; title: string; amount: number }[]
+  >([]);
+  const [contractPrice, setContractPrice] = useState(0);
+  const [newRows, setNewRows] = useState<BreakdownRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -125,12 +138,30 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
     setCostItemId(null);
     setAccount(null);
     setDrafts({});
+    setLineItems([]);
+    setNewRows([]);
+    setContractPrice(0);
     setError(null);
     setDone(null);
     if (!id) return;
 
     setLoadingBills(true);
     try {
+      if (contractEntry) {
+        const r = await fetch(
+          `/api/qb/bills?resource=lineitems&region=${region}&po=${id}`,
+        );
+        const b = await r.json();
+        if (!b.ok) {
+          setError(b.error ?? "Could not load the line items.");
+          return;
+        }
+        setLineItems(b.items ?? []);
+        setContractPrice(b.contractPrice ?? 0);
+        setNewRows([]);
+        return;
+      }
+
       const res = await fetch(`/api/qb/bills?resource=bills&region=${region}&po=${id}`);
       const body = await res.json();
       if (!body.ok) {
@@ -176,6 +207,66 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
 
   const canSave =
     (toCreate.length > 0 || toUpdate.length > 0) && problems.length === 0 && !busy;
+
+  const alreadyBrokenDown = lineItems.reduce((s, i) => s + i.amount, 0);
+  const addingTotal = breakdownTotal(newRows);
+  const canAddLines =
+    newRows.some((r) => r.amount > 0) &&
+    (contractPrice <= 0 ||
+      alreadyBrokenDown + addingTotal - contractPrice <= 0.005) &&
+    !busy;
+
+  async function addLineItems() {
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      const key = sendKey || storedKey();
+      const res = await fetch("/api/qb/bills", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(key ? { "x-send-key": key } : {}),
+        },
+        body: JSON.stringify({
+          action: "line-items",
+          region,
+          poRecordId: po?.recordId,
+          subRecordId: subRecordId ? Number(subRecordId) : 0,
+          breakdown: newRows.filter((r) => r.amount > 0),
+        }),
+      });
+      const body = await res.json();
+
+      if (body.keyRequired) {
+        setKeyNeeded(true);
+        setError("This deployment needs the send key before it will write line items.");
+        return;
+      }
+      if (!body.ok) {
+        setError(body.error ?? "Could not add the line items.");
+        return;
+      }
+
+      try {
+        if (key) localStorage.setItem(KEY_STORE, key);
+      } catch {
+        /* private browsing just means it is asked for again */
+      }
+      setKeyNeeded(false);
+      setDone(
+        `${body.created} line item${body.created === 1 ? "" : "s"} added. ` +
+          (body.balance > 0.005
+            ? `${money(body.balance)} of the contract is still to break down.`
+            : "The contract is fully broken down."),
+      );
+      await pickPo(poId);
+    } catch {
+      setError("Could not reach the server to add the line items.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -238,7 +329,7 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
     }
   }
 
-  if (!hasSchedule) {
+  if (!hasSchedule && !contractEntry) {
     return (
       <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
         <header className="border-b-2 border-brand-red bg-navy-700 px-4 py-3">
@@ -372,7 +463,78 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
         </p>
       )}
 
-      {po && !loadingBills && rows.length > 0 && (
+      {po && !loadingBills && contractEntry && (
+        <>
+          {lineItems.length > 0 && (
+            <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
+              <header className="border-b border-navy-100 px-4 py-3">
+                <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
+                  Line items already on this PO
+                </h2>
+              </header>
+              <table className="w-full text-sm">
+                <tbody>
+                  {lineItems.map((li) => (
+                    <tr key={li.recordId} className="border-b border-navy-50 last:border-0">
+                      <td className="px-4 py-1.5 text-navy-600/60">#{li.recordId}</td>
+                      <td className="py-1.5 text-navy-800">{li.title || "—"}</td>
+                      <td className="tabular px-4 py-1.5 text-right text-navy-800">
+                        {money(li.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {contractPrice > 0 ? (
+            <BreakdownEditor
+              rows={newRows}
+              onRows={setNewRows}
+              contractPrice={contractPrice}
+              committed={alreadyBrokenDown}
+              committedLabel="Already on this PO"
+            />
+          ) : (
+            <p className="rounded-xl border border-navy-200 bg-navy-50 px-4 py-3 text-sm text-navy-700">
+              This purchase order carries no Total Contract Price, so there is
+              nothing to work a balance out against. It was raised before that
+              field existed, or outside this app — set it on the PO in Quickbase
+              and come back.
+            </p>
+          )}
+
+          {contractPrice > 0 && (
+            <div className="rounded-xl border border-navy-200 bg-navy-50 p-4 shadow-sm">
+              <button
+                type="button"
+                disabled={!canAddLines}
+                onClick={addLineItems}
+                className={`w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
+                  canAddLines
+                    ? "bg-navy-700 hover:bg-navy-800"
+                    : "cursor-not-allowed bg-navy-300"
+                }`}
+              >
+                {busy
+                  ? "Adding…"
+                  : newRows.some((r) => r.amount > 0)
+                    ? `Add ${newRows.filter((r) => r.amount > 0).length} line item${
+                        newRows.filter((r) => r.amount > 0).length === 1 ? "" : "s"
+                      } (${money(addingTotal)})`
+                    : "Nothing to add"}
+              </button>
+              <p className="mt-2 text-xs text-navy-600/70">
+                These become PO line items, which is what finance bills against.
+                Adding them does not create a second purchase order.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {po && !loadingBills && !contractEntry && rows.length > 0 && (
         <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
           <header className="border-b-2 border-brand-red bg-navy-700 px-4 py-3">
             <h2 className="text-sm font-semibold tracking-wide text-white uppercase">

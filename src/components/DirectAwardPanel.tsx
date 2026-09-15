@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BreakdownEditor from "./BreakdownEditor";
 import CreatePoPanel, { type CreatePoResult } from "./CreatePoPanel";
 import LookupField from "./LookupField";
 import NumberField from "./NumberField";
@@ -10,12 +11,14 @@ import { loadJobs, loadSubs } from "@/lib/qb-client";
 import {
   CATEGORY_FIELDS,
   EMPTY_CATEGORIES,
+  breakdownTotal,
   categoriesTotal,
+  type BreakdownRow,
   type PoCategories,
 } from "@/lib/qb-award";
 import { canRenderLetter, renderLetter, type LetterInput } from "@/lib/letter";
 import { templateFor } from "@/lib/letter-content";
-import { regionFor, type RegionKey } from "@/lib/regions";
+import { isContractEntry, regionFor, type RegionKey } from "@/lib/regions";
 import type { AwardResult } from "@/lib/types";
 
 export interface DirectAwardFields {
@@ -33,6 +36,10 @@ export interface DirectAwardFields {
   endDate: string;
   itemsNotIncluded: string;
   categories: PoCategories;
+  /** Contract entry: what the whole subcontract is worth. */
+  contractPrice: number;
+  /** Contract entry: the hand-entered breakdown, one PO line item per row. */
+  breakdown: BreakdownRow[];
 }
 
 export function emptyDirectAward(region: RegionKey): DirectAwardFields {
@@ -51,6 +58,8 @@ export function emptyDirectAward(region: RegionKey): DirectAwardFields {
     endDate: "",
     itemsNotIncluded: "",
     categories: { ...EMPTY_CATEGORIES },
+    contractPrice: 0,
+    breakdown: [],
   };
 }
 
@@ -85,7 +94,15 @@ export default function DirectAwardPanel({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [letterError, setLetterError] = useState<string | null>(null);
 
-  const total = categoriesTotal(fields.categories);
+  const contract = isContractEntry(cfg);
+  /*
+   * What the award is worth. On a contract entry that is the figure typed in,
+   * not the breakdown's total — the breakdown is allowed to cover only part of
+   * the contract on a first pass.
+   */
+  const total = contract ? fields.contractPrice : categoriesTotal(fields.categories);
+  const allocated = breakdownTotal(fields.breakdown);
+  const overAllocated = contract && allocated - total > 0.005;
   const linked = Boolean(fields.jobRecordId && fields.subRecordId);
 
   function setCategory(key: keyof PoCategories, value: number) {
@@ -304,6 +321,36 @@ export default function DirectAwardPanel({
           </div>
         </section>
 
+        {contract ? (
+          <>
+            <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
+              <header className="border-b border-navy-100 px-4 py-3">
+                <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
+                  Total contract price
+                </h2>
+                <p className="mt-0.5 text-xs text-navy-600/70">
+                  What the whole subcontract is worth. The breakdown below turns
+                  it into PO line items.
+                </p>
+              </header>
+              <div className="p-4">
+                <NumberField
+                  value={fields.contractPrice}
+                  onChange={(v) => onField({ contractPrice: v })}
+                  prefix="$"
+                  decimals={2}
+                  ariaLabel="Total contract price"
+                />
+              </div>
+            </section>
+
+            <BreakdownEditor
+              rows={fields.breakdown}
+              onRows={(breakdown) => onField({ breakdown })}
+              contractPrice={fields.contractPrice}
+            />
+          </>
+        ) : (
         <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
           <header className="border-b border-navy-100 px-4 py-3">
             <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
@@ -369,6 +416,7 @@ export default function DirectAwardPanel({
             />
           </div>
         </section>
+        )}
       </div>
 
       <div className="space-y-5">
@@ -377,6 +425,16 @@ export default function DirectAwardPanel({
             Pick a project and a subcontractor from the lookups. A purchase
             order has to point at the Quickbase records, so typed-in names alone
             are not enough to create one.
+          </p>
+        )}
+
+        {overAllocated && (
+          <p
+            role="alert"
+            className="rounded-xl border border-brand-red/30 bg-brand-red/5 px-4 py-3 text-sm font-semibold text-brand-red"
+          >
+            The breakdown comes to more than the contract price. Fix it before
+            creating the purchase order.
           </p>
         )}
 
@@ -391,9 +449,14 @@ export default function DirectAwardPanel({
           demoTotal={0}
           siteTotal={0}
           ada={fields.categories.ada}
-          categories={fields.categories}
+          {...(contract
+            ? {
+                contractPrice: fields.contractPrice,
+                breakdown: fields.breakdown,
+                blocked: overAllocated,
+              }
+            : { categories: fields.categories, itemsNotIncluded: fields.itemsNotIncluded })}
           house={fields.house}
-          itemsNotIncluded={fields.itemsNotIncluded}
           created={created}
           onCreated={onCreated}
           letter={letter}
@@ -448,12 +511,14 @@ export default function DirectAwardPanel({
           </div>
         </section>
 
-        <PaymentSchedule
-          region={region}
-          jobType={fields.jobType}
-          onJobType={(v) => onField({ jobType: v })}
-          amount={total}
-        />
+        {!contract && (
+          <PaymentSchedule
+            region={region}
+            jobType={fields.jobType}
+            onJobType={(v) => onField({ jobType: v })}
+            amount={total}
+          />
+        )}
       </div>
     </div>
   );

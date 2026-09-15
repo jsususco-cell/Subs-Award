@@ -6,6 +6,7 @@ import {
   REGION_KEYS,
   allowsRoute,
   defaultRoute,
+  isContractEntry,
   isRegionKey,
   missingSetup,
   regionFor,
@@ -274,7 +275,7 @@ test("the mainland is raised straight against a purchase order", () => {
   // Scope exports come out of the Puerto Rico pipeline; there is no Canopy
   // file to upload on the mainland, so that route is not offered at all.
   for (const key of MAINLAND) {
-    assert.deepEqual(REGIONS[key].routes, ["award-po", "bill-po"]);
+    assert.deepEqual(REGIONS[key].routes, ["award-po", "bill-po", "vendor-status"]);
     assert.ok(!allowsRoute(REGIONS[key], "canopy"));
     assert.equal(defaultRoute(REGIONS[key]), "award-po");
   }
@@ -297,7 +298,7 @@ test("changing region keeps the route where it exists, moves off where it does n
 });
 
 test("every region offers at least one route, and only real ones", () => {
-  const known = ["canopy", "award-po", "bill-po"];
+  const known = ["canopy", "award-po", "bill-po", "vendor-status"];
   for (const key of REGION_KEYS) {
     const { routes } = REGIONS[key];
     assert.ok(routes.length > 0, `${key} offers nothing`);
@@ -306,6 +307,21 @@ test("every region offers at least one route, and only real ones", () => {
     // Every region can always raise a purchase order.
     assert.ok(routes.includes("award-po"));
   }
+});
+
+test("the money is entered the way the region works", () => {
+  // Puerto Rico: the seven Award Breakdown categories and a fixed schedule.
+  assert.equal(REGIONS.PR.awardEntry, "categories");
+  assert.ok(!isContractEntry(REGIONS.PR));
+  // Mainland: one contract price, broken into PO line items by hand.
+  for (const key of MAINLAND) {
+    assert.equal(REGIONS[key].awardEntry, "contract");
+    assert.ok(isContractEntry(REGIONS[key]));
+    // Vendor Status sits beside billing, where it is useful.
+    assert.ok(allowsRoute(REGIONS[key], "vendor-status"));
+  }
+  // Puerto Rico reads vendor status on Quickbase code page 59 instead.
+  assert.ok(!allowsRoute(REGIONS.PR, "vendor-status"));
 });
 
 test("each region posts to its own QuickBooks location", () => {

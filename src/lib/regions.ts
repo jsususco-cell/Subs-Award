@@ -34,7 +34,19 @@ export type InsuranceKind = "fondo" | "none";
  * - `award-po` — no scope file; the award breakdown is entered directly.
  * - `bill-po` — draw bills against a purchase order that already exists.
  */
-export type AwardRoute = "canopy" | "award-po" | "bill-po";
+export type AwardRoute = "canopy" | "award-po" | "bill-po" | "vendor-status";
+
+/**
+ * How the money is entered on an award.
+ *
+ * - `categories` — Puerto Rico. The Award Breakdown's seven cost categories,
+ *   which Quickbase sums into Total Amount (262), and a fixed milestone
+ *   schedule that becomes Billing Line Items.
+ * - `contract` — the mainland. One Total Contract Price, broken down by hand
+ *   into PO line items (Cost Items). The breakdown need not consume the whole
+ *   contract at once; the balance can be broken down later.
+ */
+export type AwardEntry = "categories" | "contract";
 
 export interface RegionConfig {
   key: RegionKey;
@@ -97,6 +109,8 @@ export interface RegionConfig {
    * arrives in that region.
    */
   routes: AwardRoute[];
+  /** How the money is entered — see AwardEntry. */
+  awardEntry: AwardEntry;
 }
 
 /**
@@ -124,7 +138,8 @@ const MAINLAND = {
    * purchase order, so offering an upload step would be offering a route that
    * never has a file to feed it.
    */
-  routes: ["award-po", "bill-po"],
+  routes: ["award-po", "bill-po", "vendor-status"],
+  awardEntry: "contract",
 } satisfies Omit<RegionConfig, "key" | "label" | "jobRegion">;
 
 function mainland(key: RegionKey, label: string): RegionConfig {
@@ -143,6 +158,7 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
     qboLocation: "PR",
     defaultProgram: "PR R3",
     routes: ["canopy", "award-po", "bill-po"],
+    awardEntry: "categories",
   },
   FL: mainland("FL", "Florida"),
   NC: mainland("NC", "North Carolina"),
@@ -155,6 +171,11 @@ export const REGION_KEYS: RegionKey[] = ["PR", "FL", "NC", "TX", "LA"];
 
 /** Puerto Rico is where this system started and where every saved award is. */
 export const DEFAULT_REGION: RegionKey = "PR";
+
+/** Does this region enter one contract figure and break it down by hand? */
+export function isContractEntry(region: RegionConfig): boolean {
+  return region.awardEntry === "contract";
+}
 
 /** Can an award be started this way here? */
 export function allowsRoute(region: RegionConfig, route: AwardRoute): boolean {

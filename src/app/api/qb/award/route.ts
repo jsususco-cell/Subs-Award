@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import { QB_CONFIG, isConfigured } from "@/lib/quickbase";
+import { QB_CONFIG, isConfigured, queryAll } from "@/lib/quickbase";
 import {
   QB_AWARD,
+  breakdownTotal,
+  buildBreakdownCostItems,
   categoriesTotal,
+  type BreakdownRow,
   type PoCategories,
   buildBillRecords,
   buildCostItemRecord,
@@ -11,7 +14,7 @@ import {
   type AwardWriteInput,
   type QbRecord,
 } from "@/lib/qb-award";
-import { isRegionKey, regionFor } from "@/lib/regions";
+import { isContractEntry, isRegionKey, regionFor } from "@/lib/regions";
 import { trySubcontractorAccount } from "@/lib/qb-accounts";
 import { scheduleSetFor } from "@/lib/schedule";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
@@ -95,6 +98,38 @@ async function existingSubmittal(
   return typeof id === "number" ? id : null;
 }
 
+/**
+ * A purchase order already raised for this job and subcontractor.
+ *
+ * One PO per job per subcontractor is the rule: a second award for the same
+ * pair is the same contract being broken down further, not a new one. The
+ * existing PO is returned so the caller can add line items to it instead.
+ *
+ * Deliberately not filtered by status — a released or approved PO is still the
+ * one that exists, and quietly raising a second because the first moved on
+ * would be the exact duplicate this prevents.
+ */
+async function existingPo(
+  jobRecordId: number,
+  subRecordId: number,
+): Promise<{ recordId: number; poNumber: string; contractPrice: number } | null> {
+  const f = QB_AWARD.pos;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.pos,
+    select: [f.recordId, f.poNumber, f.contractPrice],
+    where: `{${f.relatedJob}.EX.${jobRecordId}}AND{${f.relatedSub}.EX.${subRecordId}}`,
+    sortBy: [{ fieldId: f.recordId, order: "DESC" }],
+  });
+  const first = rows[0];
+  if (!first) return null;
+  const val = (fid: number): unknown => first[String(fid)]?.value;
+  return {
+    recordId: Number(val(f.recordId)) || 0,
+    poNumber: String(val(f.poNumber) ?? "").trim(),
+    contractPrice: Number(val(f.contractPrice)) || 0,
+  };
+}
+
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
@@ -126,29 +161,55 @@ function parseCategories(raw: unknown): PoCategories | null {
   return c;
 }
 
+/**
+ * The hand-entered payment breakdown. Rows worth nothing are kept here so the
+ * caller's numbering survives into any error message; they are dropped at the
+ * point of writing.
+ */
+function parseBreakdown(raw: unknown): BreakdownRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 60).map((entry) => {
+    const o = (entry ?? {}) as Record<string, unknown>;
+    return {
+      desc: typeof o.desc === "string" ? o.desc.slice(0, 500) : "",
+      pct: num(o.pct),
+      amount: num(o.amount),
+    };
+  });
+}
+
 function parseInput(raw: unknown): AwardWriteInput | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
 
   const jobRecordId = num(o.jobRecordId);
   const subRecordId = num(o.subRecordId);
-  const categories = parseCategories(o.categories);
-  /*
-   * With a breakdown, the contract amount is computed from it rather than
-   * taken from the caller as well. Total Amount on the purchase order is a
-   * Quickbase formula over exactly those seven categories, so accepting a
-   * separate figure would let the PO and the bills drawn against it disagree.
-   */
-  const award = categories ? categoriesTotal(categories) : num(o.award);
-  if (!jobRecordId || !subRecordId || !(award > 0)) return null;
+  if (!isRegionKey(o.region)) return null;
+  const parsedRegion = regionFor(o.region);
+  const contract = isContractEntry(parsedRegion);
+
+  const categories = contract ? null : parseCategories(o.categories);
+  const breakdown = contract ? parseBreakdown(o.breakdown) : [];
+  const contractPrice = contract ? num(o.contractPrice) : 0;
 
   /*
-   * The region decides which account the cost posts to and which milestones
-   * get billed, so it is required rather than defaulted. A financial write
-   * that has to guess its own region should not happen at all.
+   * Where the contract figure comes from depends on how the region enters it.
+   * With categories it is their sum, because Total Amount on the PO is a
+   * Quickbase formula over exactly those seven. With a contract entry it is
+   * the figure typed in — NOT the breakdown's total, which is deliberately
+   * allowed to be less while the contract is still being broken down.
    */
-  if (!isRegionKey(o.region)) return null;
-  const region = regionFor(o.region);
+  const award = contract
+    ? contractPrice
+    : categories
+      ? categoriesTotal(categories)
+      : num(o.award);
+  if (!jobRecordId || !subRecordId || !(award > 0)) return null;
+
+  // A breakdown may under-run the contract, but never over-run it.
+  if (contract && breakdownTotal(breakdown) - contractPrice > 0.005) return null;
+
+  const region = parsedRegion;
 
   return {
     region: region.key,
@@ -166,8 +227,10 @@ function parseInput(raw: unknown): AwardWriteInput | null {
     siteTotal: num(o.siteTotal),
     ada: categories ? categories.ada : num(o.ada),
     ...(categories ? { categories } : {}),
+    ...(contract ? { contractPrice, breakdown } : {}),
     house: str(o.house),
-    itemsNotIncluded: str(o.itemsNotIncluded),
+    // Puerto Rico only — the mainland award does not collect exclusions.
+    itemsNotIncluded: contract ? "" : str(o.itemsNotIncluded),
     caseNumber: str(o.caseNumber),
     subcontractorName: str(o.subcontractorName),
     /*
@@ -177,7 +240,12 @@ function parseInput(raw: unknown): AwardWriteInput | null {
      * for a Florida award would put a case on the insurance page that nobody
      * can ever satisfy.
      */
-    createBills: o.createBills !== false && scheduleSetFor(region) !== null,
+    /*
+     * A contract-entry award has no milestone schedule to bill against: its
+     * breakdown rows are PO line items, not draws.
+     */
+    createBills:
+      o.createBills !== false && !contract && scheduleSetFor(region) !== null,
     createInsurance: o.createInsurance !== false && region.insurance === "fondo",
   };
 }
@@ -241,8 +309,48 @@ export async function POST(request: Request) {
   }
   const account = resolved.account;
 
+  /*
+   * One purchase order per job per subcontractor. Checked here, before
+   * anything is created, and reported with the PO that already exists so the
+   * caller can add line items to it rather than raising a second contract for
+   * the same work. `allowDuplicate` is the deliberate override.
+   */
+  if (!(body as Record<string, unknown>).allowDuplicate) {
+    try {
+      const already = await existingPo(input.jobRecordId, input.subRecordId);
+      if (already) {
+        return NextResponse.json(
+          {
+            ok: false,
+            duplicate: true,
+            existingPo: already,
+            error:
+              `${already.poNumber || "A purchase order"} already exists for this job and ` +
+              `subcontractor. Add the remaining breakdown to it from "Bill an existing PO" ` +
+              `rather than raising a second contract for the same work.`,
+          },
+          { status: 409 },
+        );
+      }
+    } catch (e) {
+      // A failed duplicate check must not become a silent second PO.
+      const message = e instanceof Error ? e.message : "duplicate check failed";
+      console.error("[qb/award] duplicate check", message);
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            `Could not check whether a purchase order already exists for this job ` +
+            `and subcontractor, so nothing was created: ${message}`,
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   let poId: number | null = null;
   let costItemId: number | null = null;
+  let costItemIds: number[] = [];
   let billsCreated = false;
 
   try {
@@ -252,11 +360,28 @@ export async function POST(request: Request) {
       [QB_AWARD.pos.recordId],
     );
 
-    [costItemId] = await createRecords(
+    /*
+     * A contract-entry award writes one line item per breakdown row; the
+     * Puerto Rico flow writes a single one carrying the whole award. Total
+     * Cost on the purchase order is a rollup of whichever gets written.
+     */
+    const costItemRecords = input.breakdown?.length
+      ? buildBreakdownCostItems(input, poId, account)
+      : [buildCostItemRecord(input, poId, account)];
+
+    if (!costItemRecords.length) {
+      throw new Error(
+        "The breakdown has no line worth anything, so the purchase order would " +
+          "carry no contract amount. Nothing further was created.",
+      );
+    }
+
+    costItemIds = await createRecords(
       QB_AWARD.tables.costItems,
-      [buildCostItemRecord(input, poId, account)],
+      costItemRecords,
       [QB_AWARD.costItems.recordId],
     );
+    costItemId = costItemIds[0];
 
     let billIds: number[] = [];
     if (input.createBills) {
@@ -291,6 +416,9 @@ export async function POST(request: Request) {
       ok: true,
       poRecordId: poId,
       costItemRecordId: costItemId,
+      costItemRecordIds: costItemIds,
+      contractPrice: input.contractPrice,
+      brokenDown: input.breakdown?.length ? breakdownTotal(input.breakdown) : undefined,
       // Reported so the account actually used is visible, not assumed.
       qbLineItem: { id: account.id, label: account.label },
       billRecordIds: billIds,

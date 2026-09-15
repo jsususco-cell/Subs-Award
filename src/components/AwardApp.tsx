@@ -8,6 +8,7 @@ import LetterPanel, { type LetterFields } from "./LetterPanel";
 import type { CreatePoResult } from "./CreatePoPanel";
 import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
+import RegionPicker from "./RegionPicker";
 import StepRail, { type Step } from "./StepRail";
 import {
   DEFAULT_ADA,
@@ -19,7 +20,16 @@ import {
 import { coverageLabel, extract, toggleExcluded } from "@/lib/extract";
 import { buildCsv, buildScopeCsv, downloadCsv, summaryText } from "@/lib/export";
 import { parseWorkbook } from "@/lib/parse";
-import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
+import {
+  defaultPrefs,
+  loadPrefsStore,
+  prefsFor,
+  savePrefsStore,
+  type Prefs,
+  type PrefsStore,
+} from "@/lib/prefs";
+import { DEFAULT_REGION, regionFor, type RegionKey } from "@/lib/regions";
+import { refreshLookups } from "@/lib/qb-client";
 import {
   getServerSnapshot,
   getSnapshot,
@@ -41,18 +51,27 @@ type StepId = "upload" | "extract" | "preview" | "award" | "letter";
  */
 const BASIS: AmountBasis = "rcv";
 
-const EMPTY_LETTER: LetterFields = {
-  jobName: "",
-  jobAddress: "",
-  subcontractor: "",
-  scopeOfWork: "",
-  jobType: "",
-  program: "PR R3",
-  startDate: "",
-  endDate: "",
-  jobRecordId: "",
-  subRecordId: "",
-};
+/**
+ * A blank letter for a region. The programme prefill is the region's, and the
+ * Quickbase record ids are always cleared — a job and a subcontractor belong to
+ * the region they were picked from and mean nothing in another.
+ */
+function emptyLetter(region: RegionKey): LetterFields {
+  return {
+    jobName: "",
+    jobAddress: "",
+    subcontractor: "",
+    scopeOfWork: "",
+    jobType: "",
+    program: regionFor(region).defaultProgram,
+    startDate: "",
+    endDate: "",
+    jobRecordId: "",
+    subRecordId: "",
+  };
+}
+
+const EMPTY_LETTER: LetterFields = emptyLetter(DEFAULT_REGION);
 
 export default function AwardApp() {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
@@ -85,18 +104,67 @@ export default function AwardApp() {
   // created a second time from the same award.
   const [createdPo, setCreatedPo] = useState<CreatePoResult | null>(null);
 
-  // Preferences start at the defaults so the server and the first client render
-  // agree, then the stored set is applied when a file is loaded — always a
-  // client-side event, so there is no hydration mismatch and no effect needed.
-  const [prefs, setPrefsState] = useState<Prefs>(DEFAULT_PREFS);
-  const prefsRef = useRef<Prefs>(DEFAULT_PREFS);
+  /*
+   * Region and preferences both start at their defaults so the server and the
+   * first client render agree; the stored values are applied on the first
+   * client-side event (loading a file, or changing the region), so there is no
+   * hydration mismatch and no effect is needed.
+   *
+   * Preferences are per region: a hard-cost allowance tuned for Puerto Rico is
+   * not a sensible starting point for a Florida award.
+   */
+  const [region, setRegionState] = useState<RegionKey>(DEFAULT_REGION);
+  const regionRef = useRef<RegionKey>(DEFAULT_REGION);
+  const [prefs, setPrefsState] = useState<Prefs>(defaultPrefs());
+  const prefsRef = useRef<Prefs>(defaultPrefs());
+  const storeRef = useRef<PrefsStore>({ region: DEFAULT_REGION, byRegion: {} });
 
   const updatePrefs = useCallback((patch: Partial<Prefs>) => {
     const next = { ...prefsRef.current, ...patch };
     prefsRef.current = next;
     setPrefsState(next);
-    savePrefs(next);
+    const store = storeRef.current;
+    store.region = regionRef.current;
+    store.byRegion[regionRef.current] = next;
+    savePrefsStore(store);
   }, []);
+
+  /** Apply a region's stored settings, without touching the letter fields. */
+  const applyRegionPrefs = useCallback((next: RegionKey) => {
+    const store = loadPrefsStore();
+    store.region = next;
+    storeRef.current = store;
+    const p = prefsFor(store, next);
+    prefsRef.current = p;
+    setPrefsState(p);
+    savePrefsStore(store);
+  }, []);
+
+  /**
+   * Switch region.
+   *
+   * The job, subcontractor and any created purchase order are cleared: those
+   * records belong to the region they came from, and carrying a Puerto Rico job
+   * into a Florida award would produce a letter and a PO against the wrong
+   * case. The parsed scope stays — a workbook is just numbers.
+   */
+  const setRegion = useCallback(
+    (next: RegionKey) => {
+      if (next === regionRef.current) return;
+      regionRef.current = next;
+      setRegionState(next);
+      applyRegionPrefs(next);
+      // The job and vendor lists are per region and cached per region, but
+      // dropping the cache keeps a stale warning from following the switch.
+      refreshLookups();
+      setLetter(emptyLetter(next));
+      setCreatedPo(null);
+      setActiveId(null);
+      setRestoredAt(null);
+      setSaveNote(null);
+    },
+    [applyRegionPrefs],
+  );
 
   const { oandpPct, tiers, selectedTier, hc } = prefs;
   const basis = BASIS;
@@ -144,9 +212,7 @@ export default function AwardApp() {
       const next = parseWorkbook(buffer);
       const groups = groupByCoverage(next.items);
 
-      const stored = loadPrefs();
-      prefsRef.current = stored;
-      setPrefsState(stored);
+      applyRegionPrefs(regionRef.current);
 
       setParsed(next);
       setFileName(file.name);
@@ -154,7 +220,7 @@ export default function AwardApp() {
       setLessOandPOverride(null);
       setAdaEnabled(false);
       setAda(DEFAULT_ADA);
-      setLetter(EMPTY_LETTER);
+      setLetter(emptyLetter(regionRef.current));
       setCreatedPo(null);
       setShowIgnored(false);
       setActiveId(null);
@@ -168,7 +234,7 @@ export default function AwardApp() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [applyRegionPrefs]);
 
   const ctx =
     parsed && extraction
@@ -193,6 +259,7 @@ export default function AwardApp() {
       id: existing?.id ?? newId(),
       savedAt: existing?.savedAt ?? now,
       updatedAt: now,
+      region,
       fileName: fileName ?? "scope",
       sheetName: parsed.sheetName,
       headerRow: parsed.headerRow,
@@ -235,6 +302,12 @@ export default function AwardApp() {
   }
 
   function openRecord(record: AwardRecord) {
+    // The award is reopened in the region it was struck in, so its letter,
+    // schedule and account are the ones it was saved with.
+    regionRef.current = record.region;
+    setRegionState(record.region);
+    refreshLookups();
+
     setParsed({
       sheetName: record.sheetName,
       headerRow: record.headerRow,
@@ -251,7 +324,7 @@ export default function AwardApp() {
     // prefill, unticked, so ticking behaves like a fresh award.
     setAda(record.settings.ada ?? DEFAULT_ADA);
     // jobType arrived later than the first saved awards, so default it.
-    setLetter({ ...EMPTY_LETTER, ...record.letter });
+    setLetter({ ...emptyLetter(record.region), ...record.letter });
     setCreatedPo(record.createdPo ?? null);
 
     const restored: Prefs = {
@@ -262,6 +335,8 @@ export default function AwardApp() {
     };
     prefsRef.current = restored;
     setPrefsState(restored);
+    storeRef.current = loadPrefsStore();
+    storeRef.current.region = record.region;
 
     setActiveId(record.id);
     setRestoredAt(record.updatedAt);
@@ -317,6 +392,8 @@ export default function AwardApp() {
         />
 
         <div className="min-w-0">
+      <RegionPicker value={region} onChange={setRegion} />
+
       <StepRail steps={steps} current={step} onSelect={(id) => setStep(id as StepId)} />
 
       {loaded && parsed && extraction && ctx && (
@@ -499,6 +576,7 @@ export default function AwardApp() {
 
       {step === "letter" && (
         <LetterPanel
+          region={region}
           fields={letter}
           onField={(patch) => setLetter((prev) => ({ ...prev, ...patch }))}
           result={result}

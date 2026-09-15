@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { QB_CONFIG, fetchJobs, fetchSubs, isConfigured } from "@/lib/quickbase";
+import { fetchJobs, fetchSubs, isConfigured } from "@/lib/quickbase";
+import { regionFor } from "@/lib/regions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,14 @@ const TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, Cached>();
 
 export async function GET(request: Request) {
-  const resource = new URL(request.url).searchParams.get("resource");
+  const params = new URL(request.url).searchParams;
+  const resource = params.get("resource");
+  /*
+   * An unknown region resolves to the default rather than erroring: the region
+   * only ever narrows a query, so the worst case is the wrong list, and the
+   * response says which region it answered for so the caller can tell.
+   */
+  const region = regionFor(params.get("region"));
 
   if (resource !== "jobs" && resource !== "subs") {
     return NextResponse.json(
@@ -35,23 +43,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, configured: false, items: [] });
   }
 
-  const hit = cache.get(resource);
+  // Cached per region: the Florida job list is not the Puerto Rico one.
+  const cacheKey = `${resource}:${region.key}`;
+  const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < TTL_MS) {
     return NextResponse.json(hit.payload);
   }
 
   try {
     const { items, warning } =
-      resource === "jobs" ? await fetchJobs() : await fetchSubs();
+      resource === "jobs" ? await fetchJobs(region) : await fetchSubs(region);
 
     const payload = {
       ok: true,
       configured: true,
-      region: QB_CONFIG.region,
+      region: region.key,
+      regionLabel: region.label,
       items,
       ...(warning ? { warning } : {}),
     };
-    cache.set(resource, { at: Date.now(), payload });
+    cache.set(cacheKey, { at: Date.now(), payload });
     return NextResponse.json(payload);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Quickbase request failed";

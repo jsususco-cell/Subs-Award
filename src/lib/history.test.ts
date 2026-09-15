@@ -39,6 +39,7 @@ function record(over: Partial<AwardRecord> = {}): AwardRecord {
     id: over.id ?? history.newId(),
     savedAt: stamp,
     updatedAt: stamp,
+    region: "PR",
     fileName: "scope.xls",
     sheetName: "Sheet1",
     headerRow: 1,

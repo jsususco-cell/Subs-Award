@@ -21,6 +21,7 @@ function input(over: Partial<LetterInput> = {}): LetterInput {
     ada: 0,
   });
   return {
+    region: "PR",
     jobName: "PR-R3-03073",
     jobAddress: "Calle Luna 12, Ponce, Puerto Rico 00730",
     subcontractor: "Acme Demolition",

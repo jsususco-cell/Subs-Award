@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { QB_CONFIG, isConfigured } from "@/lib/quickbase";
 import {
   QB_AWARD,
+  awardBlockers,
   buildBillRecords,
   buildCostItemRecord,
   buildInsuranceRecord,
@@ -9,6 +10,8 @@ import {
   type AwardWriteInput,
   type QbRecord,
 } from "@/lib/qb-award";
+import { isRegionKey, regionFor } from "@/lib/regions";
+import { scheduleSetFor } from "@/lib/schedule";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +110,16 @@ function parseInput(raw: unknown): AwardWriteInput | null {
   const award = num(o.award);
   if (!jobRecordId || !subRecordId || !(award > 0)) return null;
 
+  /*
+   * The region decides which account the cost posts to and which milestones
+   * get billed, so it is required rather than defaulted. A financial write
+   * that has to guess its own region should not happen at all.
+   */
+  if (!isRegionKey(o.region)) return null;
+  const region = regionFor(o.region);
+
   return {
+    region: region.key,
     jobRecordId,
     subRecordId,
     title: str(o.title),
@@ -123,8 +135,15 @@ function parseInput(raw: unknown): AwardWriteInput | null {
     ada: num(o.ada),
     caseNumber: str(o.caseNumber),
     subcontractorName: str(o.subcontractorName),
-    createBills: o.createBills !== false,
-    createInsurance: o.createInsurance !== false,
+    /*
+     * Both are narrowed by the region rather than trusted from the browser.
+     * Without a payment schedule there are no milestones to bill against, and
+     * the Fondo (CFSE) poliza is a Puerto Rico obligation — opening a submittal
+     * for a Florida award would put a case on the insurance page that nobody
+     * can ever satisfy.
+     */
+    createBills: o.createBills !== false && scheduleSetFor(region) !== null,
+    createInsurance: o.createInsurance !== false && region.insurance === "fondo",
   };
 }
 
@@ -169,8 +188,21 @@ export async function POST(request: Request) {
       {
         ok: false,
         error:
-          "Missing or malformed award details. A job, a subcontractor and an award above zero are all required.",
+          "Missing or malformed award details. A region, a job, a subcontractor and an award above zero are all required.",
       },
+      { status: 400 },
+    );
+  }
+
+  /*
+   * Checked before the first write. Quickbase has no transactions, so a
+   * blocker discovered at the cost-item step would leave a purchase order
+   * behind that carries no contract amount.
+   */
+  const blockers = awardBlockers(regionFor(input.region));
+  if (blockers.length) {
+    return NextResponse.json(
+      { ok: false, error: blockers.join(" "), blockers },
       { status: 400 },
     );
   }

@@ -43,6 +43,7 @@ test("recipient lists split on commas and semicolons", () => {
 
 function sampleInput(): LetterInput {
   return {
+    region: "PR",
     jobName: "PR-R3-03073",
     jobAddress: "Calle Luna 12, Ponce",
     subcontractor: "Acme Demolition",

@@ -7,6 +7,8 @@
  * the two are not linked at runtime.
  */
 
+import type { LetterTemplateKey, RegionConfig } from "./regions";
+
 export const LETTER_HEADER = [
   "BYRDSON SERVICES, LLC",
   "Home Repair, Reconstruction, or Relocation Program",
@@ -139,3 +141,146 @@ export const CONDITIONS: Condition[] = [
     "text": "El Subcontratista es el único responsable de preparar, mantener y someter al CM la documentación contemporánea de toda demora, incluyendo registros diarios, fotografías, fecha del evento causante y su impacto en el itinerario. Dicha documentación deberá someterse a través de la plataforma electrónica designada por el CM (portal de subcontratistas en Quickbase). Las demoras no documentadas contemporáneamente a través de dicha plataforma no serán consideradas para extensiones de tiempo conforme a la Condición 11, ni constituirán defensa contra los daños liquidados de la Condición 10."
   }
 ];
+
+/* -------------------------------------------------------------------------
+ * Templates
+ *
+ * Everything above is the Puerto Rico letter. What follows packages it as one
+ * template among several, so a second region is a data addition rather than an
+ * edit to the renderer.
+ *
+ * Labels are part of the template because the chrome is as language-specific
+ * as the body: a Florida letter does not have a "Desglose de Pagos" heading.
+ * `{placeholders}` are filled by the renderer.
+ * ---------------------------------------------------------------------- */
+
+export interface LetterLabels {
+  /** Browser/PDF title. {job} */
+  documentTitle: string;
+  /** Main heading. {jobType} */
+  heading: string;
+  /** Subject line. {job} */
+  subject: string;
+  sectionCase: string;
+  sectionAward: string;
+  sectionSchedule: string;
+  sectionConditions: string;
+  caseProgram: string;
+  caseProjectNumber: string;
+  caseProjectAddress: string;
+  caseScopeOfWork: string;
+  caseStartDate: string;
+  caseEndDate: string;
+  caseTerm: string;
+  /** The fixed value printed against caseTerm. */
+  caseTermValue: string;
+  caseExtension: string;
+  caseExtensionValue: string;
+  /** {coverages} */
+  awardExtracted: string;
+  awardLessOandP: string;
+  /** {pct} */
+  awardSubsShare: string;
+  awardHc: string;
+  awardAda: string;
+  awardTotal: string;
+  scheduleNumber: string;
+  scheduleStage: string;
+  schedulePct: string;
+  scheduleAmount: string;
+  scheduleTotal: string;
+  signatureLine: string;
+  counterparty: string;
+}
+
+export interface LetterTemplate {
+  /** BCP-47 language of the body, used for <html lang>. */
+  lang: string;
+  header: readonly string[];
+  cmAddress: readonly string[];
+  intro: string;
+  /** Printed under the payment table. Empty string prints no note. */
+  scheduleNote: string;
+  signatory: { name: string; title: string; company: string };
+  conditions: Condition[];
+  labels: LetterLabels;
+  /** Appended to the job name for the PDF filename. */
+  fileSuffix: string;
+}
+
+export const PR_LABELS: LetterLabels = {
+  documentTitle: "Adjudicación de Subcontrato — {job}",
+  heading: "Adjudicación de Subcontrato para {jobType}",
+  subject: "Asunto: Adjudicación &ndash; Subcontrato por Caso {job}",
+  sectionCase: "Información del Caso",
+  sectionAward: "Desglose de Adjudicación",
+  sectionSchedule: "Desglose de Pagos",
+  sectionConditions: "Condiciones Generales",
+  caseProgram: "Programa",
+  caseProjectNumber: "Número del Proyecto",
+  caseProjectAddress: "Dirección del Proyecto",
+  caseScopeOfWork: "Alcance de Trabajo",
+  caseStartDate: "Fecha de Inicio Estimada",
+  caseEndDate: "Fecha de Finalización Estimada",
+  caseTerm: "Plazo de Ejecución",
+  caseTermValue: "180 días calendario desde el NTP",
+  caseExtension: "Extensión de Finalización",
+  caseExtensionValue: "N/A",
+  awardExtracted: "Alcance Extraído ({coverages})",
+  awardLessOandP: "Menos Overhead &amp; Profit",
+  awardSubsShare: "Participación del Subcontratista ({pct})",
+  awardHc: "Hard Costs (HC)",
+  awardAda: "Conversión ADA",
+  awardTotal: "Monto Total",
+  scheduleNumber: "#",
+  scheduleStage: "Etapa",
+  schedulePct: "%",
+  scheduleAmount: "Monto del Pago",
+  scheduleTotal: "Total",
+  signatureLine: "Firma: ____________________&nbsp;&nbsp;&nbsp;Fecha: ____________",
+  counterparty: "Representante Autorizado",
+};
+
+export const PR_LETTER: LetterTemplate = {
+  lang: "es",
+  header: LETTER_HEADER,
+  cmAddress: CM_ADDRESS,
+  intro: LETTER_INTRO,
+  scheduleNote: MOBILISATION_NOTE,
+  signatory: SIGNATORY,
+  conditions: CONDITIONS,
+  labels: PR_LABELS,
+  fileSuffix: " - Adjudicacion de Subcontrato.pdf",
+};
+
+/**
+ * Every letter this system can produce.
+ *
+ * Deliberately partial. A region whose key is absent produces no letter at
+ * all — `renderLetter` refuses rather than substituting another region's
+ * wording, because the Puerto Rico conditions bind a subcontractor to CFSE
+ * coverage, OGPe permits and PRDOH programme rules that do not apply on the
+ * mainland. Sending them to a Florida vendor would be a contract nobody meant
+ * to offer.
+ *
+ * To add the mainland letter: add a `"us-en"` entry here with its own wording,
+ * conditions and labels, then set `letter: "us-en"` on those regions in
+ * src/lib/regions.ts. If the supplied letter turns out to have a different
+ * skeleton rather than different words, give it its own renderer and dispatch
+ * on the key in letter.ts — the registry is what makes either possible.
+ */
+export const LETTER_TEMPLATES: Partial<Record<LetterTemplateKey, LetterTemplate>> = {
+  "pr-es": PR_LETTER,
+};
+
+/** The template for a region, or null when none exists yet. */
+export function templateFor(region: RegionConfig): LetterTemplate | null {
+  return region.letter ? (LETTER_TEMPLATES[region.letter] ?? null) : null;
+}
+
+/** Fill `{name}` placeholders. Values are inserted as given, not escaped. */
+export function fill(text: string, values: Record<string, string>): string {
+  return text.replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in values ? values[key] : whole,
+  );
+}

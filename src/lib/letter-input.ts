@@ -1,4 +1,5 @@
 import type { LetterInput } from "./letter";
+import { isRegionKey } from "./regions";
 import type { AwardResult, TierRow } from "./types";
 
 /**
@@ -13,6 +14,14 @@ export function parseLetterInput(raw: unknown): LetterInput | null {
 
   const str = (v: unknown): string => (typeof v === "string" ? v.slice(0, 2000) : "");
   const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+  /*
+   * The region is required and is not defaulted. Everything about the letter
+   * follows from it — language, conditions, payment milestones — so a payload
+   * that does not say which region it is for is malformed, not a Puerto Rico
+   * letter by default.
+   */
+  if (!isRegionKey(o.region)) return null;
 
   const rawResult = o.result;
   if (!rawResult || typeof rawResult !== "object") return null;
@@ -41,6 +50,7 @@ export function parseLetterInput(raw: unknown): LetterInput | null {
   };
 
   return {
+    region: o.region,
     jobName: str(o.jobName),
     jobAddress: str(o.jobAddress),
     subcontractor: str(o.subcontractor),

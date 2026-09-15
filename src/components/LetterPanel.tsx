@@ -5,8 +5,10 @@ import LookupField from "./LookupField";
 import NumberField from "./NumberField";
 import { loadJobs, loadSubs } from "@/lib/qb-client";
 import PaymentSchedule from "./PaymentSchedule";
-import { scheduleForJobType, scheduleLines } from "@/lib/schedule";
-import { renderLetter, type LetterInput } from "@/lib/letter";
+import { scheduleForJobType, scheduleLines, scheduleSetFor } from "@/lib/schedule";
+import { canRenderLetter, renderLetter, type LetterInput } from "@/lib/letter";
+import { regionFor, type RegionKey } from "@/lib/regions";
+import { templateFor } from "@/lib/letter-content";
 import SendLetterPanel from "./SendLetterPanel";
 import CreatePoPanel, { type CreatePoResult } from "./CreatePoPanel";
 import { money, pct } from "@/lib/format";
@@ -28,6 +30,8 @@ export interface LetterFields {
 }
 
 interface Props {
+  /** Decides the job and vendor lists, the letter and the payment schedule. */
+  region: RegionKey;
   fields: LetterFields;
   onField: (patch: Partial<LetterFields>) => void;
   result: AwardResult;
@@ -47,6 +51,7 @@ interface Props {
  * stops short of rendering a document rather than inventing a layout.
  */
 export default function LetterPanel({
+  region,
   fields,
   onField,
   result,
@@ -62,7 +67,29 @@ export default function LetterPanel({
   const [subEmail, setSubEmail] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
   const chosen = result.tierRows.find((r) => r.selected);
-  const ready = fields.jobName.trim() !== "" && fields.subcontractor.trim() !== "";
+  const cfg = regionFor(region);
+  const template = templateFor(cfg);
+  const detailsFilled =
+    fields.jobName.trim() !== "" && fields.subcontractor.trim() !== "";
+  /*
+   * A letter needs both the details and a template for the region. Without a
+   * template the buttons stay disabled rather than producing the Puerto Rico
+   * letter, whose conditions would not be the ones on offer here.
+   */
+  const ready = detailsFilled && canRenderLetter(region);
+
+  /*
+   * The form collects what goes into the letter's own fields, so it borrows the
+   * letter's labels — "Programa" and "Fecha de Inicio" on a Puerto Rico award.
+   * A region with no template falls back to plain English rather than asking a
+   * Florida user for a "Fecha de Finalizacion".
+   */
+  const L = template?.labels;
+  // Spanish accents are dropped here but not in the letter: these are form
+  // labels in an English UI, and they match how the fields read today.
+  const programLabel = L ? "Programa" : "Program";
+  const startLabel = L ? "Fecha de Inicio" : "Start date";
+  const endLabel = L ? "Fecha de Finalizacion" : "Completion date";
 
   const merge: [string, string][] = [
     ["Job name", fields.jobName || "—"],
@@ -80,13 +107,18 @@ export default function LetterPanel({
       ? ([["ADA", money(result.ada)]] as [string, string][])
       : []),
     ["Award total", money(result.award)],
-    ...scheduleLines(result.award, scheduleForJobType(fields.jobType)).map(
+    ...scheduleLines(
+      result.award,
+      scheduleForJobType(fields.jobType, cfg),
+      scheduleSetFor(cfg)?.mobilisationCap ?? null,
+    ).map(
       (l) => [`${l.n}. ${l.desc} (${l.pct}%)`, money(l.amount)] as [string, string],
     ),
   ];
 
   function letterInput(): LetterInput {
     return {
+      region,
       jobName: fields.jobName,
       jobAddress: fields.jobAddress,
       subcontractor: fields.subcontractor,
@@ -141,7 +173,7 @@ export default function LetterPanel({
       a.href = url;
       a.download =
         (fields.jobName.trim() || "award").replace(/[^\w.-]+/g, "-") +
-        " - Adjudicacion de Subcontrato.pdf";
+        (template?.fileSuffix ?? ".pdf");
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -179,7 +211,7 @@ export default function LetterPanel({
           <LookupField
             label="Job name"
             value={fields.jobName}
-            placeholder="PR-R3-03073"
+            placeholder={cfg.key === "PR" ? "PR-R3-03073" : "Case number"}
             onChange={(v, extra) =>
               onField({
                 jobName: v,
@@ -191,7 +223,7 @@ export default function LetterPanel({
               })
             }
             loadChoices={async () => {
-              const r = await loadJobs();
+              const r = await loadJobs(region);
               return {
                 configured: r.configured,
                 warning: r.warning,
@@ -220,7 +252,7 @@ export default function LetterPanel({
               if (extra?.email !== undefined) setSubEmail(extra.email);
             }}
             loadChoices={async () => {
-              const r = await loadSubs();
+              const r = await loadSubs(region);
               return {
                 configured: r.configured,
                 warning: r.warning,
@@ -252,19 +284,19 @@ export default function LetterPanel({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="Programa"
+              label={programLabel}
               value={fields.program}
               onChange={(v) => onField({ program: v })}
-              placeholder="PR R3"
+              placeholder={cfg.defaultProgram || "Programme name"}
             />
             <DateField
-              label="Fecha de Inicio"
+              label={startLabel}
               value={fields.startDate}
               onChange={(v) => onField({ startDate: v })}
             />
           </div>
           <DateField
-            label="Fecha de Finalizacion"
+            label={endLabel}
             value={fields.endDate}
             onChange={(v) => onField({ endDate: v })}
           />
@@ -300,6 +332,7 @@ export default function LetterPanel({
 
       <div className="space-y-5">
       <PaymentSchedule
+        region={region}
         jobType={fields.jobType}
         onJobType={(v) => onField({ jobType: v })}
         amount={result.award}
@@ -366,9 +399,11 @@ export default function LetterPanel({
             </p>
           )}
           <p className="mt-2 text-xs text-navy-600/70">
-            {ready
-              ? "Opens the letter ready to print or save as PDF. Wording and conditions follow the Quickbase template; the Desglose de Adjudicacion shows this system's derivation."
-              : "Fill in the job name and subcontractor to generate the letter."}
+            {!template
+              ? `There is no award letter template for ${cfg.label} yet, so no letter can be produced here. The Puerto Rico letter is not a substitute — it is in Spanish and its conditions cite CFSE, OGPe and PRDOH. Add the ${cfg.label} template to src/lib/letter-content.ts to enable this.`
+              : ready
+                ? "Opens the letter ready to print or save as PDF. Wording and conditions follow the Quickbase template; the award breakdown shows this system's derivation."
+                : "Fill in the job name and subcontractor to generate the letter."}
           </p>
         </div>
       </section>

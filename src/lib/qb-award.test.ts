@@ -17,6 +17,7 @@ const CENT = 0.005;
 
 function input(over: Partial<AwardWriteInput> = {}): AwardWriteInput {
   return {
+    region: "PR",
     jobRecordId: 687,
     subRecordId: 2738,
     title: "Demolition and site work",

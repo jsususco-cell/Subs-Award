@@ -1,16 +1,25 @@
 import { money, pct } from "./format";
-import {
-  CM_ADDRESS,
-  CONDITIONS,
-  LETTER_HEADER,
-  LETTER_INTRO,
-  MOBILISATION_NOTE,
-  SIGNATORY,
-} from "./letter-content";
-import { scheduleForJobType, scheduleLines } from "./schedule";
+import { fill, templateFor } from "./letter-content";
+import { regionFor, type RegionKey } from "./regions";
+import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import type { AwardResult } from "./types";
 
+/** Thrown when the region has no letter template. Callers report it as a 400. */
+export class NoLetterTemplateError extends Error {
+  constructor(regionLabel: string) {
+    super(
+      `There is no award letter template for ${regionLabel} yet, so no letter ` +
+        `can be produced. The Puerto Rico letter is not a substitute: it is in ` +
+        `Spanish, and its conditions bind the subcontractor to CFSE coverage, ` +
+        `OGPe permits and PRDOH programme rules that do not apply here.`,
+    );
+    this.name = "NoLetterTemplateError";
+  }
+}
+
 export interface LetterInput {
+  /** Which region's letter to render. Decides wording, schedule and language. */
+  region: RegionKey;
   jobName: string;
   jobAddress: string;
   subcontractor: string;
@@ -49,59 +58,80 @@ function formatDate(iso: string): string {
   return `${mm}-${dd}-${d.getFullYear()}`;
 }
 
+/** Can a letter be produced for this region at all? */
+export function canRenderLetter(region: RegionKey): boolean {
+  return templateFor(regionFor(region)) !== null;
+}
+
 /**
  * Render the award letter.
  *
- * The wording, case table, payment breakdown and the twenty conditions follow
- * the Quickbase template. The one deliberate difference is the **Desglose de
- * Adjudicación**: Quickbase itemises the purchase order's cost categories,
- * whereas this system derives the award from the extracted scope, so the
- * breakdown shows that derivation instead. The bottom line each produces —
- * Monto Total — is the same figure the payment schedule divides.
+ * The wording, case table, payment breakdown and the numbered conditions come
+ * from the region's template (src/lib/letter-content.ts) — this function is the
+ * skeleton, not the words. The one deliberate difference from the Quickbase
+ * template is the award breakdown: Quickbase itemises the purchase order's cost
+ * categories, whereas this system derives the award from the extracted scope,
+ * so the breakdown shows that derivation instead. The bottom line each produces
+ * is the same figure the payment schedule divides.
+ *
+ * Throws `NoLetterTemplateError` for a region with no template. It must throw
+ * rather than fall back: substituting another region's conditions would put a
+ * contract in front of a subcontractor that nobody meant to offer them.
  */
 export function renderLetter(input: LetterInput): string {
+  const region = regionFor(input.region);
+  const template = templateFor(region);
+  if (!template) throw new NoLetterTemplateError(region.label);
+
+  const L = template.labels;
   const { result } = input;
   const chosen = result.tierRows.find((r) => r.selected);
-  const schedule = scheduleForJobType(input.jobType);
-  const lines = scheduleLines(result.award, schedule);
+  const schedule = scheduleForJobType(input.jobType, region);
+  const lines = scheduleLines(
+    result.award,
+    schedule,
+    scheduleSetFor(region)?.mobilisationCap ?? null,
+  );
   const scheduleTotal = lines.reduce((s, l) => s + l.amount, 0);
 
   const caseRows: [string, string][] = [
-    ["Programa", orDash(input.program)],
-    ["Número del Proyecto", orDash(input.jobName)],
-    ["Dirección del Proyecto", orDash(input.jobAddress)],
-    ["Alcance de Trabajo", orDash(input.scopeOfWork || input.jobType)],
-    ["Fecha de Inicio Estimada", formatDate(input.startDate)],
-    ["Fecha de Finalización Estimada", formatDate(input.endDate)],
-    ["Plazo de Ejecución", "180 días calendario desde el NTP"],
-    ["Extensión de Finalización", "N/A"],
+    [L.caseProgram, orDash(input.program)],
+    [L.caseProjectNumber, orDash(input.jobName)],
+    [L.caseProjectAddress, orDash(input.jobAddress)],
+    [L.caseScopeOfWork, orDash(input.scopeOfWork || input.jobType)],
+    [L.caseStartDate, formatDate(input.startDate)],
+    [L.caseEndDate, formatDate(input.endDate)],
+    [L.caseTerm, L.caseTermValue],
+    [L.caseExtension, L.caseExtensionValue],
   ];
 
   const awardRows: [string, string, boolean][] = [
     [
-      `Alcance Extraído (${input.coverages.join(" + ") || DASH})`,
+      fill(L.awardExtracted, {
+        coverages: esc(input.coverages.join(" + ")) || DASH,
+      }),
       money(result.base),
       false,
     ],
-    ["Menos Overhead &amp; Profit", money(result.lessOandP), false],
+    [L.awardLessOandP, money(result.lessOandP), false],
     [
-      `Participación del Subcontratista (${chosen ? pct(chosen.pct) : DASH})`,
+      fill(L.awardSubsShare, { pct: chosen ? pct(chosen.pct) : DASH }),
       chosen ? money(chosen.amount) : DASH,
       false,
     ],
-    ["Hard Costs (HC)", money(result.hc), false],
+    [L.awardHc, money(result.hc), false],
     // Only shown when it applies, so an ordinary award reads exactly as before.
     ...(result.ada > 0
-      ? ([["Conversión ADA", money(result.ada), false]] as [string, string, boolean][])
+      ? ([[L.awardAda, money(result.ada), false]] as [string, string, boolean][])
       : []),
-    ["Monto Total", money(result.award), true],
+    [L.awardTotal, money(result.award), true],
   ];
 
   return `<!DOCTYPE html>
-<html lang="es">
+<html lang="${template.lang}">
 <head>
 <meta charset="utf-8">
-<title>Adjudicación de Subcontrato — ${orDash(input.jobName)}</title>
+<title>${fill(L.documentTitle, { job: orDash(input.jobName) })}</title>
 <style>
   @page { size: letter; margin: 18mm 16mm; }
   * { box-sizing: border-box; }
@@ -139,23 +169,23 @@ export function renderLetter(input: LetterInput): string {
 <div class="sheet">
 
   <header class="brand">
-    <div class="name">${LETTER_HEADER[0]}</div>
-    ${LETTER_HEADER.slice(1).map((l) => `<div class="line">${l}</div>`).join("\n    ")}
+    <div class="name">${template.header[0]}</div>
+    ${template.header.slice(1).map((l) => `<div class="line">${l}</div>`).join("\n    ")}
   </header>
 
-  <h1>Adjudicación de Subcontrato para ${orDash(input.jobType)}</h1>
+  <h1>${fill(L.heading, { jobType: orDash(input.jobType) })}</h1>
   <div class="date">${formatDate(input.issuedOn)}</div>
 
   <div class="addr">
-    ${CM_ADDRESS.map((l) => `<div>${l}</div>`).join("\n    ")}
+    ${template.cmAddress.map((l) => `<div>${l}</div>`).join("\n    ")}
     <div class="to">${orDash(input.subcontractor)}</div>
   </div>
 
-  <p class="subject">Asunto: Adjudicación &ndash; Subcontrato por Caso ${orDash(input.jobName)}</p>
+  <p class="subject">${fill(L.subject, { job: orDash(input.jobName) })}</p>
 
-  <p>${esc(LETTER_INTRO)}</p>
+  <p>${esc(template.intro)}</p>
 
-  <h2>Información del Caso</h2>
+  <h2>${L.sectionCase}</h2>
   <table>
     <tbody>
       ${caseRows
@@ -164,7 +194,7 @@ export function renderLetter(input: LetterInput): string {
     </tbody>
   </table>
 
-  <h2>Desglose de Adjudicación</h2>
+  <h2>${L.sectionAward}</h2>
   <table>
     <tbody>
       ${awardRows
@@ -176,41 +206,46 @@ export function renderLetter(input: LetterInput): string {
     </tbody>
   </table>
 
-  <h2>Desglose de Pagos</h2>
+  ${
+    // A region can have a letter but no payment milestones. Printing an empty
+    // breakdown would read as "no payments due", so the section is omitted.
+    lines.length
+      ? `<h2>${L.sectionSchedule}</h2>
   <table>
     <thead>
-      <tr><th style="width:8%">#</th><th>Etapa</th><th class="num" style="width:14%">%</th><th class="num" style="width:24%">Monto del Pago</th></tr>
+      <tr><th style="width:8%">${L.scheduleNumber}</th><th>${L.scheduleStage}</th><th class="num" style="width:14%">${L.schedulePct}</th><th class="num" style="width:24%">${L.scheduleAmount}</th></tr>
     </thead>
     <tbody>
       ${lines
         .map(
           (l) =>
-            `<tr><td>${l.n}</td><td>${l.desc}</td><td class="num">${l.pct.toFixed(2)}%</td><td class="num">${money(l.amount)}</td></tr>`,
+            `<tr><td>${l.n}</td><td>${esc(l.desc)}</td><td class="num">${l.pct.toFixed(2)}%</td><td class="num">${money(l.amount)}</td></tr>`,
         )
         .join("\n      ")}
     </tbody>
     <tfoot>
-      <tr class="total"><td></td><td>Total</td><td class="num">100.00%</td><td class="num">${money(scheduleTotal)}</td></tr>
+      <tr class="total"><td></td><td>${L.scheduleTotal}</td><td class="num">100.00%</td><td class="num">${money(scheduleTotal)}</td></tr>
     </tfoot>
-  </table>
-  <p class="note">${esc(MOBILISATION_NOTE)}</p>
+  </table>${template.scheduleNote ? `\n  <p class="note">${esc(template.scheduleNote)}</p>` : ""}`
+      : ""
+  }
 
-  <h2>Condiciones Generales</h2>
+  <h2>${L.sectionConditions}</h2>
   <ol class="conditions">
-    ${CONDITIONS.map(
-      (c) => `<li><span class="t">${esc(c.title)}</span> ${esc(c.text)}</li>`,
-    ).join("\n    ")}
+    ${template.conditions
+      .map((c) => `<li><span class="t">${esc(c.title)}</span> ${esc(c.text)}</li>`)
+      .join("\n    ")}
   </ol>
 
   <div class="signatures">
-    <div class="who">${SIGNATORY.name}</div>
-    <div>${SIGNATORY.title}</div>
-    <div>${SIGNATORY.company}</div>
-    <div class="sigline">Firma: ____________________&nbsp;&nbsp;&nbsp;Fecha: ____________</div>
+    <div class="who">${esc(template.signatory.name)}</div>
+    <div>${esc(template.signatory.title)}</div>
+    <div>${esc(template.signatory.company)}</div>
+    <div class="sigline">${L.signatureLine}</div>
 
-    <div class="who" style="margin-top:22px">Representante Autorizado</div>
+    <div class="who" style="margin-top:22px">${L.counterparty}</div>
     <div>${orDash(input.subcontractor)}</div>
-    <div class="sigline">Firma: ____________________&nbsp;&nbsp;&nbsp;Fecha: ____________</div>
+    <div class="sigline">${L.signatureLine}</div>
   </div>
 
 </div>

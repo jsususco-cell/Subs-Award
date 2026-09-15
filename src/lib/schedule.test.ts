@@ -11,6 +11,10 @@ import {
   scheduleLines,
   scheduleKeyForJobType,
 } from "./schedule";
+import { REGIONS } from "./regions";
+
+/** Puerto Rico is the only region with a payment schedule today. */
+const PR = REGIONS.PR;
 
 const CENT = 0.005;
 
@@ -38,30 +42,30 @@ test("the 8-milestone schedule matches the award letter", () => {
 });
 
 test("job types map to the schedules the code page uses", () => {
-  assert.equal(scheduleKeyForJobType("Reconstruction"), "standard8");
-  assert.equal(scheduleKeyForJobType("New Construction"), "standard8");
-  assert.equal(scheduleKeyForJobType("Repair"), "split5050");
-  assert.equal(scheduleKeyForJobType("Renovation"), "split5050");
-  assert.equal(scheduleKeyForJobType("Relocation"), "split2080");
-  assert.equal(scheduleKeyForJobType("Demolition"), "split2080");
-  assert.equal(scheduleKeyForJobType("Acquisition & Demolition"), "split2080");
+  assert.equal(scheduleKeyForJobType("Reconstruction", PR), "standard8");
+  assert.equal(scheduleKeyForJobType("New Construction", PR), "standard8");
+  assert.equal(scheduleKeyForJobType("Repair", PR), "split5050");
+  assert.equal(scheduleKeyForJobType("Renovation", PR), "split5050");
+  assert.equal(scheduleKeyForJobType("Relocation", PR), "split2080");
+  assert.equal(scheduleKeyForJobType("Demolition", PR), "split2080");
+  assert.equal(scheduleKeyForJobType("Acquisition & Demolition", PR), "split2080");
 });
 
 test("unknown and blank job types fall back to the 8-milestone schedule", () => {
-  assert.equal(scheduleKeyForJobType(""), "standard8");
-  assert.equal(scheduleKeyForJobType("Rehabilitation"), "standard8");
-  assert.equal(scheduleKeyForJobType("MHU"), "standard8");
-  assert.equal(scheduleForJobType("nonsense").length, 8);
+  assert.equal(scheduleKeyForJobType("", PR), "standard8");
+  assert.equal(scheduleKeyForJobType("Rehabilitation", PR), "standard8");
+  assert.equal(scheduleKeyForJobType("MHU", PR), "standard8");
+  assert.equal((scheduleForJobType("nonsense", PR) ?? []).length, 8);
   // Whitespace should not change the mapping.
-  assert.equal(scheduleKeyForJobType("  Repair  "), "split5050");
+  assert.equal(scheduleKeyForJobType("  Repair  ", PR), "split5050");
 });
 
 test("a fallback is flagged as a guess, a real mapping is not", () => {
-  assert.ok(isUnmappedJobType("Rehabilitation"));
-  assert.ok(isUnmappedJobType("Master Project"));
-  assert.ok(!isUnmappedJobType("Reconstruction"));
+  assert.ok(isUnmappedJobType("Rehabilitation", PR));
+  assert.ok(isUnmappedJobType("Master Project", PR));
+  assert.ok(!isUnmappedJobType("Reconstruction", PR));
   // Blank is handled separately by the UI, not treated as an unmapped type.
-  assert.ok(!isUnmappedJobType(""));
+  assert.ok(!isUnmappedJobType("", PR));
 });
 
 test("amounts always add back up to the total exactly", () => {

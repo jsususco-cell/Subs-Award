@@ -1,3 +1,5 @@
+import type { RegionConfig, ScheduleSetKey } from "./regions";
+
 /**
  * Desglose de Pagos — the payment breakdown from the Puerto Rico award letter.
  *
@@ -5,6 +7,12 @@
  * Quickbase award code page, so the letter this app produces matches the bills
  * that page creates against the PO. Changing one without the other would put
  * the letter and the Billing Line Items out of step.
+ *
+ * The milestones are Puerto Rico's. They are grouped into a schedule *set* so
+ * another region can bring its own without renaming these — a Florida letter
+ * will not have a stage called "Empañetado". A region with no set produces no
+ * payment breakdown and no billing lines at all, rather than billing a mainland
+ * subcontractor against Puerto Rico milestones.
  */
 
 export interface Milestone {
@@ -67,18 +75,66 @@ export const UNMAPPED_JOB_TYPES = [
   "Master Project",
 ];
 
-export function scheduleKeyForJobType(jobType: string): ScheduleKey {
-  return JOB_TYPE_SCHEDULE[(jobType || "").trim()] ?? "standard8";
+/**
+ * One region's payment milestones: the schedules themselves, how job types map
+ * onto them, which job types are only defaulting, and the cap on mobilisation.
+ */
+export interface ScheduleSet {
+  schedules: Record<ScheduleKey, Milestone[]>;
+  jobTypes: Record<string, ScheduleKey>;
+  /** Job types that exist but have no schedule, so the fallback is a guess. */
+  unmapped: string[];
+  /** Cap on the mobilisation milestone, or null where none applies. */
+  mobilisationCap: number | null;
+  /** Which schedule an unmapped job type falls back to. */
+  fallback: ScheduleKey;
 }
 
-export function scheduleForJobType(jobType: string): Milestone[] {
-  return PAY_SCHEDULES[scheduleKeyForJobType(jobType)];
+export const PR_SCHEDULE_SET: ScheduleSet = {
+  schedules: PAY_SCHEDULES,
+  jobTypes: JOB_TYPE_SCHEDULE,
+  unmapped: UNMAPPED_JOB_TYPES,
+  mobilisationCap: 10000,
+  fallback: "standard8",
+};
+
+/**
+ * Deliberately partial: a region key that is absent has no payment schedule,
+ * and every caller must handle null rather than being handed Puerto Rico's.
+ */
+export const SCHEDULE_SETS: Partial<Record<ScheduleSetKey, ScheduleSet>> = {
+  pr: PR_SCHEDULE_SET,
+};
+
+export function scheduleSetFor(region: RegionConfig): ScheduleSet | null {
+  return region.schedule ? (SCHEDULE_SETS[region.schedule] ?? null) : null;
+}
+
+export function scheduleKeyForJobType(
+  jobType: string,
+  region: RegionConfig,
+): ScheduleKey | null {
+  const set = scheduleSetFor(region);
+  if (!set) return null;
+  return set.jobTypes[(jobType || "").trim()] ?? set.fallback;
+}
+
+export function scheduleForJobType(
+  jobType: string,
+  region: RegionConfig,
+): Milestone[] | null {
+  const set = scheduleSetFor(region);
+  if (!set) return null;
+  const key = set.jobTypes[(jobType || "").trim()] ?? set.fallback;
+  return set.schedules[key];
 }
 
 /** True when the job type is not in the map and is only defaulting. */
-export function isUnmappedJobType(jobType: string): boolean {
+export function isUnmappedJobType(jobType: string, region: RegionConfig): boolean {
+  const set = scheduleSetFor(region);
+  if (!set) return false;
   const t = (jobType || "").trim();
-  return t.length > 0 && !(t in JOB_TYPE_SCHEDULE);
+  return t.length > 0 && !(t in set.jobTypes);
 }
 
 /**
@@ -86,15 +142,22 @@ export function isUnmappedJobType(jobType: string): boolean {
  * drift lands on the final line, so the rows always add up to the total
  * exactly — the same approach the code page uses.
  */
-export function scheduleAmounts(amount: number, schedule: Milestone[]): number[] {
-  if (!schedule.length) return [];
+export function scheduleAmounts(
+  amount: number,
+  schedule: Milestone[] | null,
+): number[] {
+  if (!schedule?.length) return [];
   const amounts = schedule.map((m) => round(amount * (m.pct / 100)));
   const drift = round(amount - amounts.reduce((sum, a) => sum + a, 0));
   amounts[amounts.length - 1] = round(amounts[amounts.length - 1] + drift);
   return amounts;
 }
 
-/** The award letter caps the mobilisation payment at $10,000. */
+/**
+ * The Puerto Rico award letter caps the mobilisation payment at $10,000.
+ * Exported as the default for `scheduleLines`; a region whose set carries a
+ * different cap passes it explicitly.
+ */
 export const MOBILISATION_CAP = 10000;
 
 function mobilisationIndex(schedule: Milestone[]): number {
@@ -127,8 +190,12 @@ export interface ScheduleLine {
  * hundredth either side of 100; the total row states 100.00%, as the letters
  * this mirrors do.
  */
-export function scheduleLines(amount: number, schedule: Milestone[]): ScheduleLine[] {
-  if (!schedule.length) return [];
+export function scheduleLines(
+  amount: number,
+  schedule: Milestone[] | null,
+  cap: number | null = MOBILISATION_CAP,
+): ScheduleLine[] {
+  if (!schedule?.length) return [];
 
   const line = (m: Milestone, value: number): ScheduleLine => ({
     n: m.n,
@@ -144,13 +211,19 @@ export function scheduleLines(amount: number, schedule: Milestone[]): ScheduleLi
 
   // Nothing to cap, or nowhere to move the balance to. A schedule that is
   // mobilisation alone stays uncapped rather than stranding the difference.
-  if (i === -1 || !(amount > 0) || uncapped[i] <= MOBILISATION_CAP || !(otherPct > 0)) {
+  if (
+    i === -1 ||
+    cap === null ||
+    !(amount > 0) ||
+    uncapped[i] <= cap ||
+    !(otherPct > 0)
+  ) {
     return schedule.map((m, j) => line(m, uncapped[j]));
   }
 
-  const remaining = round(amount - MOBILISATION_CAP);
+  const remaining = round(amount - cap);
   const amounts = schedule.map((m, j) =>
-    j === i ? MOBILISATION_CAP : round(remaining * (m.pct / otherPct)),
+    j === i ? cap : round(remaining * (m.pct / otherPct)),
   );
 
   // Drift from rounding lands on the last line that is not the capped one, so
@@ -163,12 +236,14 @@ export function scheduleLines(amount: number, schedule: Milestone[]): ScheduleLi
 
 /** How much the uncapped schedule would exceed the mobilisation cap by. */
 export function mobilisationOverage(
-  schedule: Milestone[],
+  schedule: Milestone[] | null,
   amounts: number[],
+  cap: number | null = MOBILISATION_CAP,
 ): number {
+  if (!schedule || cap === null) return 0;
   const i = mobilisationIndex(schedule);
   if (i === -1) return 0;
-  const over = (amounts[i] ?? 0) - MOBILISATION_CAP;
+  const over = (amounts[i] ?? 0) - cap;
   return over > 0 ? round(over) : 0;
 }
 

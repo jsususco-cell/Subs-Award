@@ -1,3 +1,4 @@
+import { DEFAULT_REGION, isRegionKey, type RegionKey } from "./regions";
 import type { AmountBasis, ScopeItem } from "./types";
 
 const KEY = "subs-award:history:v1";
@@ -52,6 +53,12 @@ export interface AwardRecord {
   id: string;
   savedAt: string;
   updatedAt: string;
+  /**
+   * Which region the award was struck in. Absent on records saved before the
+   * app served more than one; those are all Puerto Rico, so they are migrated
+   * to it on read rather than being discarded.
+   */
+  region: RegionKey;
   fileName: string;
   sheetName: string;
   headerRow: number;
@@ -91,18 +98,23 @@ const EMPTY: AwardRecord[] = [];
 /** Drop anything that does not look like a record we wrote. */
 export function sanitize(raw: unknown): AwardRecord[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((r): r is AwardRecord => {
-    if (!r || typeof r !== "object") return false;
-    const rec = r as Partial<AwardRecord>;
-    return (
-      typeof rec.id === "string" &&
-      typeof rec.updatedAt === "string" &&
-      Array.isArray(rec.items) &&
-      !!rec.settings &&
-      !!rec.totals &&
-      !!rec.letter
-    );
-  });
+  return raw
+    .filter((r): r is AwardRecord => {
+      if (!r || typeof r !== "object") return false;
+      const rec = r as Partial<AwardRecord>;
+      return (
+        typeof rec.id === "string" &&
+        typeof rec.updatedAt === "string" &&
+        Array.isArray(rec.items) &&
+        !!rec.settings &&
+        !!rec.totals &&
+        !!rec.letter
+      );
+    })
+    .map((rec) => ({
+      ...rec,
+      region: isRegionKey(rec.region) ? rec.region : DEFAULT_REGION,
+    }));
 }
 
 function byNewest(a: AwardRecord, b: AwardRecord): number {

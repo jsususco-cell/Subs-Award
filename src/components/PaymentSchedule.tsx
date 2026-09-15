@@ -2,8 +2,6 @@
 
 import { money, pct } from "@/lib/format";
 import {
-  MOBILISATION_CAP,
-  PAY_SCHEDULES,
   SCHEDULE_LABEL,
   isUnmappedJobType,
   mobilisationOverage,
@@ -12,9 +10,14 @@ import {
   scheduleLines,
   scheduleKeyForJobType,
   type ScheduleKey,
+  scheduleSetFor,
 } from "@/lib/schedule";
+import { regionFor, type RegionKey } from "@/lib/regions";
+import { templateFor } from "@/lib/letter-content";
 
 interface Props {
+  /** Decides which milestones apply, or whether any do. */
+  region: RegionKey;
   jobType: string;
   onJobType: (jobType: string) => void;
   /** The amount the schedule divides up — the award total. */
@@ -36,22 +39,58 @@ const JOB_TYPES = [
 ];
 
 /**
- * Desglose de Pagos — the payment breakdown as it appears on the Puerto Rico
- * award letter: milestone, percentage, amount, and a 100% total row.
+ * The payment breakdown as it appears on the award letter: milestone,
+ * percentage, amount, and a 100% total row.
+ *
+ * The milestones belong to the region. A region with none shows what is
+ * missing instead of Puerto Rico's — billing a Florida subcontractor against
+ * "Empañetado" would be meaningless to them and wrong in the ledger.
  */
-export default function PaymentSchedule({ jobType, onJobType, amount }: Props) {
-  const key: ScheduleKey = scheduleKeyForJobType(jobType);
-  const schedule = scheduleForJobType(jobType);
-  const lines = scheduleLines(amount, schedule);
+export default function PaymentSchedule({
+  region,
+  jobType,
+  onJobType,
+  amount,
+}: Props) {
+  const cfg = regionFor(region);
+  const set = scheduleSetFor(cfg);
+
+  if (!set) {
+    return (
+      <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
+        <header className="border-b-2 border-brand-red bg-navy-700 px-4 py-3">
+          <h2 className="text-sm font-semibold tracking-wide text-white uppercase">
+            Payment schedule
+          </h2>
+          <p className="mt-0.5 text-xs text-navy-200">{cfg.label}</p>
+        </header>
+        <p className="px-4 py-4 text-sm text-navy-700">
+          There is no payment schedule for {cfg.label} yet, so this award has no
+          payment breakdown and no billing lines will be created against the
+          purchase order. The milestones come with the {cfg.label} award letter
+          template — until that lands, bill the purchase order from Quickbase.
+        </p>
+      </section>
+    );
+  }
+
+  const heading = templateFor(cfg)?.labels.sectionSchedule ?? "Payment schedule";
+  const key = scheduleKeyForJobType(jobType, cfg) as ScheduleKey;
+  const schedule = scheduleForJobType(jobType, cfg) ?? [];
+  const lines = scheduleLines(amount, schedule, set.mobilisationCap);
   const total = lines.reduce((sum, l) => sum + l.amount, 0);
-  const capped = mobilisationOverage(schedule, scheduleAmounts(amount, schedule));
-  const guessing = isUnmappedJobType(jobType) || !jobType.trim();
+  const capped = mobilisationOverage(
+    schedule,
+    scheduleAmounts(amount, schedule),
+    set.mobilisationCap,
+  );
+  const guessing = isUnmappedJobType(jobType, cfg) || !jobType.trim();
 
   return (
     <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
       <header className="border-b-2 border-brand-red bg-navy-700 px-4 py-3">
         <h2 className="text-sm font-semibold tracking-wide text-white uppercase">
-          Desglose de Pagos
+          {heading}
         </h2>
         <p className="mt-0.5 text-xs text-navy-200">
           Payment breakdown &middot; {schedule.length}{" "}
@@ -75,7 +114,7 @@ export default function PaymentSchedule({ jobType, onJobType, amount }: Props) {
           <option value="">— select —</option>
           {JOB_TYPES.map((t) => (
             <option key={t} value={t}>
-              {t} — {SCHEDULE_LABEL[scheduleKeyForJobType(t)]}
+              {t} — {SCHEDULE_LABEL[scheduleKeyForJobType(t, cfg) as ScheduleKey]}
             </option>
           ))}
         </select>
@@ -135,10 +174,13 @@ export default function PaymentSchedule({ jobType, onJobType, amount }: Props) {
 
       {capped > 0 && (
         <p className="border-t border-navy-100 bg-navy-50 px-4 py-2.5 text-xs text-navy-600/80">
-          <strong>Movilización is capped at {money(MOBILISATION_CAP)}.</strong> At{" "}
-          {pct(PAY_SCHEDULES.standard8[0].pct)} it would have been{" "}
-          {money(MOBILISATION_CAP + capped)}, so the {money(capped)} balance is
-          spread across the remaining stages and every percentage restated.
+          <strong>
+            {schedule[0].desc} is capped at {money(set.mobilisationCap ?? 0)}.
+          </strong>{" "}
+          At {pct(schedule[0].pct)} it would have been{" "}
+          {money((set.mobilisationCap ?? 0) + capped)}, so the {money(capped)}{" "}
+          balance is spread across the remaining stages and every percentage
+          restated.
         </p>
       )}
     </section>

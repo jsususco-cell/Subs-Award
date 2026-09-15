@@ -1,3 +1,5 @@
+import type { RegionKey } from "./regions";
+
 export interface JobOption {
   id: string;
   name: string;
@@ -17,22 +19,33 @@ export interface Lookup<T> {
   items: T[];
   warning?: string;
   error?: string;
-  region?: string;
+  region?: RegionKey;
+  regionLabel?: string;
 }
 
-// One in-flight request per resource, shared across every combobox on the page.
+/*
+ * One in-flight request per resource *and region*, shared across every combobox
+ * on the page. Keying on the resource alone would hand the Florida job list the
+ * Puerto Rico request that was already running.
+ */
 const inflight = new Map<string, Promise<Lookup<unknown>>>();
 
-async function load<T>(resource: "jobs" | "subs"): Promise<Lookup<T>> {
-  const existing = inflight.get(resource);
+async function load<T>(
+  resource: "jobs" | "subs",
+  region: RegionKey,
+): Promise<Lookup<T>> {
+  const key = `${resource}:${region}`;
+  const existing = inflight.get(key);
   if (existing) return existing as Promise<Lookup<T>>;
 
   const promise = (async (): Promise<Lookup<unknown>> => {
     try {
-      const res = await fetch(`/api/qb?resource=${resource}`);
+      const res = await fetch(
+        `/api/qb?resource=${resource}&region=${encodeURIComponent(region)}`,
+      );
       const body = await res.json();
       if (!body.ok) {
-        inflight.delete(resource);
+        inflight.delete(key);
         return {
           configured: Boolean(body.configured),
           items: [],
@@ -41,31 +54,32 @@ async function load<T>(resource: "jobs" | "subs"): Promise<Lookup<T>> {
       }
       if (!body.configured) {
         // The token may be added without redeploying the browser tab.
-        inflight.delete(resource);
+        inflight.delete(key);
       }
       return {
         configured: Boolean(body.configured),
         items: body.items ?? [],
         warning: body.warning,
         region: body.region,
+        regionLabel: body.regionLabel,
       };
     } catch {
       // A failed lookup must never block the letter — the fields stay typable.
-      inflight.delete(resource);
+      inflight.delete(key);
       return { configured: false, items: [], error: "Could not reach Quickbase." };
     }
   })();
 
-  inflight.set(resource, promise);
-  return promise as Promise<Lookup<T>>;
+  inflight.set(key, promise);
+  return promise as Promise<Lookup<unknown>> as Promise<Lookup<T>>;
 }
 
-export function loadJobs(): Promise<Lookup<JobOption>> {
-  return load<JobOption>("jobs");
+export function loadJobs(region: RegionKey): Promise<Lookup<JobOption>> {
+  return load<JobOption>("jobs", region);
 }
 
-export function loadSubs(): Promise<Lookup<SubOption>> {
-  return load<SubOption>("subs");
+export function loadSubs(region: RegionKey): Promise<Lookup<SubOption>> {
+  return load<SubOption>("subs", region);
 }
 
 /** Drop the cached lookups so the next open refetches. */

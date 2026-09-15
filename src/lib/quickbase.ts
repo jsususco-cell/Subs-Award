@@ -3,21 +3,18 @@
  * never be imported from a client component. It is used by the /api/qb route.
  */
 
+import type { RegionConfig } from "./regions";
+
 const API = "https://api.quickbase.com/v1";
 
+/**
+ * Which region a lookup is for is no longer a deployment setting: one
+ * deployment serves every region and the caller passes the one it wants. See
+ * src/lib/regions.ts. QB_REGION and QB_VENDOR_REGIONS are retired.
+ */
 export const QB_CONFIG = {
   realm: process.env.QB_REALM ?? "byrdsonservices.quickbase.com",
   token: process.env.QB_USER_TOKEN ?? "",
-  region: process.env.QB_REGION ?? "Puerto Rico",
-  /**
-   * Region values that count as in-region for vendors. "Both" has to be here:
-   * a vendor who works Puerto Rico *and* the mainland is still a Puerto Rico
-   * vendor, and an exact match on "Puerto Rico" alone silently drops them.
-   */
-  vendorRegions: (process.env.QB_VENDOR_REGIONS ?? "Puerto Rico,Both")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean),
   tables: {
     jobs: process.env.QB_JOBS_TABLE ?? "buskqh27b",
     vendors: process.env.QB_VENDORS_TABLE ?? "buskqh272",
@@ -29,7 +26,8 @@ export const QB_CONFIG = {
       region: 11,
       // Composite address field; returns a formatted single line such as
       // "Calle Orlando Olivero Casa 10, Canovanas, Puerto Rico 00972".
-      // Field 11 is its State/Region child, which is what the region filter uses.
+      // Field 11 is its State/Region child, which is what the region filter
+      // uses, and which carries the state name for mainland jobs.
       address: Number(process.env.QB_JOB_ADDRESS_FID ?? 7),
       // Drives which payment schedule the award letter uses.
       jobType: Number(process.env.QB_JOB_TYPE_FID ?? 34),
@@ -41,7 +39,8 @@ export const QB_CONFIG = {
       eligible: 182,
       email: Number(process.env.QB_VENDOR_EMAIL_FID ?? 28),
       // Already exists on the Vendors table. Choices are Puerto Rico,
-      // Mainland, Both, No work on file.
+      // Mainland, Both, No work on file — a coarse bucket, so every mainland
+      // state matches the same vendors until it is split by state.
       region: Number(process.env.QB_VENDOR_REGION_FID ?? 206),
     },
   },
@@ -144,8 +143,10 @@ export interface SubOption {
   email: string;
 }
 
-/** Jobs in the configured region, minus templates and scratch records. */
-export async function fetchJobs(): Promise<{ items: JobOption[]; warning?: string }> {
+/** Jobs in the given region, minus templates and scratch records. */
+export async function fetchJobs(
+  region: RegionConfig,
+): Promise<{ items: JobOption[]; warning?: string }> {
   const f = QB_CONFIG.fields.jobs;
   const select: number[] = [f.recordId, f.name, f.region];
   if (f.address) select.push(f.address);
@@ -154,7 +155,7 @@ export async function fetchJobs(): Promise<{ items: JobOption[]; warning?: strin
   const rows = await queryAll({
     from: QB_CONFIG.tables.jobs,
     select,
-    where: `{${f.region}.EX.'${QB_CONFIG.region}'}`,
+    where: `{${f.region}.EX.'${region.jobRegion.replace(/'/g, "")}'}`,
     sortBy: [{ fieldId: f.name, order: "ASC" }],
   });
 
@@ -178,15 +179,17 @@ export async function fetchJobs(): Promise<{ items: JobOption[]; warning?: strin
   };
 }
 
-/** Award-eligible vendors, region-filtered once the Region field exists. */
-export async function fetchSubs(): Promise<{ items: SubOption[]; warning?: string }> {
+/** Award-eligible vendors for a region. */
+export async function fetchSubs(
+  region: RegionConfig,
+): Promise<{ items: SubOption[]; warning?: string }> {
   const f = QB_CONFIG.fields.vendors;
   const select: number[] = [f.recordId, f.company, f.trade];
   if (f.region) select.push(f.region);
   if (f.email) select.push(f.email);
 
   const eligible = `{${f.eligible}.EX.true}`;
-  const regionOr = QB_CONFIG.vendorRegions
+  const regionOr = region.vendorRegions
     .map((v) => `{${f.region}.EX.'${v.replace(/'/g, "")}'}`)
     .join("OR");
   const regional =
@@ -213,21 +216,30 @@ export async function fetchSubs(): Promise<{ items: SubOption[]; warning?: strin
   if (!f.region) {
     return {
       items: await read(eligible),
-      warning: `Showing all award-eligible vendors — not filtered to ${QB_CONFIG.region}. Run npm run qb:add-vendor-region, then set QB_VENDOR_REGION_FID.`,
+      warning: `Showing all award-eligible vendors — not filtered to ${region.label}. Set QB_VENDOR_REGION_FID (see npm run qb:vendor-regions).`,
     };
   }
 
   const items = await read(regional);
   if (items.length > 0) return { items };
 
-  // An empty result usually means the Region field exists but has not been
-  // filled in yet. Falling back keeps the letter workable, and the warning
-  // makes it obvious the list is not actually region-filtered.
-  const fallback = await read(eligible);
-  if (fallback.length === 0) return { items: [] };
-
+  /*
+   * No vendor matches. This used to fall back to every award-eligible vendor,
+   * which was harmless while Puerto Rico was the only region and actively
+   * wrong now: the mainland states have no award-eligible vendor at all, so
+   * the fallback would offer Puerto Rico subcontractors for a Florida job and
+   * only whisper about it in a warning. An empty list that says why is safer
+   * than a plausible list that is wrong.
+   */
+  const eligibleCount = (await read(eligible)).length;
   return {
-    items: fallback,
-    warning: `No vendors are marked "${QB_CONFIG.region}" yet, so all ${fallback.length} award-eligible vendors are shown. Populate the Region field on the Vendors table to filter this list.`,
+    items: [],
+    warning:
+      `No subcontractor is both award-eligible and marked ${region.vendorRegions
+        .map((v) => `"${v}"`)
+        .join(" or ")} on the Subs/Vendors table, so there is nobody to award ` +
+      `${region.label} work to. ${eligibleCount} vendor${eligibleCount === 1 ? " is" : "s are"} ` +
+      `award-eligible overall — none of them in this region. Set Eligible for Award ` +
+      `and Region in Quickbase, then reopen this list.`,
   };
 }

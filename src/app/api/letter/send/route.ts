@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { renderLetter } from "@/lib/letter";
+import { canRenderLetter, NoLetterTemplateError, renderLetter } from "@/lib/letter";
 import { parseLetterInput } from "@/lib/letter-input";
+import { templateFor } from "@/lib/letter-content";
+import { regionFor } from "@/lib/regions";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 import {
   allowlist,
@@ -67,10 +69,31 @@ export async function POST(request: Request) {
   const input = parseLetterInput(body.letter);
   if (!input) {
     return NextResponse.json(
-      { ok: false, error: "Missing or malformed letter details" },
+      {
+        ok: false,
+        error:
+          "Missing or malformed letter details. A valid region is required — the letter's language and conditions follow from it.",
+      },
       { status: 400 },
     );
   }
+
+  /*
+   * Refused before any recipient check and long before the mail is built. This
+   * endpoint puts a contract in front of a subcontractor, so a region with no
+   * letter of its own must not be able to send another region's terms.
+   */
+  if (!canRenderLetter(input.region)) {
+    return NextResponse.json(
+      { ok: false, error: new NoLetterTemplateError(regionFor(input.region).label).message },
+      { status: 400 },
+    );
+  }
+
+  const fileName = pdfFileName(
+    input.jobName,
+    templateFor(regionFor(input.region))?.fileSuffix ?? ".pdf",
+  );
 
   const to = parseRecipients(String(body.to ?? ""));
   const cc = parseRecipients(String(body.cc ?? ""));
@@ -115,7 +138,7 @@ export async function POST(request: Request) {
       text,
       attachments: [
         {
-          filename: pdfFileName(input.jobName),
+          filename: fileName,
           content: Buffer.from(pdf),
           contentType: "application/pdf",
         },
@@ -132,7 +155,7 @@ export async function POST(request: Request) {
       // Reported so the archive copy is verifiable. A blind copy that silently
       // stopped being applied would otherwise look identical to one that works.
       bcc,
-      attachment: pdfFileName(input.jobName),
+      attachment: fileName,
       bytes: pdf.byteLength,
     });
   } catch (e) {

@@ -3,6 +3,10 @@
 Upload a scope of work and the award figures come out the other side. Built for
 Byrdson Services.
 
+Serves **Puerto Rico, Florida, North Carolina, Texas and Louisiana** from one
+deployment. The region is picked in the app and drives everything that differs —
+see [Regions](#regions).
+
 The whole thing runs in the browser: the workbook is parsed client-side and no
 file is ever uploaded to a server.
 
@@ -83,25 +87,98 @@ between files, since they are shop conventions. The coverage picks are not —
 they are re-derived from each file. The storage key is versioned (`:v2`), so a
 change to the stored shape retires the old entry instead of masking new defaults.
 
+## Regions
+
+One codebase, one deployment, five regions. `src/lib/regions.ts` is the single
+source of truth; adding a state means adding an entry there, not editing
+components.
+
+| | Puerto Rico | Florida | North Carolina | Texas | Louisiana |
+| --- | --- | --- | --- | --- | --- |
+| Jobs on file | 403 | 252 | 170 | 73 | 9 |
+| Award-eligible vendors | 20 | 2 | 2 | 2 | 2 |
+| Award letter | Spanish | — | — | — | — |
+| Payment schedule | 8 / 50-50 / 20-80 | — | — | — | — |
+| Fondo (CFSE) poliza | yes | no | no | no | no |
+| QB Line Item | 182 | — | — | — | — |
+
+A region carries six things:
+
+- **`jobRegion`** — the exact value in Jobs fid 11, which is the address
+  field's State/Region child. For the mainland that is the state name.
+- **`vendorRegions`** — the values of Subs/Vendors fid 206 that count as in
+  region. **That field is a coarse bucket** — `Puerto Rico | Mainland | Both |
+  No work on file` — so all four mainland states currently match the same
+  vendors. Splitting it by state means adding those choices in Quickbase and
+  re-tagging 536 records. `Both` counts for every region.
+- **`letter`** — the template. `null` means **no letter can be produced at
+  all**, and the buttons stay disabled. It never falls back to another region's
+  wording: the Puerto Rico letter is in Spanish and its twenty conditions bind
+  the subcontractor to CFSE coverage, OGPe permits and PRDOH programme rules, so
+  sending it to a Florida vendor would be a contract nobody meant to offer.
+- **`schedule`** — the payment milestones, which drive both the letter's
+  breakdown and the Billing Line Items. `null` means no breakdown and no bills.
+- **`insurance`** — `fondo` only for Puerto Rico. Mainland awards open no
+  insurance submittal.
+- **`qbLineItem`** — the account the cost posts to. `null` for the mainland
+  because the QB Line Items table holds both #181 "Subcontractors" and #233,
+  also called "Subcontractors", alongside #182 "Subcontractors - Puerto Rico".
+  The award write is **blocked before the first record is created** rather than
+  guessing, since Quickbase has no transactions and a wrong guess would strand a
+  purchase order carrying no contract amount.
+
+Changing region clears the job, the subcontractor and any created PO — those
+records belong to the region they were picked from. The parsed scope stays, and
+preferences (O&P, tiers, HC) are kept per region so a Puerto Rico hard-cost
+allowance is not carried onto a Florida award.
+
+### Adding the mainland letter
+
+1. Add a `"us-en"` entry to `LETTER_TEMPLATES` in `src/lib/letter-content.ts`
+   with its wording, conditions and labels.
+2. Add its milestones to `SCHEDULE_SETS` in `src/lib/schedule.ts`.
+3. Set `letter`, `schedule` and `qbLineItem` on those regions in
+   `src/lib/regions.ts`.
+
+The renderer is the skeleton, not the words — every label it prints comes from
+the template. If the supplied letter turns out to have a different *structure*
+rather than different words, give it its own renderer and dispatch on the key
+in `letter.ts`.
+
+### Who can be awarded work
+
+```bash
+npm run qb:vendor-regions
+```
+
+Reports, per region, how many subcontractors are both **Eligible for Award** and
+in region. Today every mainland state shows the same two vendors, and both
+qualify through `Region = Both` rather than being marked for the mainland —
+168 vendors are marked `Mainland` but are not award-eligible. A region with
+nothing matching gets an **empty list that says why**, never another region's
+vendors.
+
 ## Quickbase lookups (Job name, Job address, Subcontractor)
 
-The three letter fields can be backed by Quickbase, filtered to one region
-(`QB_REGION`, default `Puerto Rico`). They remain plain text fields if the
-lookup is unavailable — a Quickbase outage never blocks an award letter.
+The three letter fields are backed by Quickbase, filtered to the region picked
+in the app. They remain plain text fields if the lookup is unavailable — a
+Quickbase outage never blocks an award letter.
 
 - **Jobs** — `buskqh27b`, `Job Name` = `6`, `Address` = `7` (a composite field
   that returns one formatted line), region = `11`, which is the address field's
-  State/Region child. Filtered `{11.EX.'Puerto Rico'}` → 403 records, 386 after
-  dropping template and scratch names ("demo" is deliberately not an exclusion
-  keyword so Demolition jobs survive). Picking a job auto-fills the address.
+  State/Region child, and carries the state name for mainland jobs. Filtered
+  `{11.EX.'<region>'}` → Puerto Rico 403 records, 386 after dropping template and
+  scratch names ("demo" is deliberately not an exclusion keyword so Demolition
+  jobs survive); Florida 249, North Carolina 166. Picking a job auto-fills the
+  address.
 - **Subcontractors** — `buskqh272`, `Company` = `23`, `Division/Trade` = `34`,
   `Eligible for Award` = `182`, `Region` = `206`. 22 vendors are award-eligible;
   20 are in region.
 
   `Region` is a multiple-choice of `Puerto Rico | Mainland | Both | No work on
   file`. **`Both` counts as in-region** — a vendor working Puerto Rico *and* the
-  mainland is still a Puerto Rico vendor, and matching `Puerto Rico` alone
-  silently drops two of them. `QB_VENDOR_REGIONS` controls the accepted set.
+  mainland is in scope for both, and matching `Puerto Rico` alone silently drops
+  two of them. The accepted set per region lives in `src/lib/regions.ts`.
 
 Everything is measured on **RCV**. ACV and Item Amount used to be selectable;
 the award is always struck from RCV, so offering the others only invited the
@@ -129,13 +206,18 @@ npm run qb:introspect          # read-only field dump, if ids ever change
 the one env file git tracks, so a token pasted there would be committed.
 `npm test` fails if that happens.
 
-The field ids above are the defaults, so no configuration is needed for the
-Puerto Rico setup. Override them with the `QB_*_FID` variables if the schema
-moves.
+The field ids above are the defaults, so no configuration is needed. Override
+them with the `QB_*_FID` variables if the schema moves.
 
-**A Region field with nothing in it would match no vendors.** Rather than
-showing an empty dropdown, the app falls back to all award-eligible vendors and
-says on screen that the list is not region-filtered.
+`QB_REGION` and `QB_VENDOR_REGIONS` are **retired** — the region is chosen in
+the app, not fixed per deployment. They can be deleted from `.env.local` and
+from the Vercel project.
+
+**A region with no matching vendors shows an empty list and says why.** It used
+to fall back to every award-eligible vendor, which was harmless while Puerto Rico
+was the only region and would now offer Puerto Rico subcontractors for a Florida
+job. An empty list that explains itself is safer than a plausible list that is
+wrong. `npm run qb:vendor-regions` says which regions are in that state.
 
 ## Sending the letter
 
@@ -190,6 +272,10 @@ have the server render arbitrary markup.
 
 ## Desglose de Pagos (payment breakdown)
 
+**Puerto Rico only.** The mainland states have no schedule, so their awards get
+no payment breakdown and no billing lines, and the UI says so rather than
+showing Puerto Rico's milestones.
+
 The award letter carries the payment schedule from the Quickbase Puerto Rico
 award code page, so this letter and the Billing Line Items that page creates
 against the PO stay in step. **Changing one without the other puts them out of
@@ -222,6 +308,11 @@ chosen before sending.
 
 History lives in `localStorage` under `subs-award:history:v1`, read through
 `useSyncExternalStore` so the server render stays empty and no effect is needed.
+
+Each award records the region it was struck in, and reopening one restores that
+region so its letter, schedule and account are the ones it was saved with.
+Records written before the app served more than one region carry no region and
+are read as Puerto Rico, which is what they are.
 
 **It is per-browser.** Saved awards are not shared between machines, browsers or
 teammates, and clearing site data removes them. Making history shared would mean

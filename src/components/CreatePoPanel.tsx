@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { money, pct } from "@/lib/format";
-import { planAward, type AwardWriteInput } from "@/lib/qb-award";
+import { awardBlockers, planAward, type AwardWriteInput } from "@/lib/qb-award";
 import { defaultBody, defaultSubject } from "@/lib/letter-email";
-import type { LetterInput } from "@/lib/letter";
+import { canRenderLetter, type LetterInput } from "@/lib/letter";
+import { regionFor } from "@/lib/regions";
+import { scheduleSetFor } from "@/lib/schedule";
 
 const PO_STATUSES = ["Unreleased", "Released", "Approved"];
 const EXPENSE_CLASSES = ["PO", "Non-PO"];
@@ -89,16 +91,37 @@ export default function CreatePoPanel({
   const [to, setTo] = useState("");
   const [toTouched, setToTouched] = useState(false);
 
+  /*
+   * The region comes from the letter rather than a prop of its own, so the
+   * records and the letter can never be written for different regions.
+   */
+  const region = letter.region;
+  const cfg = regionFor(region);
+  /** No milestones means nothing to bill against. */
+  const hasSchedule = scheduleSetFor(cfg) !== null;
+  /** The Fondo (CFSE) poliza is a Puerto Rico obligation. */
+  const wantsFondo = cfg.insurance === "fondo";
+  const canLetter = canRenderLetter(region);
+  /** Reasons the write cannot go ahead at all, checked before anything runs. */
+  const blockers = awardBlockers(cfg);
+
+  // The server narrows these the same way; doing it here as well keeps the
+  // summary the user confirms identical to what actually gets written.
+  const willCreateBills = createBills && hasSchedule;
+  const willCreateInsurance = createInsurance && wantsFondo;
+
   // Follows the subcontractor's Quickbase address until the field is edited.
   const effectiveTo = toTouched ? to : to || suggestedTo;
   // With no address there is nothing to send to, so the letter is simply
   // skipped rather than failing the whole flow.
-  const willSend = sendLetter && effectiveTo.trim().length > 0;
+  // A region with no letter template cannot send one, whatever the box says.
+  const willSend = sendLetter && canLetter && effectiveTo.trim().length > 0;
 
   const effectiveTitle = title || scopeOfWork || jobName;
   const linked = Boolean(jobRecordId && subRecordId);
 
   const input: AwardWriteInput = {
+    region,
     jobRecordId: Number(jobRecordId) || 0,
     subRecordId: Number(subRecordId) || 0,
     title: effectiveTitle,
@@ -114,8 +137,8 @@ export default function CreatePoPanel({
     ada,
     caseNumber: jobName,
     subcontractorName: subcontractor,
-    createBills,
-    createInsurance,
+    createBills: willCreateBills,
+    createInsurance: willCreateInsurance,
   };
   const plan = planAward(input);
 
@@ -376,24 +399,32 @@ export default function CreatePoPanel({
                   />
                   Lien waiver required
                 </label>
-                <label className="flex items-center gap-2 text-xs text-navy-700">
-                  <input
-                    type="checkbox"
-                    checked={createBills}
-                    onChange={(e) => setCreateBills(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--color-navy-700)]"
-                  />
-                  Create the {plan.bills.length || "payment"} bills
-                </label>
-                <label className="flex items-center gap-2 text-xs text-navy-700">
-                  <input
-                    type="checkbox"
-                    checked={createInsurance}
-                    onChange={(e) => setCreateInsurance(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--color-navy-700)]"
-                  />
-                  Open the Fondo poliza submittal
-                </label>
+                {hasSchedule ? (
+                  <label className="flex items-center gap-2 text-xs text-navy-700">
+                    <input
+                      type="checkbox"
+                      checked={createBills}
+                      onChange={(e) => setCreateBills(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--color-navy-700)]"
+                    />
+                    Create the {plan.bills.length || "payment"} bills
+                  </label>
+                ) : (
+                  <p className="text-xs text-navy-600/70">
+                    No billing lines: {cfg.label} has no payment schedule yet.
+                  </p>
+                )}
+                {wantsFondo && (
+                  <label className="flex items-center gap-2 text-xs text-navy-700">
+                    <input
+                      type="checkbox"
+                      checked={createInsurance}
+                      onChange={(e) => setCreateInsurance(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--color-navy-700)]"
+                    />
+                    Open the Fondo poliza submittal
+                  </label>
+                )}
               </div>
             </div>
 
@@ -401,13 +432,20 @@ export default function CreatePoPanel({
               <label className="flex items-center gap-2 text-xs font-medium text-navy-800">
                 <input
                   type="checkbox"
-                  checked={sendLetter}
+                  checked={sendLetter && canLetter}
+                  disabled={!canLetter}
                   onChange={(e) => setSendLetter(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--color-navy-700)]"
+                  className="h-4 w-4 accent-[var(--color-navy-700)] disabled:opacity-40"
                 />
                 Email the award letter to the subcontractor
               </label>
-              {sendLetter && (
+              {!canLetter && (
+                <p className="mt-1 text-xs text-navy-600/70">
+                  There is no award letter template for {cfg.label} yet, so the
+                  records can be created but no letter will go out.
+                </p>
+              )}
+              {sendLetter && canLetter && (
                 <div className="mt-2">
                   <label
                     htmlFor="po-letter-to"
@@ -495,14 +533,16 @@ export default function CreatePoPanel({
                         : "none"
                     }
                   />
-                  <Row
-                    k="Fondo poliza"
-                    v={
-                      createInsurance
-                        ? `submittal opened for ${money(award)}, awaiting the poliza`
-                        : "not opening a submittal"
-                    }
-                  />
+                  {wantsFondo && (
+                    <Row
+                      k="Fondo poliza"
+                      v={
+                        willCreateInsurance
+                          ? `submittal opened for ${money(award)}, awaiting the poliza`
+                          : "not opening a submittal"
+                      }
+                    />
+                  )}
                   <Row
                     k="Award letter"
                     v={willSend ? `emailed to ${effectiveTo}` : "not being sent"}
@@ -548,10 +588,10 @@ export default function CreatePoPanel({
               <>
                 <button
                   type="button"
-                  disabled={!(award > 0) || stage === "working"}
+                  disabled={!(award > 0) || stage === "working" || blockers.length > 0}
                   onClick={() => setStage("confirming")}
                   className={`w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
-                    award > 0 && stage !== "working"
+                    award > 0 && stage !== "working" && !blockers.length
                       ? "bg-navy-700 hover:bg-navy-800"
                       : "cursor-not-allowed bg-navy-300"
                   }`}
@@ -560,14 +600,18 @@ export default function CreatePoPanel({
                     ? "Creating…"
                     : willSend
                       ? "Create PO & Send Letter"
-                      : "Create PO & Bills"}
+                      : willCreateBills
+                        ? "Create PO & Bills"
+                        : "Create PO"}
                 </button>
                 <p className="mt-2 text-xs text-navy-600/70">
-                  {award > 0
-                    ? `${money(award)} contract${
-                        plan.bills.length ? `, split into ${plan.bills.length} payments` : ""
-                      }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
-                    : "The award has to be above zero."}
+                  {blockers.length
+                    ? blockers.join(" ")
+                    : award > 0
+                      ? `${money(award)} contract${
+                          plan.bills.length ? `, split into ${plan.bills.length} payments` : ""
+                        }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
+                      : "The award has to be above zero."}
                 </p>
               </>
             )}

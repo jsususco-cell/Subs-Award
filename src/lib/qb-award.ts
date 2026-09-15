@@ -1,5 +1,6 @@
-import { scheduleForJobType, scheduleLines } from "./schedule";
+import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import { FONDO_FIELDS, FONDO_STATUS } from "./fondo";
+import { regionFor, type RegionConfig, type RegionKey } from "./regions";
 
 /**
  * Building the Quickbase records for an award — PO, Cost Item, Billing Line
@@ -90,12 +91,12 @@ export const QB_AWARD = {
 
   costItemCostType: "Subcontractor",
   costItemUnit: "LS",
-  /**
-   * Required: the Cost Items table has a data rule rejecting a record with no
-   * QB line item. 182 is the Puerto Rico account; plain "Subcontractors" is 181.
+  /*
+   * The QB line item the cost posts to is per region and lives on the region
+   * config — see `qbLineItem` in src/lib/regions.ts. It used to be the Puerto
+   * Rico account hardcoded here, which would have quietly posted Florida cost
+   * to a Puerto Rico account.
    */
-  costItemQbLineItemId: 182,
-  billLineQbLineItem: "Subcontractors - Puerto Rico",
   billLineCostType: "Subcontractor",
   /**
    * Bill % (fid 48) is a percent field that stores the FRACTION: 0.2 displays
@@ -113,6 +114,8 @@ export type QbValue = { value: string | number | boolean };
 export type QbRecord = Record<string, QbValue>;
 
 export interface AwardWriteInput {
+  /** Decides the account the cost posts to and the billing milestones. */
+  region: RegionKey;
   jobRecordId: number;
   subRecordId: number;
   title: string;
@@ -139,6 +142,28 @@ export interface AwardWriteInput {
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Why an award cannot be written to Quickbase for this region yet.
+ *
+ * Checked before the first record is created, never half way through: the
+ * writes are not transactional, so discovering at the cost-item step that
+ * there is no account to post to would strand a purchase order carrying no
+ * contract amount.
+ */
+export function awardBlockers(region: RegionConfig): string[] {
+  const blockers: string[] = [];
+  if (!region.qbLineItem) {
+    blockers.push(
+      `No QB Line Item account is set for ${region.label}. ` +
+        `The Cost Items table rejects a record without one, and the table holds ` +
+        `both #181 "Subcontractors" and #233, also called "Subcontractors", so ` +
+        `the right account has to be chosen rather than guessed. Set qbLineItem ` +
+        `for this region in src/lib/regions.ts.`,
+    );
+  }
+  return blockers;
 }
 
 /**
@@ -193,6 +218,9 @@ export function buildCostItemRecord(
   poRecordId: number,
 ): QbRecord {
   const f = QB_AWARD.costItems;
+  const region = regionFor(input.region);
+  const account = region.qbLineItem;
+  if (!account) throw new Error(awardBlockers(region)[0]);
   return {
     [f.relatedPO]: { value: poRecordId },
     [f.title]: { value: input.title || input.scope },
@@ -204,7 +232,7 @@ export function buildCostItemRecord(
     [f.qty]: { value: 1 },
     [f.unit]: { value: QB_AWARD.costItemUnit },
     [f.relatedSub]: { value: input.subRecordId },
-    [f.relatedQbLineItem]: { value: QB_AWARD.costItemQbLineItemId },
+    [f.relatedQbLineItem]: { value: account.id },
   };
 }
 
@@ -213,7 +241,16 @@ export function buildBillRecords(
   costItemRecordId: number,
 ): QbRecord[] {
   const f = QB_AWARD.billLines;
-  const lines = scheduleLines(input.award, scheduleForJobType(input.jobType));
+  const region = regionFor(input.region);
+  const account = region.qbLineItem;
+  if (!account) throw new Error(awardBlockers(region)[0]);
+
+  // No schedule means no milestones to bill against, so no lines at all.
+  const lines = scheduleLines(
+    input.award,
+    scheduleForJobType(input.jobType, region),
+    scheduleSetFor(region)?.mobilisationCap ?? null,
+  );
 
   return lines.map((line) => {
     const rec: QbRecord = {
@@ -228,7 +265,7 @@ export function buildBillRecords(
           : line.pct,
       },
       [f.billAmount]: { value: line.amount },
-      [f.qbLineItem]: { value: QB_AWARD.billLineQbLineItem },
+      [f.qbLineItem]: { value: account.label },
       [f.costType]: { value: QB_AWARD.billLineCostType },
     };
     if (input.jobRecordId) rec[f.relatedJob] = { value: input.jobRecordId };
@@ -283,8 +320,13 @@ export interface AwardPlan {
 }
 
 export function planAward(input: AwardWriteInput): AwardPlan {
+  const region = regionFor(input.region);
   const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
-  const lines = scheduleLines(input.award, scheduleForJobType(input.jobType));
+  const lines = scheduleLines(
+    input.award,
+    scheduleForJobType(input.jobType, region),
+    scheduleSetFor(region)?.mobilisationCap ?? null,
+  );
 
   return {
     po: {

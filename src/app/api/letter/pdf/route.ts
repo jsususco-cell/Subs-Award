@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { renderLetter } from "@/lib/letter";
+import { canRenderLetter, NoLetterTemplateError, renderLetter } from "@/lib/letter";
 import { parseLetterInput } from "@/lib/letter-input";
+import { templateFor } from "@/lib/letter-content";
+import { regionFor } from "@/lib/regions";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 
 export const dynamic = "force-dynamic";
@@ -18,17 +20,32 @@ export async function POST(request: Request) {
   const input = parseLetterInput(body);
   if (!input) {
     return NextResponse.json(
-      { ok: false, error: "Missing or malformed letter details" },
+      {
+        ok: false,
+        error:
+          "Missing or malformed letter details. A valid region is required — the letter's language and conditions follow from it.",
+      },
       { status: 400 },
     );
   }
+
+  // A region with no template is a 400, not a 500: the request is well formed,
+  // there is simply no letter to render for it.
+  if (!canRenderLetter(input.region)) {
+    return NextResponse.json(
+      { ok: false, error: new NoLetterTemplateError(regionFor(input.region).label).message },
+      { status: 400 },
+    );
+  }
+
+  const suffix = templateFor(regionFor(input.region))?.fileSuffix ?? ".pdf";
 
   try {
     const pdf = await htmlToPdf(renderLetter(input));
     return new NextResponse(pdf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${pdfFileName(input.jobName)}"`,
+        "Content-Disposition": `attachment; filename="${pdfFileName(input.jobName, suffix)}"`,
         "Cache-Control": "no-store",
       },
     });

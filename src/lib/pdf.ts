@@ -53,7 +53,11 @@ async function launch(): Promise<Browser> {
   });
 }
 
-export function pdfFileName(jobName: string): string {
+/**
+ * The attachment name. The suffix comes from the letter template, because a
+ * Florida subcontractor should not receive a file called "Adjudicacion".
+ */
+export function pdfFileName(jobName: string, suffix: string): string {
   const base = (jobName || "award").trim().replace(/[^\w.-]+/g, "-");
-  return `${base} - Adjudicacion de Subcontrato.pdf`;
+  return `${base}${suffix}`;
 }

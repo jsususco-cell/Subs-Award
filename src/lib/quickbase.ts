@@ -1,8 +1,11 @@
 /**
  * Quickbase access. SERVER ONLY — this module reads the user token and must
- * never be imported from a client component. It is used by the /api/qb route.
+ * never be imported from a client component. The `server-only` import above
+ * turns that from a comment into a build error: anything that reaches a client
+ * bundle through here fails the build rather than shipping the token.
  */
 
+import "server-only";
 import type { RegionConfig } from "./regions";
 
 const API = "https://api.quickbase.com/v1";

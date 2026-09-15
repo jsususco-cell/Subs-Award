@@ -1,14 +1,13 @@
+import "server-only";
 import { queryAll } from "./quickbase";
 import type { RegionConfig } from "./regions";
 
 /**
  * Which QuickBooks account a region's subcontractor cost posts to.
  *
- * SERVER ONLY — this reaches Quickbase with the user token and must never be
- * imported from a client component. Marked by convention rather than by
- * `import "server-only"`, the way quickbase.ts is: that package is not a
- * dependency of this project, and importing it makes the route 404 under
- * Turbopack dev.
+ * SERVER ONLY — this reaches Quickbase with the user token, and the import
+ * above makes that a build error rather than a code review note if a client
+ * component ever pulls it in.
  *
  * Resolved from the QB Line Items table rather than pinned in code, because
  * the chart of accounts moves: on 2026-09-01 the Puerto Rico account #182

@@ -99,15 +99,25 @@ export const QB_AWARD = {
    */
   billLineCostType: "Subcontractor",
   /**
-   * Bill % (fid 48) is a percent field that stores the FRACTION: 0.2 displays
-   * as 20%, and 1 as 100%. Send 20 and it stores 20, which displays as 2000%.
+   * Bill % (fid 48) is a percent field. **Send the WHOLE number**: the REST API
+   * divides by 100 on write, so 10 is stored as 0.1 and displays as 10%.
    *
-   * Established by reading live Billing Line Items rather than trusting the
-   * code page's comment, which claimed the opposite. Records #78/#79 bill the
-   * same $845 contract at 0.4 ($338) and 0.3 ($253.50) -- 338/0.4 = 845 and
-   * 253.5/0.3 = 845, so the stored number is unambiguously the fraction.
+   * This was wrong here until 2026-09-16 and is worth spelling out, because the
+   * obvious check gets it backwards. Reading a bill back shows 0.1, which looks
+   * like the store wants a fraction -- that is what records #78/#79 ($845 billed
+   * at 0.4 and 0.3) appear to say, and the reasoning that used to sit here.
+   * But a read shows what is STORED, not what was SENT.
+   *
+   * The discriminator is a bill whose writer is known. The Quickbase award code
+   * page titles its milestones `${desc} (${pct}%)` and sends `billPct` as the
+   * whole number; live bills #4300, #4319, #4328, #4344, #4352 and #4400 are all
+   * titled "Movilización (10%)" and all store 0.1. Ten went in, 0.1 came out.
+   *
+   * Sending 0.1 would therefore store 0.001 and display 0.1% -- every bill filed
+   * at a hundredth of its contract share. Nothing was corrupted because this app
+   * had not yet written a bill to production.
    */
-  billPctAsFraction: true,
+  billPctAsFraction: false,
 } as const;
 
 export type QbValue = { value: string | number | boolean };
@@ -257,9 +267,11 @@ export function buildBillRecords(
       [f.relatedItem]: { value: costItemRecordId },
       [f.title]: { value: `${line.desc} (${line.pct}%)` },
       [f.billPct]: {
-        // A percentage of two decimals is four as a fraction. Dividing alone
-        // gives 5.61 / 100 = 0.056100000000000004, so round rather than send
-        // float noise into a financial field.
+        // The whole number, as the schedule already rounded it to two decimals.
+        // The fraction branch remains only so the constant above can be flipped
+        // if Quickbase ever changes; it rounds because a percentage of two
+        // decimals is four as a fraction and 5.61 / 100 is 0.056100000000000004,
+        // which is float noise to put in a financial field.
         value: QB_AWARD.billPctAsFraction
           ? Math.round((line.pct / 100) * 1e6) / 1e6
           : line.pct,

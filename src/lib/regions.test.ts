@@ -13,7 +13,6 @@ import { templateFor } from "./letter-content";
 import { parseLetterInput } from "./letter-input";
 import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import {
-  awardBlockers,
   buildBillRecords,
   buildCostItemRecord,
   type AwardWriteInput,
@@ -268,29 +267,40 @@ test("the $10,000 cap applies to the English stage name too", () => {
   assert.ok(Math.abs(lines.reduce((s, l) => s + l.amount, 0) - 180800) < 0.005);
 });
 
-test("a region with no account is blocked before anything is written", () => {
+test("each region posts to its own QuickBooks location", () => {
+  /*
+   * The account itself is looked up at write time — by QBO Location, Active
+   * only — so what is pinned here is the location, which is the part that
+   * belongs to the region rather than to the chart of accounts.
+   */
+  assert.equal(REGIONS.PR.qboLocation, "PR");
   for (const key of MAINLAND) {
-    const blockers = awardBlockers(REGIONS[key]);
-    assert.equal(blockers.length, 1, `${key} should report exactly one blocker`);
-    assert.match(blockers[0], /QB Line Item/);
-    // And the builders refuse too, so nothing can slip past the route check.
-    assert.throws(() => buildCostItemRecord(writeInput({ region: key }), 1));
-    assert.throws(() => buildBillRecords(writeInput({ region: key }), 1));
+    assert.equal(REGIONS[key].qboLocation, "US");
   }
-  assert.deepEqual(awardBlockers(REGIONS.PR), []);
-  assert.deepEqual(missingSetup(REGIONS.PR), []);
 });
 
-test("Puerto Rico still posts to its own account, not the plain one", () => {
-  const costItem = buildCostItemRecord(writeInput({ region: "PR" }), 42);
-  // Related QB Line Item is fid 13 on the Cost Items table.
-  assert.equal(costItem["13"].value, 182);
+test("the resolved account is what gets written, never a hardcoded id", () => {
+  const account = { id: 4242, label: "Some Other Account" };
 
-  const bills = buildBillRecords(writeInput({ region: "PR" }), 99);
+  const costItem = buildCostItemRecord(writeInput({ region: "PR" }), 42, account);
+  // Related QB Line Item is fid 13 on the Cost Items table.
+  assert.equal(costItem["13"].value, 4242);
+
+  const bills = buildBillRecords(writeInput({ region: "PR" }), 99, account);
   assert.equal(bills.length, 8);
   for (const bill of bills) {
-    assert.equal(bill["41"].value, "Subcontractors - Puerto Rico");
+    assert.equal(bill["41"].value, "Some Other Account");
   }
+
+  // The retired Puerto Rico account must never reappear as a default.
+  assert.notEqual(costItem["13"].value, 182);
+});
+
+test("nothing is missing once a region has its letter and schedule", () => {
+  for (const key of MAINLAND) {
+    assert.deepEqual(missingSetup(REGIONS[key]), []);
+  }
+  assert.deepEqual(missingSetup(REGIONS.PR), []);
 });
 
 test("only Puerto Rico owes a Fondo poliza", () => {
@@ -300,13 +310,3 @@ test("only Puerto Rico owes a Fondo poliza", () => {
   }
 });
 
-test("what is missing is reported per region, so the UI can say so", () => {
-  for (const key of MAINLAND) {
-    const missing = missingSetup(REGIONS[key]);
-    // The letter and the schedule landed; only the cost account is open.
-    assert.deepEqual(missing, [
-      "the QB Line Item account mainland cost posts to",
-    ]);
-  }
-  assert.deepEqual(missingSetup(REGIONS.PR), []);
-});

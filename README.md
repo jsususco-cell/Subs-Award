@@ -161,7 +161,7 @@ components.
 | Award letter | Spanish | English | English | English | English |
 | Payment schedule | 8 / 50-50 / 20-80 | same, in English | same | same | same |
 | Fondo (CFSE) poliza | yes | no | no | no | no |
-| QB Line Item | 182 | — | — | — | — |
+| QBO location | PR | US | US | US | US |
 
 A region carries six things:
 
@@ -180,12 +180,9 @@ A region carries six things:
   breakdown and the Billing Line Items. `null` means no breakdown and no bills.
 - **`insurance`** — `fondo` only for Puerto Rico. Mainland awards open no
   insurance submittal.
-- **`qbLineItem`** — the account the cost posts to. `null` for the mainland
-  because the QB Line Items table holds both #181 "Subcontractors" and #233,
-  also called "Subcontractors", alongside #182 "Subcontractors - Puerto Rico".
-  The award write is **blocked before the first record is created** rather than
-  guessing, since Quickbase has no transactions and a wrong guess would strand a
-  purchase order carrying no contract amount.
+- **`qboLocation`** — the QuickBooks location whose chart of accounts the
+  region posts to: `PR` for Puerto Rico, `US` for the mainland. The account
+  itself is **not** pinned here; it is looked up at write time. See below.
 
 Changing region clears the job, the subcontractor and any created PO — those
 records belong to the region they were picked from. The parsed scope stays, and
@@ -241,6 +238,37 @@ Form labels follow the region's own letter, so a Florida award asks for a
 The renderer is the skeleton, not the words — every label it prints comes from
 the template. A letter with a different *structure* rather than different words
 should get its own renderer, dispatched on the key in `letter.ts`.
+
+### Which account the cost posts to
+
+Not a constant. At write time the app resolves **the QB Line Items record named
+`Subcontractors` whose QBO Location matches the region and whose Status is
+`Active`** — `src/lib/qb-accounts.ts`.
+
+Today that is:
+
+| Region | QBO Location | Record | QuickBooks account |
+| --- | --- | --- | --- |
+| Puerto Rico | `PR` | #233 `Subcontractors` | 1150040065 |
+| Florida, North Carolina, Texas, Louisiana | `US` | #181 `Subcontractors` | 1150040082 |
+
+It is a lookup rather than an id in the code because **the chart of accounts
+moves, and this app was caught out by it.** Record #182
+`Subcontractors - Puerto Rico` was marked inactive on 2026-09-01 and #233 took
+over; the app went on pointing at #182 until 2026-09-16. Reading the rule
+instead of the answer means the next such change is followed rather than
+repeated.
+
+**Anything other than exactly one match is an error, and nothing is written.**
+Zero matches usually means the account was renamed or deactivated; more than
+one means two are active and a person has to decide. Both are reported with the
+record ids rather than resolved by picking the first — posting cost to a
+guessed account is worse than refusing.
+
+The resolution happens **before the first record is created**, because
+Quickbase has no transactions and a purchase order without its cost item
+carries no contract amount. The bill screen also shows which account the draws
+will post to, so it is visible rather than assumed.
 
 ### Who can be awarded work
 

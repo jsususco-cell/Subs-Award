@@ -1,6 +1,6 @@
 import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import { FONDO_FIELDS, FONDO_STATUS } from "./fondo";
-import { regionFor, type RegionConfig, type RegionKey } from "./regions";
+import { regionFor, type RegionKey } from "./regions";
 
 /**
  * Building the Quickbase records for an award — PO, Cost Item, Billing Line
@@ -245,25 +245,15 @@ function round(n: number): number {
 }
 
 /**
- * Why an award cannot be written to Quickbase for this region yet.
+ * The account a region's cost posts to, resolved from Quickbase.
  *
- * Checked before the first record is created, never half way through: the
- * writes are not transactional, so discovering at the cost-item step that
- * there is no account to post to would strand a purchase order carrying no
- * contract amount.
+ * Passed into the builders rather than read from the region, because which
+ * account is current is a fact in the chart of accounts, not a constant. See
+ * src/lib/qb-accounts.ts.
  */
-export function awardBlockers(region: RegionConfig): string[] {
-  const blockers: string[] = [];
-  if (!region.qbLineItem) {
-    blockers.push(
-      `No QB Line Item account is set for ${region.label}. ` +
-        `The Cost Items table rejects a record without one, and the table holds ` +
-        `both #181 "Subcontractors" and #233, also called "Subcontractors", so ` +
-        `the right account has to be chosen rather than guessed. Set qbLineItem ` +
-        `for this region in src/lib/regions.ts.`,
-    );
-  }
-  return blockers;
+export interface CostAccount {
+  id: number;
+  label: string;
 }
 
 /**
@@ -350,11 +340,9 @@ export function buildPoRecord(input: AwardWriteInput): QbRecord {
 export function buildCostItemRecord(
   input: AwardWriteInput,
   poRecordId: number,
+  account: CostAccount,
 ): QbRecord {
   const f = QB_AWARD.costItems;
-  const region = regionFor(input.region);
-  const account = region.qbLineItem;
-  if (!account) throw new Error(awardBlockers(region)[0]);
   return {
     [f.relatedPO]: { value: poRecordId },
     [f.title]: { value: input.title || input.scope },
@@ -373,11 +361,10 @@ export function buildCostItemRecord(
 export function buildBillRecords(
   input: AwardWriteInput,
   costItemRecordId: number,
+  account: CostAccount,
 ): QbRecord[] {
   const f = QB_AWARD.billLines;
   const region = regionFor(input.region);
-  const account = region.qbLineItem;
-  if (!account) throw new Error(awardBlockers(region)[0]);
 
   // No schedule means no milestones to bill against, so no lines at all.
   const lines = scheduleLines(

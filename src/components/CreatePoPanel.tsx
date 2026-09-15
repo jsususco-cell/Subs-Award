@@ -4,7 +4,6 @@ import { useState } from "react";
 import { money, pct } from "@/lib/format";
 import {
   CATEGORY_FIELDS,
-  awardBlockers,
   planAward,
   type AwardWriteInput,
   type PoCategories,
@@ -119,8 +118,6 @@ export default function CreatePoPanel({
   /** The Fondo (CFSE) poliza is a Puerto Rico obligation. */
   const wantsFondo = cfg.insurance === "fondo";
   const canLetter = canRenderLetter(region);
-  /** Reasons the write cannot go ahead at all, checked before anything runs. */
-  const blockers = awardBlockers(cfg);
 
   // The server narrows these the same way; doing it here as well keeps the
   // summary the user confirms identical to what actually gets written.
@@ -609,10 +606,10 @@ export default function CreatePoPanel({
               <>
                 <button
                   type="button"
-                  disabled={!(award > 0) || stage === "working" || blockers.length > 0}
+                  disabled={!(award > 0) || stage === "working"}
                   onClick={() => setStage("confirming")}
                   className={`w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
-                    award > 0 && stage !== "working" && !blockers.length
+                    award > 0 && stage !== "working"
                       ? "bg-navy-700 hover:bg-navy-800"
                       : "cursor-not-allowed bg-navy-300"
                   }`}
@@ -626,13 +623,11 @@ export default function CreatePoPanel({
                         : "Create PO"}
                 </button>
                 <p className="mt-2 text-xs text-navy-600/70">
-                  {blockers.length
-                    ? blockers.join(" ")
-                    : award > 0
+                  {award > 0
                       ? `${money(award)} contract${
                           plan.bills.length ? `, split into ${plan.bills.length} payments` : ""
-                        }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
-                      : "The award has to be above zero."}
+                      }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
+                    : "The award has to be above zero."}
                 </p>
               </>
             )}

@@ -66,16 +66,15 @@ export interface RegionConfig {
    */
   insurance: InsuranceKind;
   /**
-   * The QB Line Item the cost item and billing lines post to.
+   * The QuickBooks location whose chart of accounts this region posts to.
    *
-   * null means accounting has not said which account mainland work belongs to.
-   * The QB Line Items table holds #181 "Subcontractors", #182 "Subcontractors
-   * - Puerto Rico" and #233, also called "Subcontractors" — so the choice is
-   * genuinely ambiguous and guessing would put costs on the wrong account.
-   * Cost Items has a data rule rejecting a record with no QB line item, so a
-   * guess would not even fail quietly; it would fail after the PO was written.
+   * The account itself is looked up at write time rather than pinned here:
+   * the active "Subcontractors" account for this location. See
+   * src/lib/qb-accounts.ts for why — the chart of accounts moves, and this
+   * app spent a while posting Puerto Rico cost to an account that had been
+   * deactivated.
    */
-  qbLineItem: { id: number; label: string } | null;
+  qboLocation: "US" | "PR";
   /**
    * Prefilled "Programa" on the award letter. Empty where the programme is not
    * known for the region — an empty field a user fills in is better than a
@@ -101,7 +100,7 @@ const MAINLAND = {
   letter: "us-en",
   schedule: "us",
   insurance: "none",
-  qbLineItem: null,
+  qboLocation: "US",
   defaultProgram: "",
 } satisfies Omit<RegionConfig, "key" | "label" | "jobRegion">;
 
@@ -118,7 +117,7 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
     letter: "pr-es",
     schedule: "pr",
     insurance: "fondo",
-    qbLineItem: { id: 182, label: "Subcontractors - Puerto Rico" },
+    qboLocation: "PR",
     defaultProgram: "PR R3",
   },
   FL: mainland("FL", "Florida"),
@@ -162,8 +161,11 @@ export function missingSetup(region: RegionConfig): string[] {
   if (!region.schedule) {
     missing.push(`a payment schedule for ${region.label}`);
   }
-  if (!region.qbLineItem) {
-    missing.push("the QB Line Item account mainland cost posts to");
-  }
+  /*
+   * The cost account is deliberately not checked here. It is resolved from
+   * Quickbase at write time, so whether one exists is not something the
+   * browser can know — the award route checks it before its first write and
+   * reports what it found.
+   */
   return missing;
 }

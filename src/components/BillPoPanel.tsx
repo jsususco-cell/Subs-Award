@@ -53,6 +53,7 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
   const [loadingPos, setLoadingPos] = useState(false);
 
   const [costItemId, setCostItemId] = useState<number | null>(null);
+  const [account, setAccount] = useState<{ id: number; label: string } | null>(null);
   const [existing, setExisting] = useState<ExistingBill[]>([]);
   const [contract, setContract] = useState(0);
   const [loadingBills, setLoadingBills] = useState(false);
@@ -122,6 +123,7 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
     setPoId(id);
     setExisting([]);
     setCostItemId(null);
+    setAccount(null);
     setDrafts({});
     setError(null);
     setDone(null);
@@ -137,6 +139,8 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
       }
       if (body.error) setError(body.error);
       setCostItemId(body.costItemRecordId ?? null);
+      setAccount(body.qbLineItem ?? null);
+      if (body.qbLineItemError) setError(body.qbLineItemError);
       setExisting(body.bills ?? []);
       const chosen = pos?.find((p) => String(p.recordId) === id);
       setContract(body.unitCost || chosen?.totalCost || 0);
@@ -323,6 +327,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
               <p className="mt-1 text-xs text-navy-600/70">
                 {po.jobType || "no job type"} · contract {money(contract)}
                 {costItemId ? ` · cost item #${costItemId}` : ""}
+                {account
+                  ? ` · posts to ${account.label} (#${account.id})`
+                  : ""}
               </p>
             )}
           </div>

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { QB_CONFIG, isConfigured } from "@/lib/quickbase";
 import {
   QB_AWARD,
-  awardBlockers,
   categoriesTotal,
   type PoCategories,
   buildBillRecords,
@@ -13,6 +12,7 @@ import {
   type QbRecord,
 } from "@/lib/qb-award";
 import { isRegionKey, regionFor } from "@/lib/regions";
+import { trySubcontractorAccount } from "@/lib/qb-accounts";
 import { scheduleSetFor } from "@/lib/schedule";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
@@ -230,17 +230,16 @@ export async function POST(request: Request) {
   }
 
   /*
-   * Checked before the first write. Quickbase has no transactions, so a
-   * blocker discovered at the cost-item step would leave a purchase order
-   * behind that carries no contract amount.
+   * The cost account is resolved before the first write. Quickbase has no
+   * transactions, so discovering at the cost-item step that there is nothing
+   * to post to would leave a purchase order behind carrying no contract
+   * amount.
    */
-  const blockers = awardBlockers(regionFor(input.region));
-  if (blockers.length) {
-    return NextResponse.json(
-      { ok: false, error: blockers.join(" "), blockers },
-      { status: 400 },
-    );
+  const resolved = await trySubcontractorAccount(regionFor(input.region));
+  if ("error" in resolved) {
+    return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
   }
+  const account = resolved.account;
 
   let poId: number | null = null;
   let costItemId: number | null = null;
@@ -255,7 +254,7 @@ export async function POST(request: Request) {
 
     [costItemId] = await createRecords(
       QB_AWARD.tables.costItems,
-      [buildCostItemRecord(input, poId)],
+      [buildCostItemRecord(input, poId, account)],
       [QB_AWARD.costItems.recordId],
     );
 
@@ -263,7 +262,7 @@ export async function POST(request: Request) {
     if (input.createBills) {
       billIds = await createRecords(
         QB_AWARD.tables.billLines,
-        buildBillRecords(input, costItemId),
+        buildBillRecords(input, costItemId, account),
         [QB_AWARD.billLines.recordId],
       );
       billsCreated = billIds.length > 0;
@@ -292,6 +291,8 @@ export async function POST(request: Request) {
       ok: true,
       poRecordId: poId,
       costItemRecordId: costItemId,
+      // Reported so the account actually used is visible, not assumed.
+      qbLineItem: { id: account.id, label: account.label },
       billRecordIds: billIds,
       billCount: billIds.length,
       insuranceRecordId: insuranceId,

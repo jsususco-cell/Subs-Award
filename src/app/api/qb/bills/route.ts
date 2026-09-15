@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { QB_CONFIG, isConfigured, queryAll } from "@/lib/quickbase";
-import { QB_AWARD, awardBlockers } from "@/lib/qb-award";
+import { QB_AWARD } from "@/lib/qb-award";
+import { trySubcontractorAccount } from "@/lib/qb-accounts";
 import {
   backChargeProblem,
   billRows,
@@ -177,11 +178,20 @@ export async function GET(request: Request) {
         });
       }
 
+      /*
+       * Reported so the screen can say which account these bills will post
+       * to. Read here rather than assumed, because it is resolved from the
+       * chart of accounts and can change without this app changing.
+       */
+      const account = await trySubcontractorAccount(region);
+
       return NextResponse.json({
         ok: true,
         configured: true,
         costItemRecordId: costItem.recordId,
         unitCost: costItem.unitCost,
+        qbLineItem: "account" in account ? account.account : null,
+        qbLineItemError: "error" in account ? account.error : undefined,
         bills: await billsFor(costItem.recordId),
       });
     }
@@ -243,13 +253,12 @@ export async function POST(request: Request) {
   }
   const region = regionFor(body.region);
 
-  const blockers = awardBlockers(region);
-  if (blockers.length) {
-    return NextResponse.json(
-      { ok: false, error: blockers.join(" "), blockers },
-      { status: 400 },
-    );
+  // Resolved before anything is written, for the same reason as the award.
+  const resolved = await trySubcontractorAccount(region);
+  if ("error" in resolved) {
+    return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
   }
+  const account = resolved.account;
 
   const poRecordId = Number(body.poRecordId) || 0;
   const jobType = typeof body.jobType === "string" ? body.jobType : "";
@@ -340,7 +349,7 @@ export async function POST(request: Request) {
         buildBillRecord({
           costItemRecordId: costItem.recordId,
           jobRecordId: Number(body.jobRecordId) || 0,
-          qbLineItemLabel: region.qbLineItem!.label,
+          qbLineItemLabel: account.label,
           row,
           backCharge: change.backCharge,
           backChargeDesc: change.backChargeDesc,
@@ -388,6 +397,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      qbLineItem: { id: account.id, label: account.label },
       createdRecordIds: createdIds,
       updatedRecordIds: updatedIds,
       created: createdIds.length,

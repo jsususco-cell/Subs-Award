@@ -17,6 +17,13 @@ import { FONDO_FIELDS, FONDO_STATUS } from "./fondo";
 
 const CENT = 0.005;
 
+/**
+ * The account the write resolves to. Real writes look this up from the QB
+ * Line Items table by QBO location and Active status; the builders are handed
+ * the answer, so the tests hand them one too.
+ */
+const ACCOUNT = { id: 233, label: "Subcontractors" };
+
 function input(over: Partial<AwardWriteInput> = {}): AwardWriteInput {
   return {
     region: "PR",
@@ -109,7 +116,7 @@ test("a due date is included when given", () => {
 });
 
 test("the cost item holds the contract amount and the required QB line item", () => {
-  const ci = buildCostItemRecord(input(), 14421);
+  const ci = buildCostItemRecord(input(), 14421, ACCOUNT);
   const f = QB_AWARD.costItems;
 
   assert.equal(val(ci, f.relatedPO), 14421);
@@ -118,8 +125,9 @@ test("the cost item holds the contract amount and the required QB line item", ()
   assert.equal(val(ci, f.unit), "LS");
   assert.equal(val(ci, f.costType), "Subcontractor");
   assert.equal(val(ci, f.relatedSub), 2738);
-  // The Cost Items table rejects a record with no QB line item; 182 is the PR account.
-  assert.equal(val(ci, f.relatedQbLineItem), 182);
+  // The Cost Items table rejects a record with no QB line item, and the id
+  // written is whatever the account resolved to — never a constant in here.
+  assert.equal(val(ci, f.relatedQbLineItem), ACCOUNT.id);
 });
 
 test("bill percentages are sent whole, because the API divides by 100", () => {
@@ -134,7 +142,7 @@ test("bill percentages are sent whole, because the API divides by 100", () => {
    */
   assert.equal(QB_AWARD.billPctAsFraction, false);
 
-  const bills = buildBillRecords(input(), 9001);
+  const bills = buildBillRecords(input(), 9001, ACCOUNT);
   const f = QB_AWARD.billLines;
   // Movilización is capped on this award, so its share is 5.61%, not 10%.
   assert.equal(val(bills[0], f.billPct), 5.61);
@@ -150,7 +158,7 @@ test("bill percentages are sent whole, because the API divides by 100", () => {
   );
 
   // A two-payment schedule sends 50, not 0.5.
-  const whole = buildBillRecords(input({ jobType: "Repair" }), 9001);
+  const whole = buildBillRecords(input({ jobType: "Repair" }), 9001, ACCOUNT);
   assert.equal(val(whole[0], f.billPct), 50);
 
   // The stated share must describe the amount actually being paid. Checked in
@@ -168,13 +176,13 @@ test("bill percentages are sent whole, because the API divides by 100", () => {
 
 test("the contract amount is stored to the cent, not as a raw float", () => {
   // Unit Cost is currency to 2dp; an unrounded award stored 178275.2272727273.
-  const ci = buildCostItemRecord(input({ award: 178275.2272727273 }), 1);
+  const ci = buildCostItemRecord(input({ award: 178275.2272727273 }), 1, ACCOUNT);
   assert.equal(val(ci, QB_AWARD.costItems.unitCost), 178275.23);
   assert.equal(planAward(input({ award: 178275.2272727273 })).costItem.unitCost, 178275.23);
 });
 
 test("the bills match the payment schedule and total the award", () => {
-  const bills = buildBillRecords(input(), 9001);
+  const bills = buildBillRecords(input(), 9001, ACCOUNT);
   const f = QB_AWARD.billLines;
 
   assert.equal(bills.length, 8, "Reconstruction uses the 8-milestone schedule");
@@ -192,16 +200,16 @@ test("the bills match the payment schedule and total the award", () => {
   // Every bill points at the cost item, the job, and carries the QuickBooks text.
   assert.ok(bills.every((b) => val(b, f.relatedItem) === 9001));
   assert.ok(bills.every((b) => val(b, f.relatedJob) === 687));
-  assert.ok(bills.every((b) => val(b, f.qbLineItem) === "Subcontractors - Puerto Rico"));
+  assert.ok(bills.every((b) => val(b, f.qbLineItem) === ACCOUNT.label));
   assert.ok(bills.every((b) => val(b, f.costType) === "Subcontractor"));
 });
 
 test("the job type picks the schedule, so a repair gets two bills", () => {
-  const bills = buildBillRecords(input({ jobType: "Repair" }), 9001);
+  const bills = buildBillRecords(input({ jobType: "Repair" }), 9001, ACCOUNT);
   assert.equal(bills.length, 2);
   assert.equal(val(bills[0], QB_AWARD.billLines.title), "Pago Inicial (50%)");
 
-  const relocation = buildBillRecords(input({ jobType: "Relocation" }), 9001);
+  const relocation = buildBillRecords(input({ jobType: "Relocation" }), 9001, ACCOUNT);
   assert.equal(val(relocation[0], QB_AWARD.billLines.billPct), 20);
 });
 
@@ -220,7 +228,7 @@ test("the plan describes exactly what would be written", () => {
 });
 
 test("a blank title falls back to the scope, so the PO is never unnamed", () => {
-  const ci = buildCostItemRecord(input({ title: "" }), 1);
+  const ci = buildCostItemRecord(input({ title: "" }), 1, ACCOUNT);
   assert.equal(val(ci, QB_AWARD.costItems.title), "Per the extracted scope");
 });
 
@@ -271,10 +279,10 @@ test("the contract and the bills carry ADA, because it is part of the award", ()
   // whole contract and the schedule bills against all of it.
   const withAda = input({ award: 193275.23, ada: 15000 });
 
-  const ci = buildCostItemRecord(withAda, 1);
+  const ci = buildCostItemRecord(withAda, 1, ACCOUNT);
   assert.equal(val(ci, QB_AWARD.costItems.unitCost), 193275.23);
 
-  const bills = buildBillRecords(withAda, 9001);
+  const bills = buildBillRecords(withAda, 9001, ACCOUNT);
   const total = bills.reduce((sum, b) => sum + Number(val(b, QB_AWARD.billLines.billAmount)), 0);
   assert.ok(Math.abs(total - 193275.23) < CENT, `bills total ${total}`);
 

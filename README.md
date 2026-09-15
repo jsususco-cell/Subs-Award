@@ -210,12 +210,16 @@ would have produced an obligation nobody could satisfy:
 | 12 | Póliza del Fondo (CFSE), Puerto Rico's monopoly workers' compensation insurer | Workers' compensation under the law of the state where the work is performed. Retainage and the final payment are still held until compliance is evidenced |
 | 17 | OGPe permits, PRDOH programme guides | The authority having jurisdiction, and the administering state agency. **CDBG-DR is kept** — all four states run CDBG-DR programmes |
 
-**Three things still need a human decision**, all marked `TO CONFIRM` in
-`letter-us.ts`: the CM address on the letterhead (currently the Puerto Rico
-corporate address), the signatory (currently the Puerto Rico project manager),
-and whether the mainland programme really caps mobilisation at $10,000. And the
-whole thing is a drafting exercise, not legal advice — have counsel read it
-before the first letter reaches a subcontractor.
+The letterhead, the signatory and the cap were settled on 2026-09-16: the
+letter goes out from **1245 W Cardinal Drive, Beaumont, TX 77705**, signed by
+**Joellen Hall, Vice President of Operations**, and mobilisation is capped at
+$10,000 on the mainland exactly as it is in Puerto Rico. Tests pin all three,
+and pin that neither the Guaynabo address nor the Puerto Rico signatory can
+appear on a mainland letter.
+
+It remains a drafting exercise, not legal advice — have counsel read it before
+the first letter reaches a subcontractor, Condition 12 especially, where a
+different insurance regime was substituted.
 
 The milestone names are translated too (`US_SCHEDULES` in `src/lib/schedule.ts`):
 Mobilization, Demolition, Foundation, Walls, Roof, Plastering, Finishes, Final

@@ -166,6 +166,28 @@ test("the mainland letter drops what only binds in Puerto Rico", () => {
   assert.match(html, /CDBG-DR/);
 });
 
+test("the mainland letter is signed from the mainland office", () => {
+  const html = renderLetter(letterInput({ region: "FL" }));
+
+  assert.match(html, /1245 W Cardinal Drive/);
+  assert.match(html, /Beaumont, TX 77705/);
+  assert.match(html, /Joellen Hall/);
+  assert.match(html, /Vice President of Operations/);
+
+  // Neither the Puerto Rico office nor its signatory may appear on it.
+  for (const pr of ["Guaynabo", "Metro Office Park", "Priscilla", "Lote 3"]) {
+    assert.ok(!html.includes(pr), `mainland letter still carries "${pr}"`);
+  }
+});
+
+test("the Puerto Rico letter keeps its own office and signatory", () => {
+  const html = renderLetter(letterInput({ region: "PR" }));
+  assert.match(html, /Guaynabo, PR, 00971/);
+  assert.match(html, /Priscilla M. Rodríguez Pérez/);
+  assert.ok(!html.includes("Beaumont"));
+  assert.ok(!html.includes("Joellen Hall"));
+});
+
 test("both letters carry the same bargain, only in different words", () => {
   const pr = templateFor(REGIONS.PR)!;
   const us = templateFor(REGIONS.FL)!;

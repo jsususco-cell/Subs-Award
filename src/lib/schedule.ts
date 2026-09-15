@@ -134,10 +134,10 @@ export const US_SCHEDULE_SET: ScheduleSet = {
   jobTypes: JOB_TYPE_SCHEDULE,
   unmapped: UNMAPPED_JOB_TYPES,
   /*
-   * The same $10,000 cap the Puerto Rico letter states, because the mainland
-   * letter is a translation of it and says the same thing. If the mainland
-   * programme does not cap mobilisation, set this to null — the schedule then
-   * pays the flat percentage and the letter's note should go with it.
+   * The same $10,000 cap the Puerto Rico letter states, confirmed by the
+   * business on 2026-09-16 as applying on the mainland too. Setting this to
+   * null would pay the flat percentage instead, and the letter's note under
+   * the payment table would have to go with it.
    */
   mobilisationCap: 10000,
   fallback: "standard8",

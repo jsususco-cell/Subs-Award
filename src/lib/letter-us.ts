@@ -25,6 +25,10 @@ import type { Condition, LetterLabels, LetterTemplate } from "./letter-content";
  *      administering state agency". CDBG-DR is kept — Florida, North Carolina,
  *      Texas and Louisiana all run CDBG-DR programmes.
  *
+ * The mobilisation cap, the letterhead address and the signatory were all
+ * confirmed by the business on 2026-09-16; the cap is deliberately the same
+ * $10,000 the Puerto Rico letter states.
+ *
  * This is a drafting exercise, not legal advice. Have counsel read it before
  * the first letter reaches a subcontractor.
  */
@@ -36,15 +40,11 @@ export const US_LETTER_HEADER = [
   "Subcontractors — Community Development Block Grant Disaster Recovery",
 ] as const;
 
-/**
- * TO CONFIRM — this is the corporate address, which is in Puerto Rico. If the
- * mainland work is run out of another office, put that address here instead.
- */
+/** The mainland office. The Puerto Rico letter carries the Guaynabo address. */
 export const US_CM_ADDRESS = [
   "Byrdson Services LLC",
-  "Metro Office Park",
-  "Lote 3 St.402",
-  "Guaynabo, PR, 00971",
+  "1245 W Cardinal Drive",
+  "Beaumont, TX 77705",
 ] as const;
 
 export const US_LETTER_INTRO =
@@ -53,10 +53,15 @@ export const US_LETTER_INTRO =
 export const US_MOBILISATION_NOTE =
   "The Mobilization payment is limited to a maximum of ten thousand dollars ($10,000.00), regardless of the Total Amount awarded. Each payment corresponds solely to the stage that has been completed, verified and inspected.";
 
-/** TO CONFIRM — who signs a mainland award. This is the Puerto Rico signatory. */
+/**
+ * Who signs a mainland award. Her title is the Designation on her Internal
+ * Users record (buskqh27r rid 61), which is the authority for it — the Puerto
+ * Rico letter takes its signatory's title from Job Role instead, because that
+ * record carries both and they differ.
+ */
 export const US_SIGNATORY = {
-  name: "Priscilla M. Rodríguez Pérez",
-  title: "Project Manager",
+  name: "Joellen Hall",
+  title: "Vice President of Operations",
   company: "Byrdson Services, LLC",
 } as const;
 

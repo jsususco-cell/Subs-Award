@@ -1,6 +1,7 @@
 import { money, pct } from "./format";
 import { fill, templateFor } from "./letter-content";
 import { regionFor, type RegionKey } from "./regions";
+import type { PoCategories } from "./qb-award";
 import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import type { AwardResult } from "./types";
 
@@ -29,6 +30,12 @@ export interface LetterInput {
   startDate: string;
   endDate: string;
   coverages: string[];
+  /**
+   * The purchase order's Award Breakdown, for an award entered directly rather
+   * than derived from a scope. When present the letter itemises these instead
+   * of showing the scope derivation, which does not exist for such an award.
+   */
+  categories?: PoCategories;
   result: AwardResult;
   /** ISO date the letter is dated. */
   issuedOn: string;
@@ -105,27 +112,47 @@ export function renderLetter(input: LetterInput): string {
     [L.caseExtension, L.caseExtensionValue],
   ];
 
-  const awardRows: [string, string, boolean][] = [
-    [
-      fill(L.awardExtracted, {
-        coverages: esc(input.coverages.join(" + ")) || DASH,
-      }),
-      money(result.base),
-      false,
-    ],
-    [L.awardLessOandP, money(result.lessOandP), false],
-    [
-      fill(L.awardSubsShare, { pct: chosen ? pct(chosen.pct) : DASH }),
-      chosen ? money(chosen.amount) : DASH,
-      false,
-    ],
-    [L.awardHc, money(result.hc), false],
-    // Only shown when it applies, so an ordinary award reads exactly as before.
-    ...(result.ada > 0
-      ? ([[L.awardAda, money(result.ada), false]] as [string, string, boolean][])
-      : []),
-    [L.awardTotal, money(result.award), true],
-  ];
+  const c = input.categories;
+  const awardRows: [string, string, boolean][] = c
+    ? [
+        // A direct award: the purchase order's own categories, zeroes omitted
+        // so the letter shows what is actually being paid for.
+        ...(
+          [
+            [L.awardDemolition, c.demolition],
+            [L.awardSite, c.site],
+            [L.awardSeptic, c.septic],
+            [L.awardHome, c.home],
+            [L.awardAda, c.ada],
+            [L.awardChangeOrder, c.changeOrder],
+            [L.awardRevisedTotal, c.revisedTotal],
+          ] as [string, number][]
+        )
+          .filter(([, v]) => v > 0)
+          .map(([label, v]) => [label, money(v), false] as [string, string, boolean]),
+        [L.awardTotal, money(result.award), true],
+      ]
+    : [
+        [
+          fill(L.awardExtracted, {
+            coverages: esc(input.coverages.join(" + ")) || DASH,
+          }),
+          money(result.base),
+          false,
+        ],
+        [L.awardLessOandP, money(result.lessOandP), false],
+        [
+          fill(L.awardSubsShare, { pct: chosen ? pct(chosen.pct) : DASH }),
+          chosen ? money(chosen.amount) : DASH,
+          false,
+        ],
+        [L.awardHc, money(result.hc), false],
+        // Only shown when it applies, so an ordinary award reads as before.
+        ...(result.ada > 0
+          ? ([[L.awardAda, money(result.ada), false]] as [string, string, boolean][])
+          : []),
+        [L.awardTotal, money(result.award), true],
+      ];
 
   return `<!DOCTYPE html>
 <html lang="${template.lang}">

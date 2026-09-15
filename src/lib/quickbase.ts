@@ -31,6 +31,8 @@ export const QB_CONFIG = {
       address: Number(process.env.QB_JOB_ADDRESS_FID ?? 7),
       // Drives which payment schedule the award letter uses.
       jobType: Number(process.env.QB_JOB_TYPE_FID ?? 34),
+      /** "Canopy | Model Home Type" — prefills House on the purchase order. */
+      house: Number(process.env.QB_JOB_HOUSE_FID ?? 1161),
     },
     vendors: {
       recordId: 3,
@@ -134,6 +136,7 @@ export interface JobOption {
   name: string;
   address: string;
   jobType: string;
+  house: string;
 }
 
 export interface SubOption {
@@ -151,6 +154,7 @@ export async function fetchJobs(
   const select: number[] = [f.recordId, f.name, f.region];
   if (f.address) select.push(f.address);
   if (f.jobType) select.push(f.jobType);
+  if (f.house) select.push(f.house);
 
   const rows = await queryAll({
     from: QB_CONFIG.tables.jobs,
@@ -165,6 +169,7 @@ export async function fetchJobs(
       name: text(r, f.name),
       address: f.address ? text(r, f.address) : "",
       jobType: f.jobType ? text(r, f.jobType) : "",
+      house: f.house ? text(r, f.house) : "",
     }))
     .filter((j) => j.name && !EXCLUDED_JOB_NAMES.test(j.name))
     // Sort here, not in the query: Quickbase orders by the raw stored value,

@@ -5,6 +5,8 @@ export interface JobOption {
   name: string;
   address: string;
   jobType: string;
+  /** The job's Canopy model home type, which prefills House on the PO. */
+  house: string;
 }
 
 export interface SubOption {

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  EMPTY_CATEGORIES,
   QB_AWARD,
   buildBillRecords,
   buildCostItemRecord,
   buildInsuranceRecord,
   buildPoRecord,
+  categoriesTotal,
   planAward,
   splitAward,
   type AwardWriteInput,
@@ -207,7 +209,7 @@ test("the plan describes exactly what would be written", () => {
   const plan = planAward(input());
   assert.equal(plan.bills.length, 8);
   assert.ok(Math.abs(plan.billTotal - 178275.23) < CENT);
-  assert.ok(Math.abs(plan.po.demolition + plan.po.site - 178275.23) < CENT);
+  assert.ok(Math.abs(plan.po.categories.demolition + plan.po.categories.site - 178275.23) < CENT);
   assert.equal(plan.costItem.unitCost, 178275.23);
 
   // Unticking the bills leaves the PO and cost item, and nothing else.
@@ -277,8 +279,8 @@ test("the contract and the bills carry ADA, because it is part of the award", ()
   assert.ok(Math.abs(total - 193275.23) < CENT, `bills total ${total}`);
 
   const plan = planAward(withAda);
-  assert.equal(plan.po.ada, 15000);
-  assert.ok(Math.abs(plan.po.demolition + plan.po.site + plan.po.ada - 193275.23) < CENT);
+  assert.equal(plan.po.categories.ada, 15000);
+  assert.ok(Math.abs(plan.po.categories.demolition + plan.po.categories.site + plan.po.categories.ada - 193275.23) < CENT);
 });
 
 test("the award opens a Fondo submittal the case can be chased on", () => {
@@ -320,4 +322,88 @@ test("the submittal carries ADA, because the poliza must cover the whole award",
 test("an unrounded award is not written to the submittal as a raw float", () => {
   const rec = buildInsuranceRecord(input({ award: 178275.2272727273 }), 1);
   assert.equal(val(rec, QB_AWARD.insurance.awardedAmount), 178275.23);
+});
+
+/* ---------------------------------------------------------------------------
+ * Awarding straight from a purchase order, with no scope to derive from.
+ * ------------------------------------------------------------------------ */
+
+test("the award breakdown totals what Quickbase's formula will compute", () => {
+  // Total Amount (262) = Demolition + Site + Septic + Home + ADA
+  //                      + Change Order + Revised Total.
+  assert.equal(
+    categoriesTotal({
+      demolition: 100,
+      site: 200,
+      septic: 300,
+      home: 400,
+      ada: 50,
+      changeOrder: 25,
+      revisedTotal: 10,
+    }),
+    1085,
+  );
+  assert.equal(categoriesTotal(EMPTY_CATEGORIES), 0);
+});
+
+test("entered categories are written verbatim, zeroes left off", () => {
+  const categories = {
+    ...EMPTY_CATEGORIES,
+    demolition: 12000,
+    home: 48000.55,
+    ada: 3000,
+  };
+  const po = buildPoRecord(
+    input({ categories, award: categoriesTotal(categories), house: "Model B" }),
+  );
+  const f = QB_AWARD.pos;
+
+  assert.equal(val(po, f.catDemolition), 12000);
+  assert.equal(val(po, f.catHome), 48000.55);
+  assert.equal(val(po, f.catAdaConversion), 3000);
+  // Every category worth nothing is absent rather than written as 0; they are
+  // currency fields with blankIsZero, so the Total Amount formula agrees.
+  assert.equal(val(po, f.catSite), undefined);
+  assert.equal(val(po, f.catSeptic), undefined);
+  assert.equal(val(po, f.catChangeOrder), undefined);
+  assert.equal(val(po, f.catRevisedTotal), undefined);
+  assert.equal(val(po, f.house), "Model B");
+  // Total Amount is a formula and must never be written.
+  assert.equal(val(po, f.totalAmount), undefined);
+});
+
+test("categories replace the scope split rather than adding to it", () => {
+  const categories = { ...EMPTY_CATEGORIES, site: 5000 };
+  const po = buildPoRecord(
+    input({ categories, award: 5000, demoTotal: 100000, siteTotal: 48566.6 }),
+  );
+  // demoTotal/siteTotal describe a scope this award does not have.
+  assert.equal(val(po, QB_AWARD.pos.catDemolition), undefined);
+  assert.equal(val(po, QB_AWARD.pos.catSite), 5000);
+});
+
+test("without categories the scope split still drives the PO", () => {
+  const po = buildPoRecord(input());
+  const f = QB_AWARD.pos;
+  assert.ok(Number(val(po, f.catDemolition)) > 0);
+  assert.ok(Number(val(po, f.catSite)) > 0);
+  assert.equal(val(po, f.catSeptic), undefined);
+});
+
+test("House and the exclusions list are only written when filled in", () => {
+  const bare = buildPoRecord(input({ house: "   ", itemsNotIncluded: "" }));
+  assert.equal(val(bare, QB_AWARD.pos.house), undefined);
+  assert.equal(val(bare, QB_AWARD.pos.itemsNotIncluded), undefined);
+
+  const filled = buildPoRecord(input({ itemsNotIncluded: "Cistern (If Applicable)" }));
+  assert.equal(val(filled, QB_AWARD.pos.itemsNotIncluded), "Cistern (If Applicable)");
+});
+
+test("the plan reports the categories a direct award would set", () => {
+  const categories = { ...EMPTY_CATEGORIES, demolition: 700, site: 300 };
+  const plan = planAward(input({ categories, award: 1000 }));
+  assert.equal(plan.po.categories.demolition, 700);
+  assert.equal(plan.po.total, 1000);
+  // The bills still divide the contract amount.
+  assert.ok(Math.abs(plan.billTotal - 1000) < 0.005);
 });

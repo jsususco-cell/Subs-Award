@@ -10,7 +10,68 @@ see [Regions](#regions).
 The whole thing runs in the browser: the workbook is parsed client-side and no
 file is ever uploaded to a server.
 
-## The flow
+## Three ways in
+
+After the region, pick what you are doing. The choice sits at the top of the
+page and each route keeps its own state, so switching between them to compare
+does not throw work away.
+
+| | Where the figures come from | What it creates |
+| --- | --- | --- |
+| **Upload from Canopy** | A scope export, parsed in the browser | PO, cost item, bills, letter |
+| **Award a new PO** | Typed in, category by category | PO, cost item, bills, letter |
+| **Bill an existing PO** | A PO already on file | Bills against it, and back charges |
+
+### Award a new PO
+
+The usual route derives the award from an uploaded scope. This one is for when
+there is no scope to derive from and the figures are already known. The Award
+Breakdown is entered the way the Quickbase award page does it — Demolition,
+Site, Septic System, Home, ADA Conversion, Change Order, Revised Total — and
+**the contract amount is the sum of those seven**, computed rather than typed
+separately. Quickbase's Total Amount (fid 262) is a formula over exactly the
+same seven, so the two cannot disagree.
+
+A category left at zero is **omitted** rather than written as $0.00. All seven
+are currency fields with `blankIsZero`, so the total comes out the same, and
+this is what the code page does — a PO from either place looks identical.
+
+The letter for such an award itemises those categories instead of showing the
+scope derivation, because there is no derivation to show. That matches the
+Quickbase letter's own Desglose de Adjudicación.
+
+### Bill an existing PO
+
+Pick a vendor, pick one of their purchase orders in the current region, and the
+payment breakdown comes back with each milestone marked billed or not. Tick the
+ones to bill; enter a **back charge** on any row to net it down.
+
+- **A milestone already billed cannot be billed again.** Matching is on the
+  bill's title, exactly as the code page does it, falling back to the milestone
+  name — the live table carries `Movilización (10%)`, `Movilización-10%` and a
+  bare `Movilizacion`, and all three count as billed.
+- **A back charge needs a reason**, and cannot exceed the bill. Net Amount is a
+  Quickbase formula, so a back charge never lowers the bill's own amount.
+- **The PO's own billing convention is followed.** See below.
+- Nothing is written if any line is bad, so a save cannot half-apply.
+
+#### The mobilisation cap, and why a PO is billed the way it was started
+
+The award letter caps Movilización at $10,000 and spreads the balance across the
+remaining stages. **The Quickbase code page does not** — it pays the flat
+percentage. Both are live in the data.
+
+So the convention is read off the bills already on the PO rather than imposed:
+whichever reading more of them agree with is the one the remaining milestones
+follow. On a $195,555 contract billed the code page's way, Movilización is
+$19,555.50 and the rest follow at flat percentages; billing the remainder capped
+would leave the eight milestones totalling more than the contract. A PO with no
+bills yet uses the capped schedule, which is what this app's letters promise.
+
+A bill matching neither reading — part-paid, or edited by hand — is flagged and
+left alone. The figure on file is what the subcontractor was told.
+
+## The Canopy flow
 
 **Upload → Extract → Preview → Award → Award Letter.**
 

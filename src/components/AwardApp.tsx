@@ -8,7 +8,12 @@ import LetterPanel, { type LetterFields } from "./LetterPanel";
 import type { CreatePoResult } from "./CreatePoPanel";
 import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
-import RegionPicker from "./RegionPicker";
+import StartBar, { type Mode } from "./StartBar";
+import DirectAwardPanel, {
+  emptyDirectAward,
+  type DirectAwardFields,
+} from "./DirectAwardPanel";
+import BillPoPanel from "./BillPoPanel";
 import StepRail, { type Step } from "./StepRail";
 import {
   DEFAULT_ADA,
@@ -115,6 +120,16 @@ export default function AwardApp() {
    */
   const [region, setRegionState] = useState<RegionKey>(DEFAULT_REGION);
   const regionRef = useRef<RegionKey>(DEFAULT_REGION);
+
+  /*
+   * Which route this award is taking. Each keeps its own state, so flipping
+   * between them to compare does not throw away work in the other.
+   */
+  const [mode, setMode] = useState<Mode>("canopy");
+  const [direct, setDirect] = useState<DirectAwardFields>(() =>
+    emptyDirectAward(DEFAULT_REGION),
+  );
+  const [directPo, setDirectPo] = useState<CreatePoResult | null>(null);
   const [prefs, setPrefsState] = useState<Prefs>(defaultPrefs());
   const prefsRef = useRef<Prefs>(defaultPrefs());
   const storeRef = useRef<PrefsStore>({ region: DEFAULT_REGION, byRegion: {} });
@@ -159,6 +174,10 @@ export default function AwardApp() {
       refreshLookups();
       setLetter(emptyLetter(next));
       setCreatedPo(null);
+      // The direct award holds Quickbase record ids too, so it is cleared for
+      // the same reason the letter is.
+      setDirect(emptyDirectAward(next));
+      setDirectPo(null);
       setActiveId(null);
       setRestoredAt(null);
       setSaveNote(null);
@@ -392,8 +411,25 @@ export default function AwardApp() {
         />
 
         <div className="min-w-0">
-      <RegionPicker value={region} onChange={setRegion} />
+      <StartBar
+        region={region}
+        onRegion={setRegion}
+        mode={mode}
+        onMode={setMode}
+      />
 
+      {mode === "award-po" ? (
+        <DirectAwardPanel
+          region={region}
+          fields={direct}
+          onField={(patch) => setDirect((d) => ({ ...d, ...patch }))}
+          created={directPo}
+          onCreated={setDirectPo}
+        />
+      ) : mode === "bill-po" ? (
+        <BillPoPanel region={region} />
+      ) : (
+        <>
       <StepRail steps={steps} current={step} onSelect={(id) => setStep(id as StepId)} />
 
       {loaded && parsed && extraction && ctx && (
@@ -599,6 +635,8 @@ export default function AwardApp() {
           current={step}
           onSelect={(id) => setStep(id as StepId)}
         />
+      )}
+        </>
       )}
         </div>
       </div>

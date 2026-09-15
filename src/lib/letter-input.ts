@@ -62,6 +62,22 @@ export function parseLetterInput(raw: unknown): LetterInput | null {
     coverages: Array.isArray(o.coverages)
       ? o.coverages.slice(0, 40).map((c) => str(c)).filter(Boolean)
       : [],
+    ...(o.categories && typeof o.categories === "object"
+      ? {
+          categories: (() => {
+            const k = o.categories as Record<string, unknown>;
+            return {
+              demolition: num(k.demolition),
+              site: num(k.site),
+              septic: num(k.septic),
+              home: num(k.home),
+              ada: num(k.ada),
+              changeOrder: num(k.changeOrder),
+              revisedTotal: num(k.revisedTotal),
+            };
+          })(),
+        }
+      : {}),
     result,
     issuedOn: str(o.issuedOn) || new Date().toISOString(),
   };

@@ -167,3 +167,39 @@ test("the letter shows the capped mobilisation, not ten per cent", () => {
   assert.ok(html.includes("5.61%"));
   assert.ok(html.includes("100.00%"));
 });
+
+test("a direct award itemises the PO categories, not a scope derivation", () => {
+  const html = renderLetter(
+    input({
+      categories: {
+        demolition: 12000,
+        site: 0,
+        septic: 4500,
+        home: 60000,
+        ada: 3000,
+        changeOrder: 0,
+        revisedTotal: 0,
+      },
+    }),
+  );
+
+  // The categories that apply, in the Quickbase letter's own wording.
+  assert.match(html, /Demolición/);
+  assert.match(html, /Sistema Séptico/);
+  assert.match(html, /Conversión ADA/);
+  // A category worth nothing is not printed as a $0.00 row.
+  assert.ok(!/Cambio de Orden/.test(html));
+  assert.ok(!/Monto Total Revisado/.test(html));
+
+  // And none of the scope derivation, which this award does not have.
+  assert.ok(!/Alcance Extraído/.test(html));
+  assert.ok(!/Menos Overhead/.test(html));
+  assert.ok(!/Participación del Subcontratista/.test(html));
+});
+
+test("without categories the letter still shows the derivation", () => {
+  const html = renderLetter(input());
+  assert.match(html, /Alcance Extraído/);
+  assert.match(html, /Menos Overhead/);
+  assert.ok(!/Sistema Séptico/.test(html));
+});

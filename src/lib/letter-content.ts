@@ -184,6 +184,17 @@ export interface LetterLabels {
   awardHc: string;
   awardAda: string;
   awardTotal: string;
+  /*
+   * An award made straight from a purchase order has no scope to derive from,
+   * so its breakdown itemises the PO's categories instead — the same rows the
+   * Quickbase award letter shows.
+   */
+  awardDemolition: string;
+  awardSite: string;
+  awardSeptic: string;
+  awardHome: string;
+  awardChangeOrder: string;
+  awardRevisedTotal: string;
   scheduleNumber: string;
   scheduleStage: string;
   schedulePct: string;
@@ -232,6 +243,12 @@ export const PR_LABELS: LetterLabels = {
   awardHc: "Hard Costs (HC)",
   awardAda: "Conversión ADA",
   awardTotal: "Monto Total",
+  awardDemolition: "Demolición",
+  awardSite: "Site",
+  awardSeptic: "Sistema Séptico",
+  awardHome: "Home",
+  awardChangeOrder: "Cambio de Orden",
+  awardRevisedTotal: "Monto Total Revisado",
   scheduleNumber: "#",
   scheduleStage: "Etapa",
   schedulePct: "%",

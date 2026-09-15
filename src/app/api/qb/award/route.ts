@@ -3,6 +3,8 @@ import { QB_CONFIG, isConfigured } from "@/lib/quickbase";
 import {
   QB_AWARD,
   awardBlockers,
+  categoriesTotal,
+  type PoCategories,
   buildBillRecords,
   buildCostItemRecord,
   buildInsuranceRecord,
@@ -101,13 +103,43 @@ function str(v: unknown): string {
   return typeof v === "string" ? v.slice(0, 2000) : "";
 }
 
+/**
+ * The Award Breakdown, when the caller entered it directly.
+ *
+ * Returns null when there is no breakdown, so the scope-derived path is left
+ * alone. A negative category is rejected rather than clamped — it would make
+ * Quickbase's Total Amount disagree with the contract for no good reason.
+ */
+function parseCategories(raw: unknown): PoCategories | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const c: PoCategories = {
+    demolition: num(o.demolition),
+    site: num(o.site),
+    septic: num(o.septic),
+    home: num(o.home),
+    ada: num(o.ada),
+    changeOrder: num(o.changeOrder),
+    revisedTotal: num(o.revisedTotal),
+  };
+  if (Object.values(c).some((v) => v < 0)) return null;
+  return c;
+}
+
 function parseInput(raw: unknown): AwardWriteInput | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
 
   const jobRecordId = num(o.jobRecordId);
   const subRecordId = num(o.subRecordId);
-  const award = num(o.award);
+  const categories = parseCategories(o.categories);
+  /*
+   * With a breakdown, the contract amount is computed from it rather than
+   * taken from the caller as well. Total Amount on the purchase order is a
+   * Quickbase formula over exactly those seven categories, so accepting a
+   * separate figure would let the PO and the bills drawn against it disagree.
+   */
+  const award = categories ? categoriesTotal(categories) : num(o.award);
   if (!jobRecordId || !subRecordId || !(award > 0)) return null;
 
   /*
@@ -132,7 +164,10 @@ function parseInput(raw: unknown): AwardWriteInput | null {
     award,
     demoTotal: num(o.demoTotal),
     siteTotal: num(o.siteTotal),
-    ada: num(o.ada),
+    ada: categories ? categories.ada : num(o.ada),
+    ...(categories ? { categories } : {}),
+    house: str(o.house),
+    itemsNotIncluded: str(o.itemsNotIncluded),
     caseNumber: str(o.caseNumber),
     subcontractorName: str(o.subcontractorName),
     /*

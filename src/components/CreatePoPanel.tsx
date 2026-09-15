@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { money, pct } from "@/lib/format";
-import { awardBlockers, planAward, type AwardWriteInput } from "@/lib/qb-award";
+import {
+  CATEGORY_FIELDS,
+  awardBlockers,
+  planAward,
+  type AwardWriteInput,
+  type PoCategories,
+} from "@/lib/qb-award";
 import { defaultBody, defaultSubject } from "@/lib/letter-email";
 import { canRenderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor } from "@/lib/regions";
@@ -38,6 +44,14 @@ interface Props {
   siteTotal: number;
   /** Zero unless ADA was ticked on the award step. */
   ada: number;
+  /**
+   * The Award Breakdown when it was entered directly rather than derived from
+   * a scope. Passing it makes the PO carry those categories verbatim.
+   */
+  categories?: PoCategories;
+  /** "House" on the purchase order, prefilled from the job. */
+  house?: string;
+  itemsNotIncluded?: string;
   /** Set once an award has been written, so it cannot be created twice. */
   created: CreatePoResult | null;
   onCreated: (result: CreatePoResult) => void;
@@ -60,6 +74,9 @@ function storedKey(): string {
 }
 
 export default function CreatePoPanel({
+  categories,
+  house,
+  itemsNotIncluded,
   jobRecordId,
   subRecordId,
   jobName,
@@ -135,6 +152,9 @@ export default function CreatePoPanel({
     demoTotal,
     siteTotal,
     ada,
+    ...(categories ? { categories } : {}),
+    house,
+    itemsNotIncluded,
     caseNumber: jobName,
     subcontractorName: subcontractor,
     createBills: willCreateBills,
@@ -520,8 +540,9 @@ export default function CreatePoPanel({
                   <Row
                     k="Award breakdown"
                     v={
-                      `Demolición ${money(plan.po.demolition)} · Site ${money(plan.po.site)}` +
-                      (plan.po.ada > 0 ? ` · ADA ${money(plan.po.ada)}` : "")
+                      CATEGORY_FIELDS.filter((c) => plan.po.categories[c.key] > 0)
+                        .map((c) => `${c.label} ${money(plan.po.categories[c.key])}`)
+                        .join(" · ") || "no categories"
                     }
                   />
                   <Row k="Cost Item" v={`${money(plan.costItem.unitCost)} (1 × LS)`} />

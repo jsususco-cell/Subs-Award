@@ -20,20 +20,44 @@ export const QB_AWARD = {
   },
   pos: {
     recordId: 3,
+    poNumber: 17,
     relatedJob: 13,
     relatedSub: 21,
+    jobName: 14,
     title: 6,
     scope: 40,
     poStatus: 15,
+    jobType: 172,
+    /** "Job - State" lookup — the region a purchase order belongs to. */
+    jobState: 129,
     dueDate: 173,
     lienWaiver: 181,
     expenseClass: 187,
     date: 77,
+    totalCost: 88,
+    /*
+     * The Award Breakdown. Total Amount (262) is a Quickbase formula over
+     * exactly these seven and is never written from here:
+     *
+     *   Demolition + Site + Septic + Home
+     *     + If(IsNull(ADA),0,ADA)
+     *     + If(IsNull(ChangeOrder),0,ChangeOrder)
+     *     + If(IsNull(RevisedTotal),0,RevisedTotal)
+     *
+     * All seven are currency fields with blankIsZero, so a category that does
+     * not apply is left off rather than written as 0 — which is what the
+     * Quickbase award code page does too.
+     */
     catDemolition: 253,
     catSite: 254,
+    catSeptic: 255,
+    catHome: 256,
+    house: 257,
     catAdaConversion: 258,
-    /* Total Amount (262) is a Quickbase formula over the category fields —
-       computed there, never written from here. */
+    catChangeOrder: 259,
+    catRevisedTotal: 260,
+    itemsNotIncluded: 261,
+    totalAmount: 262,
   },
   costItems: {
     recordId: 3,
@@ -56,6 +80,13 @@ export const QB_AWARD = {
     relatedJob: 99,
     qbLineItem: 41,
     costType: 50,
+    dueDate: 10,
+    /** Lookup "Item - Related PO", used to spot a bill that already exists. */
+    itemRelatedPO: 96,
+    /** Deducted from the bill. Net Amount (224) is a formula over it. */
+    backCharge: 223,
+    netAmount: 224,
+    backChargeDesc: 225,
   },
   /** Defaults the code page applies on award. */
   /**
@@ -120,6 +151,56 @@ export const QB_AWARD = {
   billPctAsFraction: false,
 } as const;
 
+/**
+ * The PO's Award Breakdown, entered directly rather than derived from a scope.
+ *
+ * Every field is a category on the purchase order and they must total the
+ * contract amount, because Quickbase computes Total Amount (262) from exactly
+ * these and the cost item carries the same figure.
+ */
+export interface PoCategories {
+  demolition: number;
+  site: number;
+  septic: number;
+  home: number;
+  ada: number;
+  changeOrder: number;
+  revisedTotal: number;
+}
+
+export const EMPTY_CATEGORIES: PoCategories = {
+  demolition: 0,
+  site: 0,
+  septic: 0,
+  home: 0,
+  ada: 0,
+  changeOrder: 0,
+  revisedTotal: 0,
+};
+
+/** The seven categories, in the order the award breakdown shows them. */
+export const CATEGORY_FIELDS: {
+  key: keyof PoCategories;
+  label: string;
+  hint?: string;
+  optional?: boolean;
+}[] = [
+  { key: "demolition", label: "Demolition", hint: "incl. septic system demolition" },
+  { key: "site", label: "Site" },
+  { key: "septic", label: "Septic System", hint: "replacement" },
+  { key: "home", label: "Home" },
+  { key: "ada", label: "ADA Conversion", optional: true },
+  { key: "changeOrder", label: "Change Order Amount", optional: true },
+  { key: "revisedTotal", label: "Revised Total Amount", optional: true },
+];
+
+/** What Quickbase's Total Amount formula will come to. */
+export function categoriesTotal(c: PoCategories): number {
+  return round(
+    c.demolition + c.site + c.septic + c.home + c.ada + c.changeOrder + c.revisedTotal,
+  );
+}
+
 export type QbValue = { value: string | number | boolean };
 export type QbRecord = Record<string, QbValue>;
 
@@ -142,6 +223,15 @@ export interface AwardWriteInput {
   siteTotal: number;
   /** ADA conversion work, zero unless it applies to this subcontractor. */
   ada: number;
+  /**
+   * The Award Breakdown, entered by hand. When present it is written verbatim
+   * and `award` must equal its total; when absent the award is spread across
+   * Demolition and Site in the ratio of the extracted scope.
+   */
+  categories?: PoCategories;
+  /** "House" on the PO — the job's Canopy model home type. */
+  house?: string;
+  itemsNotIncluded?: string;
   /** Case number for the insurance submittal, i.e. the job name. */
   caseNumber: string;
   /** Subcontractor name as awarded, recorded on the submittal. */
@@ -202,7 +292,6 @@ export function splitAward(
 
 export function buildPoRecord(input: AwardWriteInput): QbRecord {
   const f = QB_AWARD.pos;
-  const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
 
   const po: QbRecord = {
     [f.relatedJob]: { value: input.jobRecordId },
@@ -216,9 +305,44 @@ export function buildPoRecord(input: AwardWriteInput): QbRecord {
   };
 
   if (input.dueDate) po[f.dueDate] = { value: input.dueDate };
-  if (split.demolition > 0) po[f.catDemolition] = { value: split.demolition };
-  if (split.site > 0) po[f.catSite] = { value: split.site };
-  if (input.ada > 0) po[f.catAdaConversion] = { value: round(input.ada) };
+  if (input.house?.trim()) po[f.house] = { value: input.house.trim() };
+  if (input.itemsNotIncluded?.trim()) {
+    po[f.itemsNotIncluded] = { value: input.itemsNotIncluded.trim() };
+  }
+
+  /*
+   * A category worth nothing is left off rather than written as 0. Every one
+   * of these is a currency field with blankIsZero, so the Total Amount formula
+   * reads a blank as zero — and this is what the code page does, so a PO from
+   * either place looks the same.
+   */
+  const amounts: [number, number][] = input.categories
+    ? [
+        [f.catDemolition, input.categories.demolition],
+        [f.catSite, input.categories.site],
+        [f.catSeptic, input.categories.septic],
+        [f.catHome, input.categories.home],
+        [f.catAdaConversion, input.categories.ada],
+        [f.catChangeOrder, input.categories.changeOrder],
+        [f.catRevisedTotal, input.categories.revisedTotal],
+      ]
+    : (() => {
+        const split = splitAward(
+          input.award,
+          input.demoTotal,
+          input.siteTotal,
+          input.ada,
+        );
+        return [
+          [f.catDemolition, split.demolition],
+          [f.catSite, split.site],
+          [f.catAdaConversion, input.ada],
+        ];
+      })();
+
+  for (const [fid, value] of amounts) {
+    if (value > 0) po[fid] = { value: round(value) };
+  }
 
   return po;
 }
@@ -322,18 +446,31 @@ export interface AwardPlan {
     title: string;
     scope: string;
     status: string;
-    demolition: number;
-    site: number;
-    ada: number;
+    /** What each Award Breakdown category will be set to. */
+    categories: PoCategories;
+    /** What Quickbase's Total Amount formula will come to. */
+    total: number;
   };
   costItem: { title: string; unitCost: number; costType: string; unit: string };
   bills: { title: string; pct: number; amount: number }[];
   billTotal: number;
 }
 
+/** The categories a write would set, however they were arrived at. */
+export function plannedCategories(input: AwardWriteInput): PoCategories {
+  if (input.categories) return input.categories;
+  const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
+  return {
+    ...EMPTY_CATEGORIES,
+    demolition: split.demolition,
+    site: split.site,
+    ada: input.ada > 0 ? round(input.ada) : 0,
+  };
+}
+
 export function planAward(input: AwardWriteInput): AwardPlan {
   const region = regionFor(input.region);
-  const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
+  const categories = plannedCategories(input);
   const lines = scheduleLines(
     input.award,
     scheduleForJobType(input.jobType, region),
@@ -345,9 +482,8 @@ export function planAward(input: AwardWriteInput): AwardPlan {
       title: input.title,
       scope: input.scope,
       status: input.poStatus,
-      demolition: split.demolition,
-      site: split.site,
-      ada: input.ada > 0 ? round(input.ada) : 0,
+      categories,
+      total: categoriesTotal(categories),
     },
     costItem: {
       title: input.title || input.scope,

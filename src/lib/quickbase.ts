@@ -113,7 +113,10 @@ export async function queryAll(body: QueryBody): Promise<QbRecord[]> {
     });
     rows.push(...chunk.data);
     skip += chunk.metadata.numRecords;
-    if (chunk.metadata.numRecords === 0 || rows.length >= chunk.metadata.totalRecords) {
+    if (
+      chunk.metadata.numRecords === 0 ||
+      rows.length >= chunk.metadata.totalRecords
+    ) {
       break;
     }
   }
@@ -187,7 +190,29 @@ export async function fetchJobs(
   };
 }
 
-/** Award-eligible vendors for a region. */
+/**
+ * How many vendors carry no Region at all.
+ *
+ * These are invisible to every region, so the count is the same whichever
+ * screen asks. Any failure returns 0: this only drives a warning, and a
+ * broken count must never take the vendor list down with it.
+ */
+async function countUnassigned(): Promise<number> {
+  const f = QB_CONFIG.fields.vendors;
+  if (!f.region) return 0;
+  try {
+    const rows = await queryAll({
+      from: QB_CONFIG.tables.vendors,
+      select: [f.recordId],
+      where: `{${f.region}.EX.''}`,
+    });
+    return rows.length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Vendors for a region — award-eligible ones only where the region says so. */
 export async function fetchSubs(
   region: RegionConfig,
 ): Promise<{ items: SubOption[]; warning?: string }> {
@@ -238,7 +263,29 @@ export async function fetchSubs(
   }
 
   const items = await read(regional);
-  if (items.length > 0) return { items };
+  if (items.length > 0) {
+    /*
+     * A vendor with no Region matches no region's filter, so it is missing
+     * from every list here — and until this said so, silently. That is how one
+     * reached a user as "this company is not in the list": nothing on screen
+     * distinguished a vendor who does not work this region from a vendor
+     * nobody has classified yet.
+     *
+     * Counted rather than shown. Which region an unclassified vendor belongs
+     * to is not this app's guess to make, and listing them would put a Puerto
+     * Rico subcontractor in front of a Florida award on nothing but a hunch.
+     */
+    const unassigned = await countUnassigned();
+    return unassigned > 0
+      ? {
+          items,
+          warning:
+            `${unassigned} subcontractor${unassigned === 1 ? " is" : "s are"} ` +
+            `not listed here because Region is blank on the Subs/Vendors ` +
+            `table. Set it in Quickbase and reopen this list.`,
+        }
+      : { items };
+  }
 
   /*
    * No vendor matches. This used to fall back to every award-eligible vendor,

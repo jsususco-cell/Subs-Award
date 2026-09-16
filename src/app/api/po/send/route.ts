@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
-import { renderPoDocument } from "@/lib/po-doc";
+import { isReleased, renderPoDocument } from "@/lib/po-doc";
 import { poBody, poSubject } from "@/lib/po-email";
 import {
   fetchPoDocument,
   PoNotFoundError,
   PoNotInRegionError,
+  PoNotReleasedError,
 } from "@/lib/qb-po-doc";
 import { regionFor } from "@/lib/regions";
 import {
@@ -156,6 +157,24 @@ export async function POST(request: Request) {
         error: `Could not read the purchase order, so nothing was sent: ${message}`,
       },
       { status: 502 },
+    );
+  }
+
+  /*
+   * Releasing is what sends a purchase order, so the status on the record is
+   * what decides — not the caller, and not a box on a screen. Checked against
+   * what Quickbase holds right now, after the read and before the mail, so a
+   * purchase order pulled back to Unreleased stops going out even if the
+   * request to send it was already on its way.
+   */
+  if (!isReleased(doc.status)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        notReleased: true,
+        error: new PoNotReleasedError(doc.poNumber, doc.status).message,
+      },
+      { status: 409 },
     );
   }
 

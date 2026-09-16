@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PO_ACCEPTANCE, renderPoDocument, type PoDocument } from "./po-doc";
+import {
+  PO_ACCEPTANCE,
+  RELEASED,
+  isReleased,
+  renderPoDocument,
+  type PoDocument,
+} from "./po-doc";
 import { poBody, poSubject } from "./po-email";
 import { REGIONS } from "./regions";
 
@@ -157,4 +163,35 @@ test("only the mainland sends a purchase order to the subcontractor", () => {
   for (const key of ["FL", "NC", "TX", "LA"] as const) {
     assert.equal(REGIONS[key].poDocument, true, `${key} should send the PO`);
   }
+});
+
+test("releasing is what sends a purchase order", () => {
+  /*
+   * Not a checkbox. In Quickbase the Release button on the PO form sets this
+   * exact value, and the send route refuses anything else — an unreleased
+   * purchase order is still being worked on.
+   */
+  assert.equal(RELEASED, "Released");
+  assert.ok(isReleased("Released"));
+  // Quickbase text comes back with whatever spacing and casing it was saved
+  // with, and a status that only differs by that is still released.
+  assert.ok(isReleased(" released "));
+  assert.ok(isReleased("RELEASED"));
+
+  for (const other of [
+    "Unreleased",
+    "Approved",
+    "",
+    "   ",
+    "Release",
+    "Released ",
+  ]) {
+    if (other.trim().toLowerCase() === "released") continue;
+    assert.ok(!isReleased(other), `"${other}" must not count as released`);
+  }
+});
+
+test("Unreleased is not released, despite containing the word", () => {
+  // The obvious way to write this check — a substring test — passes "Unreleased".
+  assert.ok(!isReleased("Unreleased"));
 });

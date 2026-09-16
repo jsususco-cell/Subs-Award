@@ -51,6 +51,25 @@ export class PoNotFoundError extends Error {
   }
 }
 
+/**
+ * Thrown when the purchase order has not been released.
+ *
+ * The rule lives here rather than in the caller so that every route to sending
+ * obeys it — the create screen, a Quickbase automation, anything added later.
+ * An unreleased purchase order is still being worked on, and mailing one to a
+ * subcontractor puts figures in front of them that nobody has stood behind.
+ */
+export class PoNotReleasedError extends Error {
+  constructor(poNumber: string, status: string) {
+    super(
+      `${poNumber || "That purchase order"} is ${status.trim() || "not released"}, ` +
+        `not Released, so it was not sent. A purchase order goes to the ` +
+        `subcontractor when it is released.`,
+    );
+    this.name = "PoNotReleasedError";
+  }
+}
+
 /** Quickbase fields the document needs that the write path never touches. */
 const DOC_FIELDS = {
   dateCreated: 1,

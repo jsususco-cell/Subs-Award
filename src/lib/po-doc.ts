@@ -46,6 +46,21 @@ export interface PoDocument {
  * The acceptance wording from the document Byrdson sends today. It is what
  * makes the page an offer rather than a statement, so it is not paraphrased.
  */
+/**
+ * The status at which a purchase order goes to the subcontractor.
+ *
+ * Releasing is what turns the purchase order into an offer, so releasing is
+ * also what sends it. There is no separate decision and no box to forget: in
+ * Quickbase the Release button on the PO form sets exactly this value, and
+ * this app's create screen offers it in the same dropdown.
+ */
+export const RELEASED = "Released";
+
+/** Has this purchase order been released, and so become sendable? */
+export function isReleased(status: string): boolean {
+  return status.trim().toLowerCase() === RELEASED.toLowerCase();
+}
+
 export const PO_ACCEPTANCE =
   "A signature of Approval or Electronic Acceptance is required before " +
   "purchase order is effective. This purchase order then becomes part of the " +

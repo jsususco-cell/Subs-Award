@@ -10,6 +10,7 @@ import {
   type PoCategories,
 } from "@/lib/qb-award";
 import { defaultBody, defaultSubject } from "@/lib/letter-email";
+import { isReleased, RELEASED } from "@/lib/po-doc";
 import { canRenderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
@@ -121,7 +122,6 @@ export default function CreatePoPanel({
   const [keyNeeded, setKeyNeeded] = useState(false);
   const [createInsurance, setCreateInsurance] = useState(true);
   const [sendLetter, setSendLetter] = useState(true);
-  const [sendPo, setSendPo] = useState(true);
   const [poDownloading, setPoDownloading] = useState(false);
   const [to, setTo] = useState("");
   const [toTouched, setToTouched] = useState(false);
@@ -161,12 +161,19 @@ export default function CreatePoPanel({
   // skipped rather than failing the whole flow.
   // A region with no letter template cannot send one, whatever the box says.
   const willSend = sendLetter && canLetter && effectiveTo.trim().length > 0;
-  const willSendPo = sendPo && wantsPoDoc && effectiveTo.trim().length > 0;
+  /*
+   * Releasing a purchase order is what sends it. There is no separate choice:
+   * a purchase order that has been released is an offer the subcontractor is
+   * meant to have, and one that has not is still being worked on. The server
+   * re-checks the status on the record, so this only decides whether to ask.
+   */
+  const released = isReleased(poStatus);
+  const willSendPo = wantsPoDoc && released && effectiveTo.trim().length > 0;
   /** Names whichever documents this address is about to receive. */
   const sending =
-    sendLetter && canLetter && sendPo && wantsPoDoc
+    willSend && willSendPo
       ? "The letter and the purchase order go"
-      : sendPo && wantsPoDoc
+      : willSendPo
         ? "The purchase order goes"
         : "The letter goes";
 
@@ -419,7 +426,7 @@ export default function CreatePoPanel({
                   ? `sent to ${created.poSentTo.join(", ")}`
                   : created.poError
                     ? "not sent"
-                    : "not sent — sending was off"
+                    : `waiting on release — it goes out when the PO is ${RELEASED.toLowerCase()}`
               }
             />
           )}
@@ -613,15 +620,21 @@ export default function CreatePoPanel({
                 Email the award letter to the subcontractor
               </label>
               {wantsPoDoc && (
-                <label className="mt-2 flex items-center gap-2 text-xs font-medium text-navy-800">
-                  <input
-                    type="checkbox"
-                    checked={sendPo}
-                    onChange={(e) => setSendPo(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--color-navy-700)]"
-                  />
-                  Email the purchase order to the subcontractor
-                </label>
+                <p className="mt-2 text-xs text-navy-700">
+                  {released ? (
+                    <>
+                      <strong>The purchase order goes out too.</strong> Its
+                      status is {RELEASED}, and releasing a purchase order is
+                      what sends it.
+                    </>
+                  ) : (
+                    <>
+                      The purchase order is not sent yet — it goes to the
+                      subcontractor when its status becomes {RELEASED}, here or
+                      from the Release button in Quickbase.
+                    </>
+                  )}
+                </p>
               )}
               {!canLetter && (
                 <p className="mt-1 text-xs text-navy-600/70">
@@ -629,7 +642,7 @@ export default function CreatePoPanel({
                   records can be created but no letter will go out.
                 </p>
               )}
-              {((sendLetter && canLetter) || (sendPo && wantsPoDoc)) && (
+              {((sendLetter && canLetter) || willSendPo) && (
                 <div className="mt-2">
                   <label
                     htmlFor="po-letter-to"
@@ -747,8 +760,10 @@ export default function CreatePoPanel({
                       k="Purchase order"
                       v={
                         willSendPo
-                          ? `emailed to ${effectiveTo}`
-                          : "not being sent"
+                          ? `released — emailed to ${effectiveTo}`
+                          : released
+                            ? "released, but there is no address to send it to"
+                            : `not sent — it goes out when the PO is ${RELEASED.toLowerCase()}`
                       }
                     />
                   )}

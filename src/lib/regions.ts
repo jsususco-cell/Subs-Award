@@ -125,6 +125,18 @@ export interface RegionConfig {
    * a Puerto Rico vendor.
    */
   awardEligibleOnly: boolean;
+  /**
+   * Whether the subcontractor is sent the purchase order itself, as well as
+   * the award letter.
+   *
+   * A mainland practice: the PO document carries the line items and the
+   * acceptance block the subcontractor signs, and it is what Byrdson already
+   * sends out of Quickbase there. Puerto Rico awards go out on the Spanish
+   * award letter alone, and the PO document has no Spanish version — turning
+   * this on for PR would mail an English contract document to a subcontractor
+   * whose letter is deliberately not in English.
+   */
+  poDocument: boolean;
 }
 
 /**
@@ -155,6 +167,7 @@ const MAINLAND = {
   routes: ["award-po", "bill-po", "vendor-status"],
   awardEntry: "contract",
   awardEligibleOnly: false,
+  poDocument: true,
 } satisfies Omit<RegionConfig, "key" | "label" | "jobRegion">;
 
 function mainland(key: RegionKey, label: string): RegionConfig {
@@ -175,6 +188,7 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
     routes: ["canopy", "award-po", "bill-po"],
     awardEntry: "categories",
     awardEligibleOnly: true,
+    poDocument: false,
   },
   FL: mainland("FL", "Florida"),
   NC: mainland("NC", "North Carolina"),
@@ -209,7 +223,10 @@ export function defaultRoute(region: RegionConfig): AwardRoute {
  * raising purchase orders on that step when they switch states, and moves
  * them off a route the new region does not have.
  */
-export function routeFor(region: RegionConfig, current: AwardRoute): AwardRoute {
+export function routeFor(
+  region: RegionConfig,
+  current: AwardRoute,
+): AwardRoute {
   return allowsRoute(region, current) ? current : defaultRoute(region);
 }
 

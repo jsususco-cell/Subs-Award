@@ -29,6 +29,10 @@ export interface CreatePoResult {
   letterSentTo?: string[];
   /** Why it did not, when the records were created anyway. */
   letterError?: string;
+  /** Who the purchase order document reached, where the region sends one. */
+  poSentTo?: string[];
+  /** Why it did not, when the records were created anyway. */
+  poError?: string;
 }
 
 interface Props {
@@ -117,6 +121,8 @@ export default function CreatePoPanel({
   const [keyNeeded, setKeyNeeded] = useState(false);
   const [createInsurance, setCreateInsurance] = useState(true);
   const [sendLetter, setSendLetter] = useState(true);
+  const [sendPo, setSendPo] = useState(true);
+  const [poDownloading, setPoDownloading] = useState(false);
   const [to, setTo] = useState("");
   const [toTouched, setToTouched] = useState(false);
 
@@ -131,6 +137,12 @@ export default function CreatePoPanel({
   /** The Fondo (CFSE) poliza is a Puerto Rico obligation. */
   const wantsFondo = cfg.insurance === "fondo";
   const canLetter = canRenderLetter(region);
+  /*
+   * The purchase order document itself, which carries the line items and the
+   * acceptance block the subcontractor signs. A mainland practice — see
+   * poDocument in src/lib/regions.ts for why Puerto Rico does not send one.
+   */
+  const wantsPoDoc = cfg.poDocument;
 
   // The server narrows these the same way; doing it here as well keeps the
   // summary the user confirms identical to what actually gets written.
@@ -149,6 +161,14 @@ export default function CreatePoPanel({
   // skipped rather than failing the whole flow.
   // A region with no letter template cannot send one, whatever the box says.
   const willSend = sendLetter && canLetter && effectiveTo.trim().length > 0;
+  const willSendPo = sendPo && wantsPoDoc && effectiveTo.trim().length > 0;
+  /** Names whichever documents this address is about to receive. */
+  const sending =
+    sendLetter && canLetter && sendPo && wantsPoDoc
+      ? "The letter and the purchase order go"
+      : sendPo && wantsPoDoc
+        ? "The purchase order goes"
+        : "The letter goes";
 
   const effectiveTitle = title || scopeOfWork || jobName;
   const linked = Boolean(jobRecordId && subRecordId);
@@ -169,7 +189,9 @@ export default function CreatePoPanel({
     siteTotal,
     ada,
     ...(categories ? { categories } : {}),
-    ...(contractPrice !== undefined ? { contractPrice, breakdown: breakdown ?? [] } : {}),
+    ...(contractPrice !== undefined
+      ? { contractPrice, breakdown: breakdown ?? [] }
+      : {}),
     house,
     itemsNotIncluded,
     caseNumber: jobName,
@@ -221,7 +243,9 @@ export default function CreatePoPanel({
     if (!body.ok) {
       if (body.keyRequired) {
         setKeyNeeded(true);
-        setError("This deployment needs a send key before it will write to Quickbase.");
+        setError(
+          "This deployment needs a send key before it will write to Quickbase.",
+        );
       } else {
         setError(body.error ?? "Could not create the purchase order.");
         if (body.partial) setPartial(body.partial);
@@ -269,12 +293,80 @@ export default function CreatePoPanel({
           result.letterError = sent.error ?? "The letter could not be sent.";
         }
       } catch {
-        result.letterError = "Could not reach the server, so the letter was not sent.";
+        result.letterError =
+          "Could not reach the server, so the letter was not sent.";
+      }
+    }
+
+    /*
+     * The purchase order document goes second and separately. It is built on
+     * the server from the record that was just written -- not from anything on
+     * this screen -- so it says what Quickbase says, and a failure here leaves
+     * the records and the letter exactly as they are.
+     */
+    if (willSendPo) {
+      try {
+        const res = await fetch("/api/po/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(key ? { "x-send-key": key } : {}),
+          },
+          body: JSON.stringify({
+            region,
+            poRecordId: result.poRecordId,
+            to: effectiveTo,
+            cc: "",
+          }),
+        });
+        const sent = await res.json();
+        if (sent.ok) {
+          result.poSentTo = [...(sent.to ?? []), ...(sent.cc ?? [])];
+        } else {
+          result.poError =
+            sent.error ?? "The purchase order could not be sent.";
+        }
+      } catch {
+        result.poError =
+          "Could not reach the server, so the purchase order was not sent.";
       }
     }
 
     onCreated(result);
     setStage("idle");
+  }
+
+  /**
+   * Fetch the purchase order as a PDF and hand it to the browser.
+   *
+   * Built on the server from the Quickbase record, so this is the same file
+   * the subcontractor receives rather than a second rendering of it.
+   */
+  async function downloadPo(poRecordId: number) {
+    setPoDownloading(true);
+    try {
+      const res = await fetch("/api/po/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ region, poRecordId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Could not produce the purchase order PDF.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `PO-${poRecordId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Could not reach the server to produce the purchase order PDF.");
+    } finally {
+      setPoDownloading(false);
+    }
   }
 
   if (created) {
@@ -287,7 +379,10 @@ export default function CreatePoPanel({
         </header>
         <dl className="divide-y divide-navy-50 text-sm">
           <Line label="PO record" value={`#${created.poRecordId}`} />
-          <Line label="Cost Item record" value={`#${created.costItemRecordId}`} />
+          <Line
+            label="Cost Item record"
+            value={`#${created.costItemRecordId}`}
+          />
           <Line
             label="Billing lines"
             value={
@@ -316,13 +411,54 @@ export default function CreatePoPanel({
                   : "not sent — sending was off"
             }
           />
+          {wantsPoDoc && (
+            <Line
+              label="Purchase order sent"
+              value={
+                created.poSentTo?.length
+                  ? `sent to ${created.poSentTo.join(", ")}`
+                  : created.poError
+                    ? "not sent"
+                    : "not sent — sending was off"
+              }
+            />
+          )}
         </dl>
+        {wantsPoDoc && (
+          <div className="border-t border-navy-100 px-4 py-2.5">
+            <button
+              type="button"
+              onClick={() => void downloadPo(created.poRecordId)}
+              disabled={poDownloading}
+              className="rounded-md border border-navy-200 bg-white px-3 py-1.5 text-xs font-semibold text-navy-700 hover:bg-navy-50 disabled:opacity-50"
+            >
+              {poDownloading ? "Preparing…" : "Download the purchase order"}
+            </button>
+            <span className="ml-2 text-[11px] text-navy-600/70">
+              Read from Quickbase, so it shows what the record says.
+            </span>
+          </div>
+        )}
+        {created.poError && (
+          <p
+            role="alert"
+            className="border-t border-brand-red/30 bg-brand-red-50 px-4 py-2.5 text-xs text-brand-red-dark"
+          >
+            <strong>
+              The records were created, but the purchase order was not sent:
+            </strong>{" "}
+            {created.poError} Download it above and send it by hand — creating
+            the purchase order again would duplicate it.
+          </p>
+        )}
         {created.letterError && (
           <p
             role="alert"
             className="border-t border-brand-red/30 bg-brand-red-50 px-4 py-2.5 text-xs text-brand-red-dark"
           >
-            <strong>The records were created, but the letter was not sent:</strong>{" "}
+            <strong>
+              The records were created, but the letter was not sent:
+            </strong>{" "}
             {created.letterError} Send it from the panel below — creating the
             purchase order again would duplicate it.
           </p>
@@ -476,13 +612,24 @@ export default function CreatePoPanel({
                 />
                 Email the award letter to the subcontractor
               </label>
+              {wantsPoDoc && (
+                <label className="mt-2 flex items-center gap-2 text-xs font-medium text-navy-800">
+                  <input
+                    type="checkbox"
+                    checked={sendPo}
+                    onChange={(e) => setSendPo(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--color-navy-700)]"
+                  />
+                  Email the purchase order to the subcontractor
+                </label>
+              )}
               {!canLetter && (
                 <p className="mt-1 text-xs text-navy-600/70">
                   There is no award letter template for {cfg.label} yet, so the
                   records can be created but no letter will go out.
                 </p>
               )}
-              {sendLetter && canLetter && (
+              {((sendLetter && canLetter) || (sendPo && wantsPoDoc)) && (
                 <div className="mt-2">
                   <label
                     htmlFor="po-letter-to"
@@ -505,9 +652,9 @@ export default function CreatePoPanel({
                   <p className="mt-1 text-[10px] text-navy-600/70">
                     {effectiveTo.trim()
                       ? suggestedTo && !toTouched
-                        ? "From the subcontractor's Quickbase record. The letter goes out after the records are created."
-                        : "The letter goes out after the records are created."
-                      : "No address on the subcontractor's Quickbase record — add one here, or the records will be created without a letter."}
+                        ? `From the subcontractor's Quickbase record. ${sending} out after the records are created.`
+                        : `${sending} out after the records are created.`
+                      : `No address on the subcontractor's Quickbase record — add one here, or the records will be created and nothing will be emailed.`}
                   </p>
                 </div>
               )}
@@ -557,12 +704,20 @@ export default function CreatePoPanel({
                   <Row
                     k="Award breakdown"
                     v={
-                      CATEGORY_FIELDS.filter((c) => plan.po.categories[c.key] > 0)
-                        .map((c) => `${c.label} ${money(plan.po.categories[c.key])}`)
+                      CATEGORY_FIELDS.filter(
+                        (c) => plan.po.categories[c.key] > 0,
+                      )
+                        .map(
+                          (c) =>
+                            `${c.label} ${money(plan.po.categories[c.key])}`,
+                        )
                         .join(" · ") || "no categories"
                     }
                   />
-                  <Row k="Cost Item" v={`${money(plan.costItem.unitCost)} (1 × LS)`} />
+                  <Row
+                    k="Cost Item"
+                    v={`${money(plan.costItem.unitCost)} (1 × LS)`}
+                  />
                   <Row
                     k="Bills"
                     v={
@@ -583,8 +738,20 @@ export default function CreatePoPanel({
                   )}
                   <Row
                     k="Award letter"
-                    v={willSend ? `emailed to ${effectiveTo}` : "not being sent"}
+                    v={
+                      willSend ? `emailed to ${effectiveTo}` : "not being sent"
+                    }
                   />
+                  {wantsPoDoc && (
+                    <Row
+                      k="Purchase order"
+                      v={
+                        willSendPo
+                          ? `emailed to ${effectiveTo}`
+                          : "not being sent"
+                      }
+                    />
+                  )}
                 </dl>
                 {plan.bills.length > 0 && (
                   <ul className="mt-2 max-h-32 overflow-auto rounded border border-navy-100 text-[11px]">
@@ -594,15 +761,24 @@ export default function CreatePoPanel({
                         className="flex justify-between border-b border-navy-50 px-2 py-1 last:border-0"
                       >
                         <span className="text-navy-700">{b.title}</span>
-                        <span className="tabular text-navy-800">{money(b.amount)}</span>
+                        <span className="tabular text-navy-800">
+                          {money(b.amount)}
+                        </span>
                       </li>
                     ))}
                   </ul>
                 )}
                 <p className="mt-2 text-[11px] text-navy-600/70">
-                  These become real records in Quickbase and are not undone from here.
-                  {willSend
-                    ? " The letter goes to the subcontractor and cannot be recalled."
+                  These become real records in Quickbase and are not undone from
+                  here.
+                  {willSend || willSendPo
+                    ? ` The ${
+                        willSend && willSendPo
+                          ? "letter and the purchase order go"
+                          : willSend
+                            ? "letter goes"
+                            : "purchase order goes"
+                      } to the subcontractor and cannot be recalled.`
                     : ""}
                 </p>
                 <div className="mt-3 flex gap-2">
@@ -626,10 +802,18 @@ export default function CreatePoPanel({
               <>
                 <button
                   type="button"
-                  disabled={!(award > 0) || stage === "working" || blocked || (isContract && lineItemCount === 0)}
+                  disabled={
+                    !(award > 0) ||
+                    stage === "working" ||
+                    blocked ||
+                    (isContract && lineItemCount === 0)
+                  }
                   onClick={() => setStage("confirming")}
                   className={`w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
-                    award > 0 && stage !== "working" && !blocked && !(isContract && lineItemCount === 0)
+                    award > 0 &&
+                    stage !== "working" &&
+                    !blocked &&
+                    !(isContract && lineItemCount === 0)
                       ? "bg-navy-700 hover:bg-navy-800"
                       : "cursor-not-allowed bg-navy-300"
                   }`}
@@ -647,9 +831,11 @@ export default function CreatePoPanel({
                     ? "Add at least one breakdown line — that is what becomes the PO line item."
                     : award > 0
                       ? `${money(award)} contract${
-                          plan.bills.length ? `, split into ${plan.bills.length} payments` : ""
-                      }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
-                    : "The award has to be above zero."}
+                          plan.bills.length
+                            ? `, split into ${plan.bills.length} payments`
+                            : ""
+                        }${willSend ? ", letter emailed after" : ""}. You will be asked to confirm.`
+                      : "The award has to be above zero."}
                 </p>
               </>
             )}

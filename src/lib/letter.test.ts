@@ -51,7 +51,11 @@ test("the letter carries every section of the Quickbase template", () => {
   }
   assert.ok(html.includes("BYRDSON SERVICES, LLC"));
   assert.ok(html.includes("Priscilla M. Rodríguez Pérez"));
-  assert.ok(html.includes("Asunto: Adjudicación &ndash; Subcontrato por Caso PR-R3-03073"));
+  assert.ok(
+    html.includes(
+      "Asunto: Adjudicación &ndash; Subcontrato por Caso PR-R3-03073",
+    ),
+  );
 });
 
 test("all twenty conditions are present, in order", () => {
@@ -82,7 +86,10 @@ test("the award breakdown shows this system's derivation, not PO categories", ()
 
   // The Quickbase-only cost categories must not appear.
   for (const gone of ["Sistema Séptico", "Conversión ADA", "Cambio de Orden"]) {
-    assert.ok(!html.includes(gone), `stale Quickbase row still present: ${gone}`);
+    assert.ok(
+      !html.includes(gone),
+      `stale Quickbase row still present: ${gone}`,
+    );
   }
 });
 
@@ -93,7 +100,10 @@ test("the payment schedule follows the job type and totals the award", () => {
 
   const two = renderLetter(input({ jobType: "Relocation" }));
   assert.ok(two.includes("Pago Inicial"));
-  assert.ok(!two.includes("Empañetado"), "20/80 letter must not list milestones");
+  assert.ok(
+    !two.includes("Empañetado"),
+    "20/80 letter must not list milestones",
+  );
 
   // Every schedule amount appears, and the total row is the award.
   const lines = scheduleLines(178275.23, PAY_SCHEDULES.standard8);
@@ -104,9 +114,18 @@ test("the payment schedule follows the job type and totals the award", () => {
 
 test("blank fields render an em dash rather than 'undefined'", () => {
   const html = renderLetter(
-    input({ jobAddress: "", program: "", startDate: "", endDate: "", subcontractor: "" }),
+    input({
+      jobAddress: "",
+      program: "",
+      startDate: "",
+      endDate: "",
+      subcontractor: "",
+    }),
   );
-  assert.ok(!/undefined|null|NaN/.test(html), "placeholder leaked into the letter");
+  assert.ok(
+    !/undefined|null|NaN/.test(html),
+    "placeholder leaked into the letter",
+  );
   assert.ok(html.includes("—"));
 });
 
@@ -116,7 +135,10 @@ test("user text is escaped, so a stray angle bracket cannot break the markup", (
     subcontractor: '<script>alert("x")</script>',
     jobName: 'A & B "quoted"',
   });
-  assert.ok(!html.includes("<script>alert"), "unescaped markup made it through");
+  assert.ok(
+    !html.includes("<script>alert"),
+    "unescaped markup made it through",
+  );
   assert.ok(html.includes("&lt;script&gt;"));
   assert.ok(html.includes("A &amp; B"));
 });
@@ -144,18 +166,31 @@ test("the letter shows an ADA line only when ADA applies", () => {
   };
 
   const plain = renderLetter(input());
-  assert.ok(!plain.includes("ADA"), "an ordinary award reads exactly as before");
+  assert.ok(
+    !plain.includes("ADA"),
+    "an ordinary award reads exactly as before",
+  );
 
-  const withAda = calculateAward(groups, { ...base, adaEnabled: true, ada: 15000 });
+  const withAda = calculateAward(groups, {
+    ...base,
+    adaEnabled: true,
+    ada: 15000,
+  });
   const html = renderLetter(input({ result: withAda }));
   assert.match(html, /Conversión ADA/, "the breakdown names the ADA line");
   assert.ok(html.includes("15,000.00"));
 
   // Monto Total must be the figure the payment schedule divides, ADA included.
-  const plainAward = calculateAward(groups, { ...base, adaEnabled: false, ada: 0 }).award;
+  const plainAward = calculateAward(groups, {
+    ...base,
+    adaEnabled: false,
+    ada: 0,
+  }).award;
   assert.ok(Math.abs(withAda.award - (plainAward + 15000)) < 0.005);
   const lines = scheduleLines(withAda.award, PAY_SCHEDULES.standard8);
-  assert.ok(Math.abs(lines.reduce((a, l) => a + l.amount, 0) - withAda.award) < 0.005);
+  assert.ok(
+    Math.abs(lines.reduce((a, l) => a + l.amount, 0) - withAda.award) < 0.005,
+  );
 });
 
 test("the letter shows the capped mobilisation, not ten per cent", () => {
@@ -230,6 +265,31 @@ test("a hand-entered breakdown is the payment schedule, not the fixed one", () =
   assert.ok(!html.includes("Final Payment"), "fixed milestones leaked in");
 });
 
+test("a contract award shows only the total, not an empty derivation", () => {
+  /*
+   * The regression this guards: passing a breakdown instead of categories sent
+   * the letter down the scope-derivation branch, so a $1,000 contract printed
+   * "Extracted Scope (—) $0.00 / Less Overhead & Profit $0.00" above its total.
+   */
+  const html = renderLetter(
+    input({
+      region: "FL",
+      jobType: "Renovation",
+      breakdown: [
+        { desc: "Test 1", pct: 90, amount: 900 },
+        { desc: "test 2", pct: 10, amount: 100 },
+      ],
+      result: { ...input().result, award: 1000 },
+    }),
+  );
+
+  assert.match(html, /Total Amount/);
+  assert.match(html, /\$1,000\.00/);
+  assert.ok(!/Extracted Scope/.test(html), "no scope derivation on a contract");
+  assert.ok(!/Less Overhead/.test(html), "no scope derivation on a contract");
+  assert.ok(!/Hard Costs/.test(html), "no scope derivation on a contract");
+});
+
 test("a partial breakdown does not claim to be the whole contract", () => {
   const html = renderLetter(
     input({
@@ -247,7 +307,9 @@ test("a partial breakdown does not claim to be the whole contract", () => {
 
 test("the mobilisation cap note only appears where there is a mobilisation", () => {
   // Puerto Rico's 8-milestone schedule opens with Movilización.
-  const eight = renderLetter(input({ region: "PR", jobType: "Reconstruction" }));
+  const eight = renderLetter(
+    input({ region: "PR", jobType: "Reconstruction" }),
+  );
   assert.match(eight, /Movilización/);
   assert.match(eight, /limitado a un máximo de diez mil/);
 

@@ -134,7 +134,9 @@ export function renderLetter(input: LetterInput): string {
     result.award > 0 ? round2((scheduleTotal / result.award) * 100) : 100;
   const shortfall = round2(result.award - scheduleTotal);
   /* The cap note only means something where a mobilisation stage exists. */
-  const hasMobilisation = lines.some((l) => /^(movilizaci|mobiliz)/i.test(l.desc));
+  const hasMobilisation = lines.some((l) =>
+    /^(movilizaci|mobiliz)/i.test(l.desc),
+  );
 
   const caseRows: [string, string][] = [
     [L.caseProgram, orDash(input.program)],
@@ -164,30 +166,45 @@ export function renderLetter(input: LetterInput): string {
           ] as [string, number][]
         )
           .filter(([, v]) => v > 0)
-          .map(([label, v]) => [label, money(v), false] as [string, string, boolean]),
+          .map(
+            ([label, v]) =>
+              [label, money(v), false] as [string, string, boolean],
+          ),
         [L.awardTotal, money(result.award), true],
       ]
-    : [
-        [
-          fill(L.awardExtracted, {
-            coverages: esc(input.coverages.join(" + ")) || DASH,
-          }),
-          money(result.base),
-          false,
-        ],
-        [L.awardLessOandP, money(result.lessOandP), false],
-        [
-          fill(L.awardSubsShare, { pct: chosen ? pct(chosen.pct) : DASH }),
-          chosen ? money(chosen.amount) : DASH,
-          false,
-        ],
-        [L.awardHc, money(result.hc), false],
-        // Only shown when it applies, so an ordinary award reads as before.
-        ...(result.ada > 0
-          ? ([[L.awardAda, money(result.ada), false]] as [string, string, boolean][])
-          : []),
-        [L.awardTotal, money(result.award), true],
-      ];
+    : entered.length
+      ? /*
+         * A contract-entry award is one figure. The rows below describe a
+         * scope derivation it does not have, and printing them as $0.00 —
+         * which is what happened when the breakdown replaced the categories —
+         * says the award was worked out from nothing.
+         */
+        [[L.awardTotal, money(result.award), true]]
+      : [
+          [
+            fill(L.awardExtracted, {
+              coverages: esc(input.coverages.join(" + ")) || DASH,
+            }),
+            money(result.base),
+            false,
+          ],
+          [L.awardLessOandP, money(result.lessOandP), false],
+          [
+            fill(L.awardSubsShare, { pct: chosen ? pct(chosen.pct) : DASH }),
+            chosen ? money(chosen.amount) : DASH,
+            false,
+          ],
+          [L.awardHc, money(result.hc), false],
+          // Only shown when it applies, so an ordinary award reads as before.
+          ...(result.ada > 0
+            ? ([[L.awardAda, money(result.ada), false]] as [
+                string,
+                string,
+                boolean,
+              ][])
+            : []),
+          [L.awardTotal, money(result.award), true],
+        ];
 
   return `<!DOCTYPE html>
 <html lang="${template.lang}">
@@ -232,7 +249,10 @@ export function renderLetter(input: LetterInput): string {
 
   <header class="brand">
     <div class="name">${template.header[0]}</div>
-    ${template.header.slice(1).map((l) => `<div class="line">${l}</div>`).join("\n    ")}
+    ${template.header
+      .slice(1)
+      .map((l) => `<div class="line">${l}</div>`)
+      .join("\n    ")}
   </header>
 
   <h1>${fill(L.heading, { jobType: orDash(input.jobType) })}</h1>
@@ -303,7 +323,9 @@ export function renderLetter(input: LetterInput): string {
   <h2>${L.sectionConditions}</h2>
   <ol class="conditions">
     ${template.conditions
-      .map((c) => `<li><span class="t">${esc(c.title)}</span> ${esc(c.text)}</li>`)
+      .map(
+        (c) => `<li><span class="t">${esc(c.title)}</span> ${esc(c.text)}</li>`,
+      )
       .join("\n    ")}
   </ol>
 

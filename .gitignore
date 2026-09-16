@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Record ids from a write-path rehearsal (scripts/test-write-*.mjs)
 .test-write-ids.json
+
+# Undo files from scripts/rederive-vendor-regions.mjs
+vendor-region-backup-*.json

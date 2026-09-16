@@ -70,6 +70,12 @@ export const QB_AWARD = {
      * a purchase order whose document has never been sent.
      */
     sentToSubAt: 319,
+    /**
+     * The award letter as it went out, filed on the purchase order so it can
+     * be read from the table without going back through this app. Written by
+     * /api/letter/attach after the records are created.
+     */
+    awardLetterDoc: 263,
     /*
      * The Award Breakdown. Total Amount (262) is a Quickbase formula over
      * exactly these seven and is never written from here:

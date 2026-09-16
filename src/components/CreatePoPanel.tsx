@@ -30,6 +30,10 @@ export interface CreatePoResult {
   letterSentTo?: string[];
   /** Why it did not, when the records were created anyway. */
   letterError?: string;
+  /** The file name the award letter was filed under on the PO record. */
+  letterFiledAs?: string;
+  /** Why it was not filed, when the records were created anyway. */
+  letterFileError?: string;
   /** Who the purchase order document reached, where the region sends one. */
   poSentTo?: string[];
   /** Why it did not, when the records were created anyway. */
@@ -277,6 +281,36 @@ export default function CreatePoPanel({
       insuranceExisting: body.insuranceExisting ?? false,
     };
 
+    /*
+     * File the letter on the purchase order before anything is emailed, so the
+     * record carries it even if the mail fails -- and whether or not the mail
+     * was ever going to be sent. Filing is about the record; emailing is about
+     * the subcontractor, and they are not the same decision.
+     */
+    if (canLetter) {
+      try {
+        const res = await fetch("/api/letter/attach", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(key ? { "x-send-key": key } : {}),
+          },
+          body: JSON.stringify({ letter, poRecordId: result.poRecordId }),
+        });
+        const filed = await res.json();
+        if (filed.ok) {
+          result.letterFiledAs = filed.attachment as string;
+        } else {
+          result.letterFileError =
+            filed.error ??
+            "The letter could not be filed on the purchase order.";
+        }
+      } catch {
+        result.letterFileError =
+          "Could not reach the server, so the letter was not filed on the purchase order.";
+      }
+    }
+
     if (willSend) {
       try {
         const res = await fetch("/api/letter/send", {
@@ -408,6 +442,18 @@ export default function CreatePoPanel({
                 : "not opened"
             }
           />
+          {canLetter && (
+            <Line
+              label="Letter on the PO"
+              value={
+                created.letterFiledAs
+                  ? created.letterFiledAs
+                  : created.letterFileError
+                    ? "not filed"
+                    : "not filed"
+              }
+            />
+          )}
           <Line
             label="Award letter"
             value={
@@ -445,6 +491,16 @@ export default function CreatePoPanel({
               Read from Quickbase, so it shows what the record says.
             </span>
           </div>
+        )}
+        {created.letterFileError && (
+          <p
+            role="alert"
+            className="border-t border-brand-red/30 bg-brand-red-50 px-4 py-2.5 text-xs text-brand-red-dark"
+          >
+            <strong>The letter was not filed on the purchase order:</strong>{" "}
+            {created.letterFileError} Attach it to Award Letter Document on the
+            PO record by hand, or it will not be there to check later.
+          </p>
         )}
         {created.poError && (
           <p

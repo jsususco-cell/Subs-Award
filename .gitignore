@@ -46,3 +46,6 @@ next-env.d.ts
 *.xlsx
 *.xlsm
 *.xlsb
+
+# Record ids from a write-path rehearsal (scripts/test-write-*.mjs)
+.test-write-ids.json

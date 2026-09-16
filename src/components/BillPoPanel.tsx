@@ -61,7 +61,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
   const [loadingPos, setLoadingPos] = useState(false);
 
   const [costItemId, setCostItemId] = useState<number | null>(null);
-  const [account, setAccount] = useState<{ id: number; label: string } | null>(null);
+  const [account, setAccount] = useState<{ id: number; label: string } | null>(
+    null,
+  );
   const [existing, setExisting] = useState<ExistingBill[]>([]);
   const [contract, setContract] = useState(0);
   const [loadingBills, setLoadingBills] = useState(false);
@@ -99,7 +101,10 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
   function setDraft(n: number, patch: Partial<Draft>) {
     setDrafts((d) => ({
       ...d,
-      [n]: { ...(d[n] ?? { selected: false, backCharge: 0, backChargeDesc: "" }), ...patch },
+      [n]: {
+        ...(d[n] ?? { selected: false, backCharge: 0, backChargeDesc: "" }),
+        ...patch,
+      },
     }));
   }
 
@@ -162,7 +167,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
         return;
       }
 
-      const res = await fetch(`/api/qb/bills?resource=bills&region=${region}&po=${id}`);
+      const res = await fetch(
+        `/api/qb/bills?resource=bills&region=${region}&po=${id}`,
+      );
       const body = await res.json();
       if (!body.ok) {
         setError(body.error ?? "Could not load the bills.");
@@ -206,7 +213,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
     .filter(Boolean) as string[];
 
   const canSave =
-    (toCreate.length > 0 || toUpdate.length > 0) && problems.length === 0 && !busy;
+    (toCreate.length > 0 || toUpdate.length > 0) &&
+    problems.length === 0 &&
+    !busy;
 
   const alreadyBrokenDown = lineItems.reduce((s, i) => s + i.amount, 0);
   const addingTotal = breakdownTotal(newRows);
@@ -240,7 +249,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
 
       if (body.keyRequired) {
         setKeyNeeded(true);
-        setError("This deployment needs the send key before it will write line items.");
+        setError(
+          "This deployment needs the send key before it will write line items.",
+        );
         return;
       }
       if (!body.ok) {
@@ -302,7 +313,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
 
       if (body.keyRequired) {
         setKeyNeeded(true);
-        setError("This deployment needs the send key before it will write bills.");
+        setError(
+          "This deployment needs the send key before it will write bills.",
+        );
         return;
       }
       if (!body.ok) {
@@ -318,7 +331,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
       setKeyNeeded(false);
       setDone(
         `${body.created} bill${body.created === 1 ? "" : "s"} created` +
-          (body.updated ? `, ${body.updated} back charge${body.updated === 1 ? "" : "s"} saved` : ""),
+          (body.updated
+            ? `, ${body.updated} back charge${body.updated === 1 ? "" : "s"} saved`
+            : ""),
       );
       setDrafts({});
       await pickPo(poId);
@@ -361,7 +376,12 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
 
         <div className="grid gap-3 p-4 sm:grid-cols-2">
           <LookupField
-            label={cfg.awardEligibleOnly ? "Subcontractor (award-eligible)" : "Subcontractor"}
+            region={region}
+            label={
+              cfg.awardEligibleOnly
+                ? "Subcontractor (award-eligible)"
+                : "Subcontractor"
+            }
             value={sub}
             placeholder="Company name"
             onChange={(v, extra) => {
@@ -418,9 +438,7 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
               <p className="mt-1 text-xs text-navy-600/70">
                 {po.jobType || "no job type"} · contract {money(contract)}
                 {costItemId ? ` · cost item #${costItemId}` : ""}
-                {account
-                  ? ` · posts to ${account.label} (#${account.id})`
-                  : ""}
+                {account ? ` · posts to ${account.label} (#${account.id})` : ""}
               </p>
             )}
           </div>
@@ -475,9 +493,16 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
               <table className="w-full text-sm">
                 <tbody>
                   {lineItems.map((li) => (
-                    <tr key={li.recordId} className="border-b border-navy-50 last:border-0">
-                      <td className="px-4 py-1.5 text-navy-600/60">#{li.recordId}</td>
-                      <td className="py-1.5 text-navy-800">{li.title || "—"}</td>
+                    <tr
+                      key={li.recordId}
+                      className="border-b border-navy-50 last:border-0"
+                    >
+                      <td className="px-4 py-1.5 text-navy-600/60">
+                        #{li.recordId}
+                      </td>
+                      <td className="py-1.5 text-navy-800">
+                        {li.title || "—"}
+                      </td>
                       <td className="tabular px-4 py-1.5 text-right text-navy-800">
                         {money(li.amount)}
                       </td>
@@ -521,7 +546,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
                   ? "Adding…"
                   : newRows.some((r) => r.amount > 0)
                     ? `Add ${newRows.filter((r) => r.amount > 0).length} line item${
-                        newRows.filter((r) => r.amount > 0).length === 1 ? "" : "s"
+                        newRows.filter((r) => r.amount > 0).length === 1
+                          ? ""
+                          : "s"
                       } (${money(addingTotal)})`
                     : "Nothing to add"}
               </button>
@@ -589,10 +616,16 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
                   const d = draftFor(row);
                   const amount = row.existing?.amount || row.amount;
                   return (
-                    <tr key={row.n} className="border-b border-navy-50 last:border-0">
+                    <tr
+                      key={row.n}
+                      className="border-b border-navy-50 last:border-0"
+                    >
                       <td className="px-3 py-2 text-center">
                         {row.existing ? (
-                          <span title="Already billed" className="text-navy-400">
+                          <span
+                            title="Already billed"
+                            className="text-navy-400"
+                          >
                             ✓
                           </span>
                         ) : (
@@ -633,7 +666,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
                           aria-label={`Back charge on ${row.desc}`}
                           value={d.backCharge || ""}
                           onChange={(e) =>
-                            setDraft(row.n, { backCharge: Number(e.target.value) || 0 })
+                            setDraft(row.n, {
+                              backCharge: Number(e.target.value) || 0,
+                            })
                           }
                           placeholder="0.00"
                           className="w-24 rounded border border-navy-200 px-2 py-1 text-right text-sm outline-none focus:border-navy-600"
@@ -645,7 +680,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
                           onChange={(e) =>
                             setDraft(row.n, { backChargeDesc: e.target.value })
                           }
-                          placeholder={d.backCharge > 0 ? "Reason (required)" : "Reason"}
+                          placeholder={
+                            d.backCharge > 0 ? "Reason (required)" : "Reason"
+                          }
                           className={`mt-1 w-40 rounded border px-2 py-1 text-sm outline-none focus:border-navy-600 ${
                             d.backCharge > 0 && !d.backChargeDesc.trim()
                               ? "border-brand-red"

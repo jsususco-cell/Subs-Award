@@ -69,7 +69,12 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
         </header>
         <div className="p-4 sm:max-w-md">
           <LookupField
-            label={cfg.awardEligibleOnly ? "Subcontractor (award-eligible)" : "Subcontractor"}
+            region={region}
+            label={
+              cfg.awardEligibleOnly
+                ? "Subcontractor (award-eligible)"
+                : "Subcontractor"
+            }
             value={sub}
             placeholder="Company name"
             onChange={(v, extra) => {
@@ -129,7 +134,10 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
               <table className="w-full min-w-[42rem] text-sm">
                 <thead>
                   <tr className="border-b border-navy-100 bg-navy-100/60 text-xs tracking-wide text-navy-700 uppercase">
-                    <th scope="col" className="px-4 py-2 text-left font-semibold">
+                    <th
+                      scope="col"
+                      className="px-4 py-2 text-left font-semibold"
+                    >
                       PO
                     </th>
                     <th scope="col" className="py-2 text-left font-semibold">
@@ -144,7 +152,10 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                     <th scope="col" className="py-2 text-right font-semibold">
                       %
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-semibold">
+                    <th
+                      scope="col"
+                      className="px-4 py-2 text-left font-semibold"
+                    >
                       Status
                     </th>
                   </tr>
@@ -154,7 +165,10 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                     const contract = p.contractPrice || p.totalCost;
                     const paidPct = p.totalPaidPct * 100;
                     return (
-                      <tr key={p.recordId} className="border-b border-navy-50 last:border-0">
+                      <tr
+                        key={p.recordId}
+                        className="border-b border-navy-50 last:border-0"
+                      >
                         <td className="px-4 py-2 font-medium text-navy-800">
                           {p.poNumber || `#${p.recordId}`}
                         </td>
@@ -168,7 +182,9 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                           {money(p.totalAmountPaid)}
                         </td>
                         <td className="tabular py-2 text-right text-navy-600/80">
-                          {p.totalPaidPct > 0 ? fmtPct(Math.round(paidPct * 100) / 100) : "—"}
+                          {p.totalPaidPct > 0
+                            ? fmtPct(Math.round(paidPct * 100) / 100)
+                            : "—"}
                         </td>
                         <td className="px-4 py-2">
                           <Pill status={p.billingStatus} />

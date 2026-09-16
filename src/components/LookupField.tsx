@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { refreshLookups } from "@/lib/qb-client";
+import type { RegionKey } from "@/lib/regions";
 
 export interface Choice {
   id: string;
@@ -15,6 +16,15 @@ interface Props {
   label: string;
   value: string;
   placeholder: string;
+  /**
+   * The region these choices belong to. Required, and not decorative: the
+   * options are cached in this component for the session, so without knowing
+   * when the region changed the field goes on offering the previous region's
+   * records. Picking one attaches its Quickbase record id, which is what the
+   * purchase order points at — a Florida job selectable on a Puerto Rico award
+   * is how a PO ends up against the wrong case.
+   */
+  region: RegionKey;
   onChange: (value: string, extra?: Record<string, string>) => void;
   /** Fetches the options. Called on first focus, never during render. */
   loadChoices: () => Promise<{
@@ -41,23 +51,53 @@ export default function LookupField({
   label,
   value,
   placeholder,
+  region,
   onChange,
   loadChoices,
 }: Props) {
   const id = useId();
   const [choices, setChoices] = useState<Choice[] | null>(null);
-  const [state, setState] = useState<"idle" | "loading" | "ready" | "off">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "ready" | "off">(
+    "idle",
+  );
   const [note, setNote] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /*
+   * Forget everything on a change of region.
+   *
+   * Done during render rather than in an effect so the stale options are never
+   * shown: React re-runs this component with the cleared state before anything
+   * reaches the screen. An effect would paint the previous region's list first.
+   */
+  const [loadedFor, setLoadedFor] = useState<RegionKey>(region);
+  if (loadedFor !== region) {
+    setLoadedFor(region);
+    setChoices(null);
+    setState("idle");
+    setNote(null);
+    setOpen(false);
+    setActive(0);
+  }
+
+  /*
+   * Which region the request in flight is for. A switch part-way through a
+   * load must not have its result applied — that would put the old region's
+   * options back into a field that has just been reset.
+   */
+  const loadingFor = useRef<RegionKey>(region);
+
   async function ensureLoaded(force = false) {
     if (!force && state !== "idle") return;
+    const forRegion = region;
+    loadingFor.current = forRegion;
     setState("loading");
     setNote(null);
     const result = await loadChoices();
+    if (loadingFor.current !== forRegion) return;
     if (!result.configured || result.error) {
       setState("off");
       setNote(result.error ?? null);
@@ -88,87 +128,94 @@ export default function LookupField({
 
   return (
     <div className="relative">
-      <label htmlFor={id} className="mb-1 flex items-center gap-2 text-xs font-medium text-navy-700">
+      <label
+        htmlFor={id}
+        className="mb-1 flex items-center gap-2 text-xs font-medium text-navy-700"
+      >
         {label}
-        {state === "loading" && <span className="text-navy-600/60">loading…</span>}
+        {state === "loading" && (
+          <span className="text-navy-600/60">loading…</span>
+        )}
         {state === "ready" && exact && (
-          <span className="text-[10px] font-semibold text-navy-600">✓ matched</span>
+          <span className="text-[10px] font-semibold text-navy-600">
+            ✓ matched
+          </span>
         )}
       </label>
 
       <div className="relative">
-      <input
-        ref={inputRef}
-        id={id}
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        autoComplete="off"
-        role="combobox"
-        aria-expanded={showList}
-        aria-autocomplete="list"
-        aria-controls={showList ? `${id}-list` : undefined}
-        onFocus={() => {
-          setOpen(true);
-          void ensureLoaded();
-        }}
-        onBlur={() => {
-          blurTimer.current = setTimeout(() => setOpen(false), 120);
-        }}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
-          setActive(0);
-        }}
-        onKeyDown={(e) => {
-          if (!showList) return;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActive((i) => Math.min(i + 1, matches.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((i) => Math.max(i - 1, 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            if (matches[active]) pick(matches[active]);
-          } else if (e.key === "Escape") {
-            setOpen(false);
-          }
-        }}
-        className={`w-full rounded-md border border-navy-200 py-2 pl-2.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 ${
-          value ? "pr-9" : "pr-2.5"
-        }`}
-      />
-
-      {value && (
-        <button
-          type="button"
-          aria-label={`Clear ${label.toLowerCase()}`}
-          title="Clear"
-          // Beat the input's blur so the click registers, the same way the
-          // options below do — otherwise the field closes before this fires.
-          onMouseDown={(e) => {
-            e.preventDefault();
-            if (blurTimer.current) clearTimeout(blurTimer.current);
-          }}
-          onClick={() => {
-            /*
-             * Clearing sends an empty value with NO extra, which is what tells
-             * the caller to drop the Quickbase record id it picked up. Leaving
-             * that behind would point a purchase order at a record whose name
-             * is no longer on screen.
-             */
-            onChange("");
-            setActive(0);
+        <input
+          ref={inputRef}
+          id={id}
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={showList}
+          aria-autocomplete="list"
+          aria-controls={showList ? `${id}-list` : undefined}
+          onFocus={() => {
             setOpen(true);
             void ensureLoaded();
-            inputRef.current?.focus();
           }}
-          className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded px-1.5 pb-0.5 text-lg leading-none text-navy-400 transition hover:bg-navy-50 hover:text-brand-red focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/30"
-        >
-          ×
-        </button>
-      )}
+          onBlur={() => {
+            blurTimer.current = setTimeout(() => setOpen(false), 120);
+          }}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setOpen(true);
+            setActive(0);
+          }}
+          onKeyDown={(e) => {
+            if (!showList) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActive((i) => Math.min(i + 1, matches.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              if (matches[active]) pick(matches[active]);
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          className={`w-full rounded-md border border-navy-200 py-2 pl-2.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 ${
+            value ? "pr-9" : "pr-2.5"
+          }`}
+        />
+
+        {value && (
+          <button
+            type="button"
+            aria-label={`Clear ${label.toLowerCase()}`}
+            title="Clear"
+            // Beat the input's blur so the click registers, the same way the
+            // options below do — otherwise the field closes before this fires.
+            onMouseDown={(e) => {
+              e.preventDefault();
+              if (blurTimer.current) clearTimeout(blurTimer.current);
+            }}
+            onClick={() => {
+              /*
+               * Clearing sends an empty value with NO extra, which is what tells
+               * the caller to drop the Quickbase record id it picked up. Leaving
+               * that behind would point a purchase order at a record whose name
+               * is no longer on screen.
+               */
+              onChange("");
+              setActive(0);
+              setOpen(true);
+              void ensureLoaded();
+              inputRef.current?.focus();
+            }}
+            className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded px-1.5 pb-0.5 text-lg leading-none text-navy-400 transition hover:bg-navy-50 hover:text-brand-red focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/30"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {showList && (
@@ -192,7 +239,9 @@ export default function LookupField({
                   i === active ? "bg-navy-50 text-navy-900" : "text-navy-800"
                 }`}
               >
-                <span className="block truncate font-medium">{choice.label}</span>
+                <span className="block truncate font-medium">
+                  {choice.label}
+                </span>
                 {choice.hint && (
                   <span className="block truncate text-xs text-navy-600/70">
                     {choice.hint}

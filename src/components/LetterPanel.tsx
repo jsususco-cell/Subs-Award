@@ -5,7 +5,11 @@ import LookupField from "./LookupField";
 import NumberField from "./NumberField";
 import { loadJobs, loadSubs } from "@/lib/qb-client";
 import PaymentSchedule from "./PaymentSchedule";
-import { scheduleForJobType, scheduleLines, scheduleSetFor } from "@/lib/schedule";
+import {
+  scheduleForJobType,
+  scheduleLines,
+  scheduleSetFor,
+} from "@/lib/schedule";
 import { canRenderLetter, renderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor, type RegionKey } from "@/lib/regions";
 import { templateFor } from "@/lib/letter-content";
@@ -64,7 +68,7 @@ export default function LetterPanel({
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [letterError, setLetterError] = useState<string | null>(null);
-  const [subEmail, setSubEmail] = useState('');
+  const [subEmail, setSubEmail] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
   const chosen = result.tierRows.find((r) => r.selected);
   const cfg = regionFor(region);
@@ -112,7 +116,8 @@ export default function LetterPanel({
       scheduleForJobType(fields.jobType, cfg),
       scheduleSetFor(cfg)?.mobilisationCap ?? null,
     ).map(
-      (l) => [`${l.n}. ${l.desc} (${l.pct}%)`, money(l.amount)] as [string, string],
+      (l) =>
+        [`${l.n}. ${l.desc} (${l.pct}%)`, money(l.amount)] as [string, string],
     ),
   ];
 
@@ -139,7 +144,6 @@ export default function LetterPanel({
 
   function openLetter() {
     const html = buildLetter();
-
 
     const win = window.open("", "_blank");
     if (!win) {
@@ -209,9 +213,12 @@ export default function LetterPanel({
         </header>
         <div className="space-y-3 p-4">
           <LookupField
+            region={region}
             label="Job name"
             value={fields.jobName}
-            placeholder={cfg.key === "PR" ? "PR-R3-03073" : "Search by job name"}
+            placeholder={
+              cfg.key === "PR" ? "PR-R3-03073" : "Search by job name"
+            }
             onChange={(v, extra) =>
               onField({
                 jobName: v,
@@ -232,7 +239,11 @@ export default function LetterPanel({
                   id: j.id,
                   label: j.name,
                   hint: [j.address, j.jobType].filter(Boolean).join("  ·  "),
-                  extra: { address: j.address, jobType: j.jobType, recordId: j.id },
+                  extra: {
+                    address: j.address,
+                    jobType: j.jobType,
+                    recordId: j.id,
+                  },
                 })),
               };
             }}
@@ -244,6 +255,7 @@ export default function LetterPanel({
             placeholder="Street, municipality"
           />
           <LookupField
+            region={region}
             label="Subcontractor"
             value={fields.subcontractor}
             placeholder="Company name"
@@ -260,7 +272,7 @@ export default function LetterPanel({
                 choices: r.items.map((sub) => ({
                   id: sub.id,
                   label: sub.company,
-                  hint: [sub.trade, sub.email].filter(Boolean).join('  ·  '),
+                  hint: [sub.trade, sub.email].filter(Boolean).join("  ·  "),
                   extra: { email: sub.email, recordId: sub.id },
                 })),
               };
@@ -301,7 +313,9 @@ export default function LetterPanel({
             onChange={(v) => onField({ endDate: v })}
           />
           <div>
-            <span className="mb-1 block text-xs font-medium text-navy-700">HC</span>
+            <span className="mb-1 block text-xs font-medium text-navy-700">
+              HC
+            </span>
             <NumberField
               ariaLabel="Hard cost amount"
               value={result.hc}
@@ -331,88 +345,96 @@ export default function LetterPanel({
       />
 
       <div className="space-y-5">
-      <PaymentSchedule
-        region={region}
-        jobType={fields.jobType}
-        onJobType={(v) => onField({ jobType: v })}
-        amount={result.award}
-      />
+        <PaymentSchedule
+          region={region}
+          jobType={fields.jobType}
+          onJobType={(v) => onField({ jobType: v })}
+          amount={result.award}
+        />
 
-      <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
-        <header className="flex items-center justify-between gap-3 border-b border-navy-100 px-4 py-3">
-          <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
-            Merge fields
-          </h2>
-          <button
-            type="button"
-            onClick={copyMerge}
-            className="no-print rounded-md border border-navy-200 px-2.5 py-1.5 text-xs font-semibold text-navy-700 hover:bg-navy-50"
-          >
-            {copied ? "Copied" : "Copy all"}
-          </button>
-        </header>
-        <table className="w-full text-sm">
-          <tbody>
-            {merge.map(([label, value], i) => (
-              <tr key={label} className="border-b border-navy-50 last:border-0">
-                <td className="w-1/2 px-4 py-1.5 text-navy-600">{label}</td>
-                <td
-                  className={`tabular px-4 py-1.5 text-right ${
-                    i >= 4 ? "font-semibold text-navy-800" : "text-navy-800"
-                  }`}
+        <section className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm">
+          <header className="flex items-center justify-between gap-3 border-b border-navy-100 px-4 py-3">
+            <h2 className="text-sm font-semibold tracking-wide text-navy-800 uppercase">
+              Merge fields
+            </h2>
+            <button
+              type="button"
+              onClick={copyMerge}
+              className="no-print rounded-md border border-navy-200 px-2.5 py-1.5 text-xs font-semibold text-navy-700 hover:bg-navy-50"
+            >
+              {copied ? "Copied" : "Copy all"}
+            </button>
+          </header>
+          <table className="w-full text-sm">
+            <tbody>
+              {merge.map(([label, value], i) => (
+                <tr
+                  key={label}
+                  className="border-b border-navy-50 last:border-0"
                 >
-                  {value}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <td className="w-1/2 px-4 py-1.5 text-navy-600">{label}</td>
+                  <td
+                    className={`tabular px-4 py-1.5 text-right ${
+                      i >= 4 ? "font-semibold text-navy-800" : "text-navy-800"
+                    }`}
+                  >
+                    {value}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-        <div className="border-t-2 border-navy-200 bg-navy-50 p-4">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={!ready}
-              onClick={openLetter}
-              className={`flex-1 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
-                ready ? "bg-navy-700 hover:bg-navy-800" : "cursor-not-allowed bg-navy-300"
-              }`}
-            >
-              Generate Award Letter
-            </button>
-            <button
-              type="button"
-              disabled={!ready || pdfBusy}
-              onClick={downloadPdf}
-              className={`rounded-md border px-3 py-2.5 text-sm font-semibold transition ${
-                ready
-                  ? "border-navy-200 bg-white text-navy-700 hover:bg-navy-50"
-                  : "cursor-not-allowed border-navy-100 text-navy-300"
-              }`}
-            >
-              {pdfBusy ? "Rendering…" : "Download PDF"}
-            </button>
-          </div>
-          {letterError && (
-            <p role="alert" className="mt-2 text-xs font-semibold text-brand-red">
-              {letterError}
+          <div className="border-t-2 border-navy-200 bg-navy-50 p-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={!ready}
+                onClick={openLetter}
+                className={`flex-1 rounded-md px-4 py-2.5 text-sm font-semibold text-white transition ${
+                  ready
+                    ? "bg-navy-700 hover:bg-navy-800"
+                    : "cursor-not-allowed bg-navy-300"
+                }`}
+              >
+                Generate Award Letter
+              </button>
+              <button
+                type="button"
+                disabled={!ready || pdfBusy}
+                onClick={downloadPdf}
+                className={`rounded-md border px-3 py-2.5 text-sm font-semibold transition ${
+                  ready
+                    ? "border-navy-200 bg-white text-navy-700 hover:bg-navy-50"
+                    : "cursor-not-allowed border-navy-100 text-navy-300"
+                }`}
+              >
+                {pdfBusy ? "Rendering…" : "Download PDF"}
+              </button>
+            </div>
+            {letterError && (
+              <p
+                role="alert"
+                className="mt-2 text-xs font-semibold text-brand-red"
+              >
+                {letterError}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-navy-600/70">
+              {!template
+                ? `There is no award letter template for ${cfg.label} yet, so no letter can be produced here. The Puerto Rico letter is not a substitute — it is in Spanish and its conditions cite CFSE, OGPe and PRDOH. Add the ${cfg.label} template to src/lib/letter-content.ts to enable this.`
+                : ready
+                  ? "Opens the letter ready to print or save as PDF. Wording and conditions follow the Quickbase template; the award breakdown shows this system's derivation."
+                  : "Fill in the job name and subcontractor to generate the letter."}
             </p>
-          )}
-          <p className="mt-2 text-xs text-navy-600/70">
-            {!template
-              ? `There is no award letter template for ${cfg.label} yet, so no letter can be produced here. The Puerto Rico letter is not a substitute — it is in Spanish and its conditions cite CFSE, OGPe and PRDOH. Add the ${cfg.label} template to src/lib/letter-content.ts to enable this.`
-              : ready
-                ? "Opens the letter ready to print or save as PDF. Wording and conditions follow the Quickbase template; the award breakdown shows this system's derivation."
-                : "Fill in the job name and subcontractor to generate the letter."}
-          </p>
-        </div>
-      </section>
+          </div>
+        </section>
 
-      <SendLetterPanel
-        letter={letterInput()}
-        suggestedTo={subEmail}
-        ready={ready}
-      />
+        <SendLetterPanel
+          letter={letterInput()}
+          suggestedTo={subEmail}
+          ready={ready}
+        />
       </div>
     </div>
   );
@@ -430,7 +452,10 @@ function DateField({
   const id = "letter-" + label.toLowerCase().replace(/\s+/g, "-");
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-xs font-medium text-navy-700">
+      <label
+        htmlFor={id}
+        className="mb-1 block text-xs font-medium text-navy-700"
+      >
         {label}
       </label>
       <input
@@ -458,7 +483,10 @@ function Field({
   const id = `letter-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-xs font-medium text-navy-700">
+      <label
+        htmlFor={id}
+        className="mb-1 block text-xs font-medium text-navy-700"
+      >
         {label}
       </label>
       <input

@@ -104,6 +104,7 @@ export async function fetchPoDocument(
         p.poStatus,
         p.totalCost,
         p.contractPrice,
+        p.sentToSubAt,
         ...Object.values(DOC_FIELDS),
       ],
       where: `{${p.recordId}.EX.${poRecordId}}`,
@@ -166,8 +167,47 @@ export async function fetchPoDocument(
     totalPrice,
     scopeOfWork: str(po, p.scope),
     projectSpecifics: str(po, DOC_FIELDS.projectSpecifics),
+    sentToSubAt: str(po, p.sentToSubAt),
     lines,
   };
+}
+
+/**
+ * Record that the purchase order document went out.
+ *
+ * Written after the mail is away, never before. A marker set first would turn
+ * a failed send into a purchase order that can never be sent again, which is
+ * the worse of the two failures; writing it after means a crash in between can
+ * send twice. Rare, visible, and recoverable — the right way round.
+ */
+export async function markPoSent(
+  poRecordId: number,
+  when: Date = new Date(),
+): Promise<void> {
+  const res = await fetch("https://api.quickbase.com/v1/records", {
+    method: "POST",
+    headers: {
+      "QB-Realm-Hostname": QB_CONFIG.realm,
+      Authorization: `QB-USER-TOKEN ${QB_CONFIG.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: QB_AWARD.tables.pos,
+      data: [
+        {
+          [QB_AWARD.pos.recordId]: { value: poRecordId },
+          [QB_AWARD.pos.sentToSubAt]: { value: when.toISOString() },
+        },
+      ],
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Quickbase ${res.status} recording the send on PO ${poRecordId}: ` +
+        `${(await res.text()).slice(0, 200)}`,
+    );
+  }
 }
 
 /**

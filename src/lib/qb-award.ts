@@ -59,6 +59,17 @@ export const QB_AWARD = {
      * carries its figure in the Award Breakdown categories instead.
      */
     contractPrice: 318,
+    /**
+     * When the purchase order document was emailed to the subcontractor.
+     * Added 2026-09-17. Blank means it has not gone out.
+     *
+     * This is what makes sending happen once. The trigger lives outside this
+     * app — a release in Quickbase, an n8n run, a retry — and any of those can
+     * fire twice. "Notification Sent?" (50) cannot stand in for it: the
+     * Release button sets that as part of releasing, so it is already true on
+     * a purchase order whose document has never been sent.
+     */
+    sentToSubAt: 319,
     /*
      * The Award Breakdown. Total Amount (262) is a Quickbase formula over
      * exactly these seven and is never written from here:
@@ -228,7 +239,10 @@ export function breakdownTotal(rows: BreakdownRow[]): number {
  * over-allocation is visible rather than clamped away — a breakdown that comes
  * to more than the contract is a mistake someone needs to see.
  */
-export function breakdownBalance(contractPrice: number, rows: BreakdownRow[]): number {
+export function breakdownBalance(
+  contractPrice: number,
+  rows: BreakdownRow[],
+): number {
   return round(contractPrice - breakdownTotal(rows));
 }
 
@@ -239,7 +253,11 @@ export const CATEGORY_FIELDS: {
   hint?: string;
   optional?: boolean;
 }[] = [
-  { key: "demolition", label: "Demolition", hint: "incl. septic system demolition" },
+  {
+    key: "demolition",
+    label: "Demolition",
+    hint: "incl. septic system demolition",
+  },
   { key: "site", label: "Site" },
   { key: "septic", label: "Septic System", hint: "replacement" },
   { key: "home", label: "Home" },
@@ -251,7 +269,13 @@ export const CATEGORY_FIELDS: {
 /** What Quickbase's Total Amount formula will come to. */
 export function categoriesTotal(c: PoCategories): number {
   return round(
-    c.demolition + c.site + c.septic + c.home + c.ada + c.changeOrder + c.revisedTotal,
+    c.demolition +
+      c.site +
+      c.septic +
+      c.home +
+      c.ada +
+      c.changeOrder +
+      c.revisedTotal,
   );
 }
 
@@ -554,7 +578,12 @@ export interface AwardPlan {
 /** The categories a write would set, however they were arrived at. */
 export function plannedCategories(input: AwardWriteInput): PoCategories {
   if (input.categories) return input.categories;
-  const split = splitAward(input.award, input.demoTotal, input.siteTotal, input.ada);
+  const split = splitAward(
+    input.award,
+    input.demoTotal,
+    input.siteTotal,
+    input.ada,
+  );
   return {
     ...EMPTY_CATEGORIES,
     demolition: split.demolition,

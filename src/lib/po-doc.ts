@@ -39,6 +39,12 @@ export interface PoDocument {
   totalPrice: number;
   scopeOfWork: string;
   projectSpecifics: string;
+  /**
+   * When this purchase order was last emailed to the subcontractor, or "" if
+   * it never has been. Carried on the document so a caller can tell a first
+   * send from a repeat without reading the record again.
+   */
+  sentToSubAt: string;
   lines: PoDocLine[];
 }
 

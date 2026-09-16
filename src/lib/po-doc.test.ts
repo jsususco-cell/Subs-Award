@@ -24,6 +24,7 @@ function doc(over: Partial<PoDocument> = {}): PoDocument {
     totalPrice: 1530,
     scopeOfWork: "Roof labor for Josephine I model house",
     projectSpecifics: "",
+    sentToSubAt: "",
     lines: [
       {
         title: "Roofing",

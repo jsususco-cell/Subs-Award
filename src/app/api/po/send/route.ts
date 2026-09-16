@@ -5,6 +5,7 @@ import { isReleased, renderPoDocument } from "@/lib/po-doc";
 import { poBody, poSubject } from "@/lib/po-email";
 import {
   fetchPoDocument,
+  markPoSent,
   PoNotFoundError,
   PoNotInRegionError,
   PoNotReleasedError,
@@ -179,6 +180,32 @@ export async function POST(request: Request) {
   }
 
   /*
+   * Sent once. The trigger for a send lives outside this app — a release in
+   * Quickbase, an n8n run, a retried webhook, someone clicking twice — and any
+   * of those can fire again for a purchase order that already went out. The
+   * record says whether it has.
+   *
+   * `resend: true` is the deliberate override, for when a subcontractor has
+   * genuinely lost the mail. It is never set by the automation.
+   */
+  const resend = body.resend === true;
+  if (doc.sentToSubAt && !resend) {
+    return NextResponse.json(
+      {
+        ok: false,
+        alreadySent: true,
+        sentAt: doc.sentToSubAt,
+        poNumber: doc.poNumber,
+        error:
+          `${doc.poNumber || "That purchase order"} was already sent to the ` +
+          `subcontractor on ${doc.sentToSubAt}, so it was not sent again. ` +
+          `Pass resend to send it anyway.`,
+      },
+      { status: 409 },
+    );
+  }
+
+  /*
    * The subject and the note may be overridden; the attachment may not. What
    * the subcontractor is being offered comes from the record.
    */
@@ -205,6 +232,22 @@ export async function POST(request: Request) {
       ],
     });
 
+    /*
+     * The mail is away, so from here nothing may report the send as failed.
+     * If the marker cannot be written the send still happened — say so, and
+     * say loudly that the next trigger will send it again, rather than
+     * swallowing it and letting the subcontractor receive a second copy with
+     * no explanation.
+     */
+    const sentAt = new Date();
+    let markError: string | null = null;
+    try {
+      await markPoSent(poRecordId, sentAt);
+    } catch (e) {
+      markError = e instanceof Error ? e.message : "could not record the send";
+      console.error("[po/send] mark", markError);
+    }
+
     return NextResponse.json({
       ok: true,
       configured: true,
@@ -216,6 +259,16 @@ export async function POST(request: Request) {
       poNumber: doc.poNumber,
       attachment: fileName,
       bytes: pdf.byteLength,
+      resent: resend && Boolean(doc.sentToSubAt),
+      sentAt: sentAt.toISOString(),
+      ...(markError
+        ? {
+            warning:
+              `The purchase order was sent, but recording that on the record ` +
+              `failed: ${markError}. Nothing stops it being sent again — set ` +
+              `"PO Sent to Sub At" on ${doc.poNumber} by hand.`,
+          }
+        : {}),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Send failed";

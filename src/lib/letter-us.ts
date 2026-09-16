@@ -174,6 +174,7 @@ export const US_LABELS: LetterLabels = {
   subject: "Subject: Award &ndash; Subcontract for Case {job}",
   sectionCase: "Case Information",
   sectionAward: "Award Breakdown",
+  sectionContract: "Total Contract Price",
   sectionSchedule: "Payment Breakdown",
   sectionConditions: "General Conditions",
   caseProgram: "Program",
@@ -205,7 +206,8 @@ export const US_LABELS: LetterLabels = {
   scheduleTotal: "Total",
   scheduleShortfall:
     "The remaining {amount} has not yet been scheduled and will be detailed in a later breakdown.",
-  signatureLine: "Signature: ____________________&nbsp;&nbsp;&nbsp;Date: ____________",
+  signatureLine:
+    "Signature: ____________________&nbsp;&nbsp;&nbsp;Date: ____________",
   counterparty: "Authorized Representative",
 };
 

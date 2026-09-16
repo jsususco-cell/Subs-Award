@@ -283,6 +283,8 @@ test("a contract award shows only the total, not an empty derivation", () => {
     }),
   );
 
+  assert.ok(html.includes("<h2>Total Contract Price</h2>"));
+  assert.ok(!/Award Breakdown/.test(html), "mainland has no award breakdown");
   assert.match(html, /Total Amount/);
   assert.match(html, /\$1,000\.00/);
   assert.ok(!/Extracted Scope/.test(html), "no scope derivation on a contract");

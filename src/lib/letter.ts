@@ -1,6 +1,6 @@
 import { money, pct } from "./format";
 import { fill, templateFor } from "./letter-content";
-import { regionFor, type RegionKey } from "./regions";
+import { isContractEntry, regionFor, type RegionKey } from "./regions";
 import type { BreakdownRow, PoCategories } from "./qb-award";
 import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import type { AwardResult } from "./types";
@@ -149,37 +149,37 @@ export function renderLetter(input: LetterInput): string {
     [L.caseExtension, L.caseExtensionValue],
   ];
 
+  /*
+   * Where the region takes a Total Contract Price, the award IS that figure.
+   * There is no scope derivation behind it and no cost categories to list, so
+   * the section names the price and states it.
+   */
+  const contract = isContractEntry(region);
   const c = input.categories;
-  const awardRows: [string, string, boolean][] = c
-    ? [
-        // A direct award: the purchase order's own categories, zeroes omitted
-        // so the letter shows what is actually being paid for.
-        ...(
-          [
-            [L.awardDemolition, c.demolition],
-            [L.awardSite, c.site],
-            [L.awardSeptic, c.septic],
-            [L.awardHome, c.home],
-            [L.awardAda, c.ada],
-            [L.awardChangeOrder, c.changeOrder],
-            [L.awardRevisedTotal, c.revisedTotal],
-          ] as [string, number][]
-        )
-          .filter(([, v]) => v > 0)
-          .map(
-            ([label, v]) =>
-              [label, money(v), false] as [string, string, boolean],
-          ),
-        [L.awardTotal, money(result.award), true],
-      ]
-    : entered.length
-      ? /*
-         * A contract-entry award is one figure. The rows below describe a
-         * scope derivation it does not have, and printing them as $0.00 —
-         * which is what happened when the breakdown replaced the categories —
-         * says the award was worked out from nothing.
-         */
-        [[L.awardTotal, money(result.award), true]]
+  const awardRows: [string, string, boolean][] = contract
+    ? [[L.awardTotal, money(result.award), true]]
+    : c
+      ? [
+          // A direct award: the purchase order's own categories, zeroes omitted
+          // so the letter shows what is actually being paid for.
+          ...(
+            [
+              [L.awardDemolition, c.demolition],
+              [L.awardSite, c.site],
+              [L.awardSeptic, c.septic],
+              [L.awardHome, c.home],
+              [L.awardAda, c.ada],
+              [L.awardChangeOrder, c.changeOrder],
+              [L.awardRevisedTotal, c.revisedTotal],
+            ] as [string, number][]
+          )
+            .filter(([, v]) => v > 0)
+            .map(
+              ([label, v]) =>
+                [label, money(v), false] as [string, string, boolean],
+            ),
+          [L.awardTotal, money(result.award), true],
+        ]
       : [
           [
             fill(L.awardExtracted, {
@@ -276,7 +276,7 @@ export function renderLetter(input: LetterInput): string {
     </tbody>
   </table>
 
-  <h2>${L.sectionAward}</h2>
+  <h2>${contract ? L.sectionContract : L.sectionAward}</h2>
   <table>
     <tbody>
       ${awardRows

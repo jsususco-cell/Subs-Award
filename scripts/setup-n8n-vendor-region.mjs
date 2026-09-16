@@ -32,7 +32,9 @@ import { loadEnv } from "./qb.mjs";
 
 loadEnv();
 
-const create = process.argv.includes("--create");
+/* --update writes too, so it must not fall through to the dry-run branch. */
+const create =
+  process.argv.includes("--create") || process.argv.includes("--update");
 
 const REALM = process.env.QB_REALM ?? "byrdsonservices.quickbase.com";
 const QB_TOKEN = process.env.QB_USER_TOKEN ?? "";
@@ -129,12 +131,20 @@ return [{ json: { ...$json, written: (meta.updatedRecordIds || []).length || ass
 
 const report = `
 /*
- * Speak only about what could not be assigned. Everything else was handled,
- * and a message every quarter of an hour saying so would train people to
- * ignore the one that matters.
+ * Speak only about what could not be assigned, and only once a day.
+ *
+ * A vendor with no address stays stuck until a person adds one, so reporting
+ * it on every run would repeat the same message ninety-six times a day and
+ * train everyone to ignore it. The assigning runs every fifteen minutes; the
+ * telling runs once, in the 07:00 Chicago slot, next to the Org Chart
+ * Watcher people already read at that hour.
  */
 const { assigned, stuck, written } = $json;
 if (!stuck.length) return [];
+
+const chicago = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+const reportingSlot = chicago.getHours() === 7 && chicago.getMinutes() < 15;
+if (!reportingSlot) return [];
 
 const lines = stuck.map((s) => '• ' + s.company + ' (#' + s.id + ') — ' + s.why);
 const head = written
@@ -172,7 +182,14 @@ const workflow = {
       type: "n8n-nodes-base.scheduleTrigger",
       typeVersion: 1.1,
       position: [0, 40],
-      parameters: { rule: { interval: [{ field: "minutes", minutesInterval: 15 }] } },
+      /*
+       * A cron expression, not "every 15 minutes": an interval counts from
+       * whenever the workflow was activated, so the run that lands in the
+       * reporting slot would drift. This fires on :00, :15, :30 and :45.
+       */
+      parameters: {
+        rule: { interval: [{ field: "cronExpression", expression: "*/15 * * * *" }] },
+      },
     },
     {
       id: "work",
@@ -233,6 +250,22 @@ if (!create) {
   console.log(`DRY RUN — nothing created. Re-run with --create.`);
   console.log(`\nWould create "${workflow.name}", INACTIVE:`);
   for (const n of workflow.nodes) console.log(`  ${n.name}`);
+  process.exit(0);
+}
+
+/*
+ * --update <id> replaces an existing workflow in place, so fixing it does not
+ * strand the id that notes and other scripts refer to.
+ */
+const updateIdx = process.argv.indexOf("--update");
+const updateId = updateIdx > -1 ? process.argv[updateIdx + 1] : null;
+
+if (updateId) {
+  const made = await n8n(`/workflows/${updateId}`, {
+    method: "PUT",
+    body: JSON.stringify(workflow),
+  });
+  console.log(`updated workflow ${made.id} "${made.name}" — active: ${made.active}`);
   process.exit(0);
 }
 

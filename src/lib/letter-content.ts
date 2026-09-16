@@ -201,6 +201,8 @@ export interface LetterLabels {
   schedulePct: string;
   scheduleAmount: string;
   scheduleTotal: string;
+  /** Printed when the breakdown does not cover the whole contract. {amount} */
+  scheduleShortfall: string;
   signatureLine: string;
   counterparty: string;
 }
@@ -255,6 +257,8 @@ export const PR_LABELS: LetterLabels = {
   schedulePct: "%",
   scheduleAmount: "Monto del Pago",
   scheduleTotal: "Total",
+  scheduleShortfall:
+    "El balance de {amount} aún no ha sido desglosado y será detallado en un desglose posterior.",
   signatureLine: "Firma: ____________________&nbsp;&nbsp;&nbsp;Fecha: ____________",
   counterparty: "Representante Autorizado",
 };

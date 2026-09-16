@@ -203,3 +203,63 @@ test("without categories the letter still shows the derivation", () => {
   assert.match(html, /Menos Overhead/);
   assert.ok(!/Sistema Séptico/.test(html));
 });
+
+test("a hand-entered breakdown is the payment schedule, not the fixed one", () => {
+  /*
+   * The bug this guards: a Florida contract broken down 90/10 printed the
+   * region's fixed 50/50 milestones instead — a payment schedule the
+   * subcontractor never agreed to.
+   */
+  const html = renderLetter(
+    input({
+      region: "FL",
+      jobType: "Renovation",
+      breakdown: [
+        { desc: "Test 1", pct: 90, amount: 900 },
+        { desc: "test 2", pct: 10, amount: 100 },
+      ],
+      result: { ...input().result, award: 1000 },
+    }),
+  );
+
+  assert.match(html, /Test 1/);
+  assert.match(html, /90\.00%/);
+  assert.match(html, /\$900\.00/);
+  // None of the fixed schedule may appear.
+  assert.ok(!html.includes("Initial Payment"), "fixed milestones leaked in");
+  assert.ok(!html.includes("Final Payment"), "fixed milestones leaked in");
+});
+
+test("a partial breakdown does not claim to be the whole contract", () => {
+  const html = renderLetter(
+    input({
+      region: "FL",
+      jobType: "Renovation",
+      breakdown: [{ desc: "Mobilization", pct: 35, amount: 350 }],
+      result: { ...input().result, award: 1000 },
+    }),
+  );
+  // The total row states what the rows actually come to.
+  assert.match(html, /35\.00%/);
+  assert.ok(!/100\.00%/.test(html), "a 35% breakdown must not total 100%");
+  assert.match(html, /remaining \$650\.00 has not yet been scheduled/);
+});
+
+test("the mobilisation cap note only appears where there is a mobilisation", () => {
+  // Puerto Rico's 8-milestone schedule opens with Movilización.
+  const eight = renderLetter(input({ region: "PR", jobType: "Reconstruction" }));
+  assert.match(eight, /Movilización/);
+  assert.match(eight, /limitado a un máximo de diez mil/);
+
+  // A Repair pays 50/50 — no Movilización row, so no note about capping one.
+  const repair = renderLetter(input({ region: "PR", jobType: "Repair" }));
+  assert.match(repair, /Pago Inicial/);
+  assert.ok(!/limitado a un máximo de diez mil/.test(repair));
+});
+
+test("without a breakdown the fixed schedule still drives the letter", () => {
+  const html = renderLetter(input({ region: "PR", jobType: "Reconstruction" }));
+  assert.match(html, /Movilización/);
+  assert.match(html, /Empañetado/);
+  assert.match(html, /100\.00%/);
+});

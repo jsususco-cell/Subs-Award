@@ -136,7 +136,14 @@ export default function DirectAwardPanel({
     startDate: fields.startDate,
     endDate: fields.endDate,
     coverages: [],
-    categories: fields.categories,
+    /*
+     * A contract-entry award has no cost categories, and its breakdown is the
+     * payment schedule. Passing the empty category object would print an Award
+     * Breakdown of nothing but a total.
+     */
+    ...(contract
+      ? { breakdown: fields.breakdown }
+      : { categories: fields.categories }),
     result,
     issuedOn: new Date().toISOString(),
   };

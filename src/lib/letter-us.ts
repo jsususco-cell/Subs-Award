@@ -203,6 +203,8 @@ export const US_LABELS: LetterLabels = {
   schedulePct: "%",
   scheduleAmount: "Payment Amount",
   scheduleTotal: "Total",
+  scheduleShortfall:
+    "The remaining {amount} has not yet been scheduled and will be detailed in a later breakdown.",
   signatureLine: "Signature: ____________________&nbsp;&nbsp;&nbsp;Date: ____________",
   counterparty: "Authorized Representative",
 };

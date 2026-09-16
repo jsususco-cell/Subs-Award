@@ -62,6 +62,18 @@ export function parseLetterInput(raw: unknown): LetterInput | null {
     coverages: Array.isArray(o.coverages)
       ? o.coverages.slice(0, 40).map((c) => str(c)).filter(Boolean)
       : [],
+    ...(Array.isArray(o.breakdown)
+      ? {
+          breakdown: o.breakdown.slice(0, 60).map((entry) => {
+            const b = (entry ?? {}) as Record<string, unknown>;
+            return {
+              desc: str(b.desc),
+              pct: num(b.pct),
+              amount: num(b.amount),
+            };
+          }),
+        }
+      : {}),
     ...(o.categories && typeof o.categories === "object"
       ? {
           categories: (() => {

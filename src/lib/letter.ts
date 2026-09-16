@@ -1,7 +1,7 @@
 import { money, pct } from "./format";
 import { fill, templateFor } from "./letter-content";
 import { regionFor, type RegionKey } from "./regions";
-import type { PoCategories } from "./qb-award";
+import type { BreakdownRow, PoCategories } from "./qb-award";
 import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 import type { AwardResult } from "./types";
 
@@ -36,6 +36,12 @@ export interface LetterInput {
    * of showing the scope derivation, which does not exist for such an award.
    */
   categories?: PoCategories;
+  /**
+   * The hand-entered payment breakdown, where the region works that way. When
+   * present it IS the payment schedule — the fixed milestones do not apply,
+   * because nobody agreed to them.
+   */
+  breakdown?: BreakdownRow[];
   result: AwardResult;
   /** ISO date the letter is dated. */
   issuedOn: string;
@@ -54,6 +60,10 @@ function esc(value: string): string {
 function orDash(value: string): string {
   const v = (value ?? "").trim();
   return v ? esc(v) : DASH;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function formatDate(iso: string): string {
@@ -93,13 +103,38 @@ export function renderLetter(input: LetterInput): string {
   const L = template.labels;
   const { result } = input;
   const chosen = result.tierRows.find((r) => r.selected);
-  const schedule = scheduleForJobType(input.jobType, region);
-  const lines = scheduleLines(
-    result.award,
-    schedule,
-    scheduleSetFor(region)?.mobilisationCap ?? null,
-  );
+  /*
+   * A hand-entered breakdown is the payment schedule. Using the region's fixed
+   * milestones instead would print a schedule the subcontractor never agreed
+   * to — this letter said 50/50 on a contract broken down 90/10.
+   *
+   * Percentages are restated from the amounts rather than printed as typed, so
+   * the share always describes the figure beside it.
+   */
+  const entered = (input.breakdown ?? []).filter((r) => r.amount > 0);
+  const lines = entered.length
+    ? entered.map((r, i) => ({
+        n: i + 1,
+        desc: r.desc.trim() || `${i + 1}`,
+        pct: result.award > 0 ? round2((r.amount / result.award) * 100) : r.pct,
+        amount: r.amount,
+      }))
+    : scheduleLines(
+        result.award,
+        scheduleForJobType(input.jobType, region),
+        scheduleSetFor(region)?.mobilisationCap ?? null,
+      );
   const scheduleTotal = lines.reduce((s, l) => s + l.amount, 0);
+  /*
+   * Not hard-coded to 100%. A breakdown is allowed to cover only part of the
+   * contract on a first pass, and a letter claiming the rows add to the whole
+   * of it when they do not is the kind of thing that gets argued over later.
+   */
+  const schedulePct =
+    result.award > 0 ? round2((scheduleTotal / result.award) * 100) : 100;
+  const shortfall = round2(result.award - scheduleTotal);
+  /* The cap note only means something where a mobilisation stage exists. */
+  const hasMobilisation = lines.some((l) => /^(movilizaci|mobiliz)/i.test(l.desc));
 
   const caseRows: [string, string][] = [
     [L.caseProgram, orDash(input.program)],
@@ -251,9 +286,17 @@ export function renderLetter(input: LetterInput): string {
         .join("\n      ")}
     </tbody>
     <tfoot>
-      <tr class="total"><td></td><td>${L.scheduleTotal}</td><td class="num">100.00%</td><td class="num">${money(scheduleTotal)}</td></tr>
+      <tr class="total"><td></td><td>${L.scheduleTotal}</td><td class="num">${schedulePct.toFixed(2)}%</td><td class="num">${money(scheduleTotal)}</td></tr>
     </tfoot>
-  </table>${template.scheduleNote ? `\n  <p class="note">${esc(template.scheduleNote)}</p>` : ""}`
+  </table>${
+    shortfall > 0.005
+      ? `\n  <p class="note">${esc(fill(L.scheduleShortfall, { amount: money(shortfall) }))}</p>`
+      : ""
+  }${
+    template.scheduleNote && hasMobilisation
+      ? `\n  <p class="note">${esc(template.scheduleNote)}</p>`
+      : ""
+  }`
       : ""
   }
 

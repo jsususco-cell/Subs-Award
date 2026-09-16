@@ -51,16 +51,23 @@ function input(over: Partial<AwardWriteInput> = {}): AwardWriteInput {
   };
 }
 
-const val = (rec: Record<string, { value: unknown }>, fid: number) => rec[String(fid)]?.value;
+const val = (rec: Record<string, { value: unknown }>, fid: number) =>
+  rec[String(fid)]?.value;
 
 test("the award splits across Demolición and Site in the scope's own ratio", () => {
   const s = splitAward(178275.23, 60039.88, 88526.72);
-  assert.ok(Math.abs(s.demolition + s.site - 178275.23) < CENT, "must total the award");
+  assert.ok(
+    Math.abs(s.demolition + s.site - 178275.23) < CENT,
+    "must total the award",
+  );
 
   // 60,039.88 / 148,566.60 = 40.41%
   const expected = 178275.23 * (60039.88 / 148566.6);
   assert.ok(Math.abs(s.demolition - expected) < CENT);
-  assert.ok(s.demolition < s.site, "site scope is larger, so its share should be");
+  assert.ok(
+    s.demolition < s.site,
+    "site scope is larger, so its share should be",
+  );
 });
 
 test("the split always totals the award exactly, whatever the ratio", () => {
@@ -123,7 +130,11 @@ test("the cost item holds the contract amount and the required QB line item", ()
   const f = QB_AWARD.costItems;
 
   assert.equal(val(ci, f.relatedPO), 14421);
-  assert.equal(val(ci, f.unitCost), 178275.23, "this is where the contract money lives");
+  assert.equal(
+    val(ci, f.unitCost),
+    178275.23,
+    "this is where the contract money lives",
+  );
   assert.equal(val(ci, f.qty), 1);
   assert.equal(val(ci, f.unit), "LS");
   assert.equal(val(ci, f.costType), "Subcontractor");
@@ -179,9 +190,16 @@ test("bill percentages are sent whole, because the API divides by 100", () => {
 
 test("the contract amount is stored to the cent, not as a raw float", () => {
   // Unit Cost is currency to 2dp; an unrounded award stored 178275.2272727273.
-  const ci = buildCostItemRecord(input({ award: 178275.2272727273 }), 1, ACCOUNT);
+  const ci = buildCostItemRecord(
+    input({ award: 178275.2272727273 }),
+    1,
+    ACCOUNT,
+  );
   assert.equal(val(ci, QB_AWARD.costItems.unitCost), 178275.23);
-  assert.equal(planAward(input({ award: 178275.2272727273 })).costItem.unitCost, 178275.23);
+  assert.equal(
+    planAward(input({ award: 178275.2272727273 })).costItem.unitCost,
+    178275.23,
+  );
 });
 
 test("the bills match the payment schedule and total the award", () => {
@@ -197,7 +215,9 @@ test("the bills match the payment schedule and total the award", () => {
 
   const expected = scheduleLines(178275.23, PAY_SCHEDULES.standard8);
   bills.forEach((b, i) => {
-    assert.ok(Math.abs(Number(val(b, f.billAmount)) - expected[i].amount) < CENT);
+    assert.ok(
+      Math.abs(Number(val(b, f.billAmount)) - expected[i].amount) < CENT,
+    );
   });
 
   // Every bill points at the cost item, the job, and carries the QuickBooks text.
@@ -212,7 +232,11 @@ test("the job type picks the schedule, so a repair gets two bills", () => {
   assert.equal(bills.length, 2);
   assert.equal(val(bills[0], QB_AWARD.billLines.title), "Pago Inicial (50%)");
 
-  const relocation = buildBillRecords(input({ jobType: "Relocation" }), 9001, ACCOUNT);
+  const relocation = buildBillRecords(
+    input({ jobType: "Relocation" }),
+    9001,
+    ACCOUNT,
+  );
   assert.equal(val(relocation[0], QB_AWARD.billLines.billPct), 20);
 });
 
@@ -220,7 +244,11 @@ test("the plan describes exactly what would be written", () => {
   const plan = planAward(input());
   assert.equal(plan.bills.length, 8);
   assert.ok(Math.abs(plan.billTotal - 178275.23) < CENT);
-  assert.ok(Math.abs(plan.po.categories.demolition + plan.po.categories.site - 178275.23) < CENT);
+  assert.ok(
+    Math.abs(
+      plan.po.categories.demolition + plan.po.categories.site - 178275.23,
+    ) < CENT,
+  );
   assert.equal(plan.costItem.unitCost, 178275.23);
 
   // Unticking the bills leaves the PO and cost item, and nothing else.
@@ -257,8 +285,13 @@ test("ADA is written to its own PO field and held out of the Demo/Site split", (
 test("with no ADA the field is left off entirely, not written as zero", () => {
   const po = buildPoRecord(input({ ada: 0 }));
   assert.equal(po[String(QB_AWARD.pos.catAdaConversion)], undefined);
-  const total = Number(val(po, QB_AWARD.pos.catDemolition)) + Number(val(po, QB_AWARD.pos.catSite));
-  assert.ok(Math.abs(total - 178275.23) < CENT, "the whole award still lands on Demo/Site");
+  const total =
+    Number(val(po, QB_AWARD.pos.catDemolition)) +
+    Number(val(po, QB_AWARD.pos.catSite));
+  assert.ok(
+    Math.abs(total - 178275.23) < CENT,
+    "the whole award still lands on Demo/Site",
+  );
 });
 
 test("the split reconciles with ADA whatever the ratio", () => {
@@ -286,12 +319,22 @@ test("the contract and the bills carry ADA, because it is part of the award", ()
   assert.equal(val(ci, QB_AWARD.costItems.unitCost), 193275.23);
 
   const bills = buildBillRecords(withAda, 9001, ACCOUNT);
-  const total = bills.reduce((sum, b) => sum + Number(val(b, QB_AWARD.billLines.billAmount)), 0);
+  const total = bills.reduce(
+    (sum, b) => sum + Number(val(b, QB_AWARD.billLines.billAmount)),
+    0,
+  );
   assert.ok(Math.abs(total - 193275.23) < CENT, `bills total ${total}`);
 
   const plan = planAward(withAda);
   assert.equal(plan.po.categories.ada, 15000);
-  assert.ok(Math.abs(plan.po.categories.demolition + plan.po.categories.site + plan.po.categories.ada - 193275.23) < CENT);
+  assert.ok(
+    Math.abs(
+      plan.po.categories.demolition +
+        plan.po.categories.site +
+        plan.po.categories.ada -
+        193275.23,
+    ) < CENT,
+  );
 });
 
 test("the award opens a Fondo submittal the case can be chased on", () => {
@@ -310,7 +353,11 @@ test("the award opens a Fondo submittal the case can be chased on", () => {
   // Coverage Status read "NO POLICY ON FILE" instead of hiding the case.
   assert.equal(rec[String(f.insuranceAmount)], undefined);
   assert.equal(rec[String(f.poliza)], undefined);
-  assert.equal(rec[String(f.dateSubmitted)], undefined, "no submission date for a submission that has not happened");
+  assert.equal(
+    rec[String(f.dateSubmitted)],
+    undefined,
+    "no submission date for a submission that has not happened",
+  );
 
   // Coverage Status (21) is a formula and must never be written.
   assert.equal(rec[String(f.coverageStatus)], undefined);
@@ -406,8 +453,13 @@ test("House and the exclusions list are only written when filled in", () => {
   assert.equal(val(bare, QB_AWARD.pos.house), undefined);
   assert.equal(val(bare, QB_AWARD.pos.itemsNotIncluded), undefined);
 
-  const filled = buildPoRecord(input({ itemsNotIncluded: "Cistern (If Applicable)" }));
-  assert.equal(val(filled, QB_AWARD.pos.itemsNotIncluded), "Cistern (If Applicable)");
+  const filled = buildPoRecord(
+    input({ itemsNotIncluded: "Cistern (If Applicable)" }),
+  );
+  assert.equal(
+    val(filled, QB_AWARD.pos.itemsNotIncluded),
+    "Cistern (If Applicable)",
+  );
 });
 
 test("the plan reports the categories a direct award would set", () => {
@@ -417,6 +469,81 @@ test("the plan reports the categories a direct award would set", () => {
   assert.equal(plan.po.total, 1000);
   // The bills still divide the contract amount.
   assert.ok(Math.abs(plan.billTotal - 1000) < 0.005);
+});
+
+test("the plan for a contract award describes what is actually written", () => {
+  /*
+   * The bug this guards: plannedCategories split the award into Demolition and
+   * Site whenever no categories were passed, so the confirm summary for a
+   * $4,200 Florida award read "Award breakdown: Site $4,200.00" — categories
+   * that buildPoRecord returns before ever writing. The plan is what somebody
+   * reads before pressing the button, so it has to be the write.
+   */
+  const contract = input({
+    region: "FL",
+    contractPrice: 4200,
+    breakdown: [
+      { desc: "Mobilisation", pct: 40, amount: 1680 },
+      { desc: "Final", pct: 60, amount: 2520 },
+    ],
+    award: 4200,
+    // Deliberately present: these drive the split that used to leak through.
+    demoTotal: 1000,
+    siteTotal: 3200,
+  });
+
+  const plan = planAward(contract);
+  const written = buildPoRecord(contract);
+
+  // No category is planned, because none is written.
+  const CATEGORY_FIDS = [
+    QB_AWARD.pos.catDemolition,
+    QB_AWARD.pos.catSite,
+    QB_AWARD.pos.catSeptic,
+    QB_AWARD.pos.catHome,
+    QB_AWARD.pos.catAdaConversion,
+    QB_AWARD.pos.catChangeOrder,
+    QB_AWARD.pos.catRevisedTotal,
+  ];
+  for (const key of Object.keys(
+    plan.po.categories,
+  ) as (keyof typeof plan.po.categories)[]) {
+    assert.equal(plan.po.categories[key], 0, `${key} should not be planned`);
+  }
+  for (const fid of CATEGORY_FIDS) {
+    assert.equal(
+      val(written, fid),
+      undefined,
+      `field ${fid} should not be written`,
+    );
+  }
+
+  assert.equal(plan.po.total, 0, "Total Amount is a formula over categories");
+  assert.equal(plan.contractPrice, 4200);
+  assert.equal(val(written, QB_AWARD.pos.contractPrice), 4200);
+
+  // One cost item per breakdown row, not a single one carrying the lot.
+  assert.equal(plan.lineItems.length, 2);
+  assert.deepEqual(
+    plan.lineItems.map((l) => [l.title, l.amount]),
+    [
+      ["Mobilisation", 1680],
+      ["Final", 2520],
+    ],
+  );
+});
+
+test("a Puerto Rico award still plans its categories", () => {
+  // The fix must not reach the scope-derived path, which has no contract price.
+  const plan = planAward(
+    input({ award: 1000, demoTotal: 600, siteTotal: 400 }),
+  );
+  assert.equal(plan.contractPrice, null);
+  assert.ok(
+    plan.po.total > 0,
+    "categories are still planned without a contract",
+  );
+  assert.equal(plan.lineItems.length, 1);
 });
 
 /* ---------------------------------------------------------------------------
@@ -430,7 +557,12 @@ const ROWS = [
 
 test("the contract price goes on the PO, and no cost categories do", () => {
   const po = buildPoRecord(
-    input({ region: "FL", contractPrice: 100000, breakdown: ROWS, award: 100000 }),
+    input({
+      region: "FL",
+      contractPrice: 100000,
+      breakdown: ROWS,
+      award: 100000,
+    }),
   );
   const f = QB_AWARD.pos;
 
@@ -438,8 +570,13 @@ test("the contract price goes on the PO, and no cost categories do", () => {
   // Total Amount (262) is a formula over the seven categories. Leaving them
   // empty is what makes it read as $0 rather than as a wrong figure.
   for (const fid of [
-    f.catDemolition, f.catSite, f.catSeptic, f.catHome,
-    f.catAdaConversion, f.catChangeOrder, f.catRevisedTotal,
+    f.catDemolition,
+    f.catSite,
+    f.catSeptic,
+    f.catHome,
+    f.catAdaConversion,
+    f.catChangeOrder,
+    f.catRevisedTotal,
   ]) {
     assert.equal(val(po, fid), undefined);
   }
@@ -449,7 +586,12 @@ test("the contract price goes on the PO, and no cost categories do", () => {
 
 test("each breakdown row becomes its own PO line item", () => {
   const items = buildBreakdownCostItems(
-    input({ region: "FL", contractPrice: 100000, breakdown: ROWS, award: 100000 }),
+    input({
+      region: "FL",
+      contractPrice: 100000,
+      breakdown: ROWS,
+      award: 100000,
+    }),
     777,
     { id: 181, label: "Subcontractors" },
   );

@@ -577,12 +577,32 @@ export interface AwardPlan {
     total: number;
   };
   costItem: { title: string; unitCost: number; costType: string; unit: string };
+  /**
+   * The cost items a write would create. One per breakdown row on a contract
+   * entry, otherwise the single one carrying the whole award — `costItem`
+   * above describes only the first, which is all a Puerto Rico award has.
+   */
+  lineItems: { title: string; amount: number }[];
+  /**
+   * What the purchase order will be worth. The contract price where the region
+   * enters one, otherwise the Award Breakdown total. These are different
+   * fields in Quickbase and only one of them is ever written.
+   */
+  contractPrice: number | null;
   bills: { title: string; pct: number; amount: number }[];
   billTotal: number;
 }
 
 /** The categories a write would set, however they were arrived at. */
 export function plannedCategories(input: AwardWriteInput): PoCategories {
+  /*
+   * A contract entry writes no categories at all -- buildPoRecord returns
+   * before them -- so planning a split of the award into Demolition and Site
+   * would describe a write that never happens. The confirm summary is meant to
+   * be what is about to be written, not a guess at how it might have been
+   * broken down.
+   */
+  if (input.contractPrice !== undefined) return { ...EMPTY_CATEGORIES };
   if (input.categories) return input.categories;
   const split = splitAward(
     input.award,
@@ -607,6 +627,9 @@ export function planAward(input: AwardWriteInput): AwardPlan {
     scheduleSetFor(region)?.mobilisationCap ?? null,
   );
 
+  const contract = input.contractPrice !== undefined;
+  const entered = (input.breakdown ?? []).filter((r) => r.amount > 0);
+
   return {
     po: {
       title: input.title,
@@ -615,6 +638,13 @@ export function planAward(input: AwardWriteInput): AwardPlan {
       categories,
       total: categoriesTotal(categories),
     },
+    contractPrice: contract ? round(input.contractPrice as number) : null,
+    lineItems: contract
+      ? entered.map((r) => ({
+          title: r.desc.trim() || input.title || input.scope,
+          amount: round(r.amount),
+        }))
+      : [{ title: input.title || input.scope, amount: round(input.award) }],
     costItem: {
       title: input.title || input.scope,
       unitCost: round(input.award),

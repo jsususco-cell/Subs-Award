@@ -770,22 +770,46 @@ export default function CreatePoPanel({
                   <Row k="Job" v={jobName} />
                   <Row k="Subcontractor" v={subcontractor} />
                   <Row k="PO" v={`${plan.po.title} — ${plan.po.status}`} />
-                  <Row
-                    k="Award breakdown"
-                    v={
-                      CATEGORY_FIELDS.filter(
-                        (c) => plan.po.categories[c.key] > 0,
-                      )
-                        .map(
-                          (c) =>
-                            `${c.label} ${money(plan.po.categories[c.key])}`,
+                  {plan.contractPrice === null ? (
+                    <Row
+                      k="Award breakdown"
+                      v={
+                        CATEGORY_FIELDS.filter(
+                          (c) => plan.po.categories[c.key] > 0,
                         )
-                        .join(" · ") || "no categories"
-                    }
-                  />
+                          .map(
+                            (c) =>
+                              `${c.label} ${money(plan.po.categories[c.key])}`,
+                          )
+                          .join(" · ") || "no categories"
+                      }
+                    />
+                  ) : (
+                    /*
+                     * A contract entry writes one figure and no categories, so
+                     * naming the Award Breakdown here described a write that
+                     * never happens -- it showed the award split into Site.
+                     */
+                    <Row
+                      k="Total contract price"
+                      v={money(plan.contractPrice)}
+                    />
+                  )}
                   <Row
-                    k="Cost Item"
-                    v={`${money(plan.costItem.unitCost)} (1 × LS)`}
+                    k={
+                      plan.lineItems.length === 1
+                        ? "Cost Item"
+                        : `Cost Items (${plan.lineItems.length})`
+                    }
+                    v={
+                      plan.lineItems.length === 1
+                        ? `${money(plan.lineItems[0].amount)} (1 × LS)`
+                        : `${plan.lineItems
+                            .map((l) => money(l.amount))
+                            .join(" + ")} = ${money(
+                            plan.lineItems.reduce((t, l) => t + l.amount, 0),
+                          )}`
+                    }
                   />
                   <Row
                     k="Bills"

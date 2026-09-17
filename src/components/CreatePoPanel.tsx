@@ -11,6 +11,7 @@ import {
 } from "@/lib/qb-award";
 import { defaultBody, defaultSubject } from "@/lib/letter-email";
 import { isReleased, RELEASED } from "@/lib/po-doc";
+import AttachToPo from "./AttachToPo";
 import { canRenderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
@@ -492,6 +493,19 @@ export default function CreatePoPanel({
             </span>
           </div>
         )}
+        {/*
+         * The one moment the job, the purchase order and the subcontractor
+         * are all known, so a document filed here is findable from any of
+         * them. Invoices that turn up later go in through the Attachments
+         * route instead.
+         */}
+        <AttachToPo
+          region={region}
+          jobRecordId={jobRecordId}
+          poRecordId={created.poRecordId}
+          subRecordId={subRecordId}
+          sendKey={sendKey || storedKey()}
+        />
         {created.letterFileError && (
           <p
             role="alert"

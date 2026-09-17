@@ -21,6 +21,7 @@ import DirectAwardPanel, {
 } from "./DirectAwardPanel";
 import BillPoPanel from "./BillPoPanel";
 import VendorStatusPanel from "./VendorStatusPanel";
+import AttachmentsPanel from "./AttachmentsPanel";
 import StepRail, { type Step } from "./StepRail";
 import {
   DEFAULT_ADA,
@@ -498,6 +499,8 @@ export default function AwardApp() {
             <BillPoPanel key={region} region={region} />
           ) : mode === "vendor-status" ? (
             <VendorStatusPanel key={region} region={region} />
+          ) : mode === "attachments" ? (
+            <AttachmentsPanel key={region} region={region} />
           ) : (
             <>
               <StepRail

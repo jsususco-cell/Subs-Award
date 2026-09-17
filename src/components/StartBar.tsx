@@ -32,6 +32,11 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
     label: "Vendor status",
     hint: "What a subcontractor is owed across their purchase orders, and what has been paid.",
   },
+  {
+    id: "attachments",
+    label: "Attachments",
+    hint: "Documents filed against a job — invoices, award letters, permits.",
+  },
 ];
 
 interface Props {

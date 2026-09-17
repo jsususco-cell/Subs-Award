@@ -33,8 +33,11 @@ export type InsuranceKind = "fondo" | "none";
  * - `canopy` — upload the scope export and derive the award from it.
  * - `award-po` — no scope file; the award breakdown is entered directly.
  * - `bill-po` — draw bills against a purchase order that already exists.
+ * - `vendor-status` — what a subcontractor is owed and has been paid.
+ * - `attachments` — documents filed against a job: invoices, letters, permits.
  */
-export type AwardRoute = "canopy" | "award-po" | "bill-po" | "vendor-status";
+export type AwardRoute =
+  "canopy" | "award-po" | "bill-po" | "vendor-status" | "attachments";
 
 /**
  * How the money is entered on an award.
@@ -164,7 +167,7 @@ const MAINLAND = {
    * purchase order, so offering an upload step would be offering a route that
    * never has a file to feed it.
    */
-  routes: ["award-po", "bill-po", "vendor-status"],
+  routes: ["award-po", "bill-po", "vendor-status", "attachments"],
   awardEntry: "contract",
   awardEligibleOnly: false,
   poDocument: true,

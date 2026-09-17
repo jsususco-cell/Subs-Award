@@ -146,7 +146,10 @@ test("a mainland region produces the English letter, never Puerto Rico's", () =>
       "Movilización",
       "Empañetado",
     ]) {
-      assert.ok(!html.includes(spanish), `${key} letter still contains "${spanish}"`);
+      assert.ok(
+        !html.includes(spanish),
+        `${key} letter still contains "${spanish}"`,
+      );
     }
   }
 });
@@ -227,7 +230,10 @@ test("a letter payload without a valid region is rejected outright", () => {
   assert.equal(parseLetterInput({ ...letterInput(), region: "ZZ" }), null);
   assert.equal(parseLetterInput({ ...letterInput(), region: "" }), null);
   // A valid one still parses, and keeps the region it was given.
-  assert.equal(parseLetterInput({ ...letterInput(), region: "FL" })?.region, "FL");
+  assert.equal(
+    parseLetterInput({ ...letterInput(), region: "FL" })?.region,
+    "FL",
+  );
 });
 
 test("the mainland schedule is the same milestones in English", () => {
@@ -275,7 +281,12 @@ test("the mainland is raised straight against a purchase order", () => {
   // Scope exports come out of the Puerto Rico pipeline; there is no Canopy
   // file to upload on the mainland, so that route is not offered at all.
   for (const key of MAINLAND) {
-    assert.deepEqual(REGIONS[key].routes, ["award-po", "bill-po", "vendor-status"]);
+    assert.deepEqual(REGIONS[key].routes, [
+      "award-po",
+      "bill-po",
+      "vendor-status",
+      "attachments",
+    ]);
     assert.ok(!allowsRoute(REGIONS[key], "canopy"));
     assert.equal(defaultRoute(REGIONS[key]), "award-po");
   }
@@ -298,7 +309,13 @@ test("changing region keeps the route where it exists, moves off where it does n
 });
 
 test("every region offers at least one route, and only real ones", () => {
-  const known = ["canopy", "award-po", "bill-po", "vendor-status"];
+  const known = [
+    "canopy",
+    "award-po",
+    "bill-po",
+    "vendor-status",
+    "attachments",
+  ];
   for (const key of REGION_KEYS) {
     const { routes } = REGIONS[key];
     assert.ok(routes.length > 0, `${key} offers nothing`);
@@ -339,7 +356,11 @@ test("each region posts to its own QuickBooks location", () => {
 test("the resolved account is what gets written, never a hardcoded id", () => {
   const account = { id: 4242, label: "Some Other Account" };
 
-  const costItem = buildCostItemRecord(writeInput({ region: "PR" }), 42, account);
+  const costItem = buildCostItemRecord(
+    writeInput({ region: "PR" }),
+    42,
+    account,
+  );
   // Related QB Line Item is fid 13 on the Cost Items table.
   assert.equal(costItem["13"].value, 4242);
 
@@ -366,7 +387,6 @@ test("only Puerto Rico owes a Fondo poliza", () => {
     assert.equal(REGIONS[key].insurance, "none");
   }
 });
-
 
 test("the mainland lists every subcontractor in region, not just the bench", () => {
   /*

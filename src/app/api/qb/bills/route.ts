@@ -55,10 +55,16 @@ async function write(tableId: string, data: Raw[]): Promise<number[]> {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Quickbase ${res.status} writing ${tableId}: ${text.slice(0, 300)}`);
+    throw new Error(
+      `Quickbase ${res.status} writing ${tableId}: ${text.slice(0, 300)}`,
+    );
   }
   const body = JSON.parse(text) as {
-    metadata?: { createdRecordIds?: number[]; updatedRecordIds?: number[]; lineErrors?: unknown };
+    metadata?: {
+      createdRecordIds?: number[];
+      updatedRecordIds?: number[];
+      lineErrors?: unknown;
+    };
   };
   const ids = [
     ...(body.metadata?.createdRecordIds ?? []),
@@ -152,16 +158,25 @@ export async function GET(request: Request) {
 
   try {
     if (resource === "pos") {
+      /*
+       * By vendor, by job, or by both. Vendor status asks "what does this
+       * subcontractor have"; filing a document asks "what is on this job".
+       * One of them is required — without a filter this would return every
+       * purchase order in the region.
+       */
       const subRecordId = Number(params.get("sub")) || 0;
-      if (!subRecordId) {
+      const jobRecordId = Number(params.get("job")) || 0;
+      if (!subRecordId && !jobRecordId) {
         return NextResponse.json(
-          { ok: false, error: "A subcontractor is required." },
+          { ok: false, error: "A subcontractor or a job is required." },
           { status: 400 },
         );
       }
 
       const f = QB_AWARD.pos;
-      const statuses = BILLABLE_STATUSES.map((s) => `{${f.poStatus}.EX.'${s}'}`).join("OR");
+      const statuses = BILLABLE_STATUSES.map(
+        (s) => `{${f.poStatus}.EX.'${s}'}`,
+      ).join("OR");
       const rows = await queryAll({
         from: QB_AWARD.tables.pos,
         select: [
@@ -174,6 +189,7 @@ export async function GET(request: Request) {
           f.totalCost,
           f.contractPrice,
           f.relatedJob,
+          f.relatedSub,
           f.jobState,
           f.billingStatus,
           f.totalAmountPaid,
@@ -181,7 +197,14 @@ export async function GET(request: Request) {
         ],
         // Region-filtered on the PO's own "Job - State" lookup, so a Florida
         // vendor is never offered a Puerto Rico purchase order.
-        where: `{${f.relatedSub}.EX.${subRecordId}}AND{${f.jobState}.EX.'${region.jobRegion.replace(/'/g, "")}'}AND(${statuses})`,
+        where: [
+          subRecordId ? `{${f.relatedSub}.EX.${subRecordId}}` : "",
+          jobRecordId ? `{${f.relatedJob}.EX.${jobRecordId}}` : "",
+          `{${f.jobState}.EX.'${region.jobRegion.replace(/'/g, "")}'}`,
+          `(${statuses})`,
+        ]
+          .filter(Boolean)
+          .join("AND"),
         sortBy: [{ fieldId: f.recordId, order: "DESC" }],
       });
 
@@ -195,6 +218,7 @@ export async function GET(request: Request) {
         totalCost: num(r, f.totalCost),
         contractPrice: num(r, f.contractPrice),
         jobRecordId: num(r, f.relatedJob),
+        subRecordId: num(r, f.relatedSub),
         billingStatus: str(r, f.billingStatus),
         totalAmountPaid: num(r, f.totalAmountPaid),
         totalPaidPct: num(r, f.totalPaidPct),
@@ -284,7 +308,11 @@ export async function POST(request: Request) {
     }
     if (!sendKeyMatches(request.headers.get("x-send-key") ?? "")) {
       return NextResponse.json(
-        { ok: false, keyRequired: true, error: "Send key missing or incorrect." },
+        {
+          ok: false,
+          keyRequired: true,
+          error: "Send key missing or incorrect.",
+        },
         { status: 401 },
       );
     }
@@ -302,7 +330,10 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON" },
+      { status: 400 },
+    );
   }
 
   if (!isRegionKey(body.region)) {
@@ -316,7 +347,10 @@ export async function POST(request: Request) {
   // Resolved before anything is written, for the same reason as the award.
   const resolved = await trySubcontractorAccount(region);
   if ("error" in resolved) {
-    return NextResponse.json({ ok: false, error: resolved.error }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: resolved.error },
+      { status: 400 },
+    );
   }
   const account = resolved.account;
 
@@ -343,7 +377,11 @@ export async function POST(request: Request) {
     const worth = rows.filter((r) => r.amount > 0);
     if (!poRecordId || !worth.length) {
       return NextResponse.json(
-        { ok: false, error: "A purchase order and at least one line worth something are required." },
+        {
+          ok: false,
+          error:
+            "A purchase order and at least one line worth something are required.",
+        },
         { status: 400 },
       );
     }
@@ -358,7 +396,10 @@ export async function POST(request: Request) {
        * against what the browser believed — two people adding lines at once
        * would otherwise each see room for the same money.
        */
-      if (current.contractPrice > 0 && already + adding - current.contractPrice > 0.005) {
+      if (
+        current.contractPrice > 0 &&
+        already + adding - current.contractPrice > 0.005
+      ) {
         return NextResponse.json(
           {
             ok: false,
@@ -406,7 +447,12 @@ export async function POST(request: Request) {
     );
   }
 
-  type Change = { n?: number; recordId?: number; backCharge: number; backChargeDesc: string };
+  type Change = {
+    n?: number;
+    recordId?: number;
+    backCharge: number;
+    backChargeDesc: string;
+  };
   const asChanges = (v: unknown): Change[] =>
     Array.isArray(v)
       ? v.slice(0, 40).map((raw) => {
@@ -416,7 +462,9 @@ export async function POST(request: Request) {
             recordId: Number(o.recordId) || undefined,
             backCharge: Number(o.backCharge) || 0,
             backChargeDesc:
-              typeof o.backChargeDesc === "string" ? o.backChargeDesc.slice(0, 2000) : "",
+              typeof o.backChargeDesc === "string"
+                ? o.backChargeDesc.slice(0, 2000)
+                : "",
           };
         })
       : [];
@@ -425,7 +473,10 @@ export async function POST(request: Request) {
   const update = asChanges(body.update);
   if (!create.length && !update.length) {
     return NextResponse.json(
-      { ok: false, error: "Nothing to do — no bills selected and no back charges changed." },
+      {
+        ok: false,
+        error: "Nothing to do — no bills selected and no back charges changed.",
+      },
       { status: 400 },
     );
   }
@@ -522,7 +573,10 @@ export async function POST(request: Request) {
     // Nothing is written if any line is bad, so a half-applied save cannot
     // leave some milestones billed and others silently skipped.
     if (problems.length) {
-      return NextResponse.json({ ok: false, error: problems.join(" "), problems }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: problems.join(" "), problems },
+        { status: 400 },
+      );
     }
 
     const createdIds = newRecords.length

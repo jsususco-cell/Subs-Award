@@ -25,6 +25,12 @@ export interface PoOption {
   /** The PO's Total Cost, used when the cost item carries no unit cost. */
   totalCost: number;
   jobRecordId: number;
+  /**
+   * The vendor this purchase order is against. Carried so a document filed
+   * against the PO can be linked to the subcontractor too, without a second
+   * read to find out who that is.
+   */
+  subRecordId: number;
   /** What the subcontract is worth, where the region records it. */
   contractPrice: number;
   /** Computed by Quickbase: "Paid" / "Partially Paid" / "No Payment". */
@@ -177,7 +183,9 @@ export function billRows(
       pct: line.pct,
       amount: line.amount,
       existing: match,
-      amountDiffers: Boolean(match && Math.abs(match.amount - line.amount) > SAME),
+      amountDiffers: Boolean(
+        match && Math.abs(match.amount - line.amount) > SAME,
+      ),
     };
   });
 }

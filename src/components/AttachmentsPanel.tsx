@@ -10,6 +10,8 @@ import {
   MAX_ATTACHMENT_BYTES,
   type AttachmentRow,
 } from "@/lib/attachments";
+import { money } from "@/lib/format";
+import type { PoOption } from "@/lib/bills";
 import { regionFor, type RegionKey } from "@/lib/regions";
 
 /**
@@ -27,6 +29,13 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
   const [jobRecordId, setJobRecordId] = useState("");
   const [items, setItems] = useState<AttachmentRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  /*
+   * Purchase orders on this job. A document is usually about one of them —
+   * an invoice is billed against a PO — and linking it there is what makes it
+   * findable from the purchase order as well as from the job.
+   */
+  const [pos, setPos] = useState<PoOption[]>([]);
+  const [poRecordId, setPoRecordId] = useState("");
 
   const [file, setFile] = useState<File | null>(null);
   const [category, setCategory] = useState<string>("");
@@ -49,6 +58,10 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
     setJobRecordId(recordId);
     setItems(null);
     if (!refresh) {
+      // A purchase order belongs to one job; carrying the choice across would
+      // file the next document against the previous job's PO.
+      setPos([]);
+      setPoRecordId("");
       setError(null);
       setDone(null);
     }
@@ -56,15 +69,28 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
 
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/qb/attachments?job=${encodeURIComponent(recordId)}`,
-      );
-      const body = await res.json();
-      if (!body.ok) {
-        setError(body.error ?? "Could not load the attachments.");
+      /*
+       * Both lists at once. The purchase orders are only for the picker, so a
+       * failure to load them must not stop the attachments being shown — a
+       * document can always be filed against the job alone.
+       */
+      const [attached, purchaseOrders] = await Promise.all([
+        fetch(`/api/qb/attachments?job=${encodeURIComponent(recordId)}`).then(
+          (r) => r.json(),
+        ),
+        fetch(
+          `/api/qb/bills?resource=pos&region=${region}&job=${encodeURIComponent(recordId)}`,
+        )
+          .then((r) => r.json())
+          .catch(() => ({ ok: false })),
+      ]);
+
+      if (!attached.ok) {
+        setError(attached.error ?? "Could not load the attachments.");
         return;
       }
-      setItems(body.items ?? []);
+      setItems(attached.items ?? []);
+      setPos(purchaseOrders.ok ? (purchaseOrders.items ?? []) : []);
     } catch {
       setError("Could not reach the server to load the attachments.");
     } finally {
@@ -116,6 +142,12 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
         body: JSON.stringify({
           region,
           jobRecordId: Number(jobRecordId),
+          poRecordId: Number(poRecordId) || undefined,
+          // Taken from the chosen purchase order rather than asked for: the
+          // PO already knows whose it is, and a picker for it could disagree.
+          subRecordId:
+            pos.find((p) => String(p.recordId) === poRecordId)?.subRecordId ||
+            undefined,
           category,
           description,
           fileName: file.name,
@@ -211,6 +243,46 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
                 {file
                   ? `${file.name} — ${humanSize(file.size)}`
                   : `Up to ${humanSize(MAX_ATTACHMENT_BYTES)}. Anything larger goes on the Quickbase record directly.`}
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="attach-po"
+                className="mb-1 block text-xs font-medium text-navy-700"
+              >
+                Purchase order{" "}
+                <span className="text-navy-600/60">optional</span>
+              </label>
+              <select
+                id="attach-po"
+                value={poRecordId}
+                onChange={(e) => setPoRecordId(e.target.value)}
+                disabled={pos.length === 0}
+                className="w-full rounded-md border border-navy-200 bg-white px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 disabled:bg-navy-50 disabled:text-navy-600/60"
+              >
+                <option value="">
+                  {pos.length
+                    ? "Not tied to a purchase order"
+                    : "No purchase orders on this job"}
+                </option>
+                {pos.map((p) => (
+                  <option key={p.recordId} value={p.recordId}>
+                    {[
+                      p.poNumber || `#${p.recordId}`,
+                      p.title,
+                      money(p.contractPrice || p.totalCost),
+                      p.status,
+                    ]
+                      .filter(Boolean)
+                      .join("  ·  ")}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[10px] text-navy-600/70">
+                {poRecordId
+                  ? "Filed against the job, this purchase order and its subcontractor."
+                  : "Filed against the job. Pick a purchase order if the document belongs to one — an invoice usually does."}
               </p>
             </div>
 
@@ -364,7 +436,16 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
                         {a.category || "—"}
                       </td>
                       <td className="tabular py-2 text-navy-700">
-                        {a.poRecordId ? `#${a.poRecordId}` : "—"}
+                        {/*
+                         * The attachment carries the PO's record id, not its
+                         * number. Resolve it from the list already loaded for
+                         * the picker, and fall back to the id for a PO that
+                         * list does not cover — a cancelled one, say.
+                         */}
+                        {a.poRecordId
+                          ? (pos.find((p) => p.recordId === a.poRecordId)
+                              ?.poNumber ?? `#${a.poRecordId}`)
+                          : "—"}
                       </td>
                       <td className="px-4 py-2 text-navy-600/80">
                         {a.uploaded ? a.uploaded.slice(0, 10) : "—"}

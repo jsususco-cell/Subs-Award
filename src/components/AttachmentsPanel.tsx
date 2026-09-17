@@ -38,11 +38,20 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
   const [sendKey, setSendKey] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
-  async function pickJob(recordId: string) {
+  /**
+   * Load what is filed against a job.
+   *
+   * `refresh` is the same load after an upload rather than a change of job,
+   * and it must not clear the notices — doing that wiped the "filed" message
+   * the moment it was set, so a successful upload said nothing at all.
+   */
+  async function pickJob(recordId: string, refresh = false) {
     setJobRecordId(recordId);
     setItems(null);
-    setError(null);
-    setDone(null);
+    if (!refresh) {
+      setError(null);
+      setDone(null);
+    }
     if (!recordId) return;
 
     setLoading(true);
@@ -119,11 +128,11 @@ export default function AttachmentsPanel({ region }: { region: RegionKey }) {
         setError(body.error ?? "The file could not be filed.");
         return;
       }
-      setDone(`${body.fileName} filed against this job.`);
       setFile(null);
       setDescription("");
       if (fileInput.current) fileInput.current.value = "";
-      void pickJob(jobRecordId);
+      await pickJob(jobRecordId, true);
+      setDone(`${body.fileName} filed against this job.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "The upload failed.");
     } finally {

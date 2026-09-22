@@ -1,4 +1,5 @@
 import { money } from "./format";
+import { appBaseUrl } from "./base-url";
 
 /**
  * The messages the Fondo flow sends.
@@ -293,18 +294,10 @@ export function approvedMail(c: FondoMailCase): FondoMail {
 }
 
 /**
- * Where the app is reachable from, for links inside emails.
- *
- * A relative link is useless in an inbox, so this refuses to guess: without
- * it configured the sender reports that rather than mailing a broken link.
+ * Where the app is reachable from, for links inside emails. Shared with
+ * sign-in, which needs the same answer to build the OAuth redirect URI.
  */
-export function appBaseUrl(): string {
-  const explicit = process.env.APP_BASE_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  if (vercel) return `https://${vercel.replace(/\/+$/, "")}`;
-  return "";
-}
+export { appBaseUrl } from "./base-url";
 
 export function fondoFormUrl(accessKey: string, recordId: number): string {
   const base = appBaseUrl();

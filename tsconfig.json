@@ -6,6 +6,10 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // scripts/ runs under tsx and imports "../src/lib/log.ts" by its real
+    // filename. Without this the production build fails type checking on a
+    // file it never bundles.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

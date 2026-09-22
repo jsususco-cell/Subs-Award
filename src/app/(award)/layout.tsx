@@ -1,4 +1,5 @@
 import Brand from "@/components/Brand";
+import SessionBar from "@/components/SessionBar";
 
 /**
  * Chrome for the internal award app.
@@ -15,11 +16,14 @@ export default function AwardLayout({ children }: { children: React.ReactNode })
       <header className="no-print border-b-4 border-brand-red bg-navy-700">
         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
           <Brand />
-          <div className="text-right">
-            <h1 className="text-sm leading-tight font-semibold text-white">
-              Subcontractor Award System
-            </h1>
-            <p className="text-xs text-navy-200">Scope extraction &amp; award</p>
+          <div className="flex items-center gap-5">
+            <div className="text-right">
+              <h1 className="text-sm leading-tight font-semibold text-white">
+                Subcontractor Award System
+              </h1>
+              <p className="text-xs text-navy-200">Scope extraction &amp; award</p>
+            </div>
+            <SessionBar />
           </div>
         </div>
       </header>

@@ -18,6 +18,7 @@ import { isContractEntry, isRegionKey, regionFor } from "@/lib/regions";
 import { trySubcontractorAccount } from "@/lib/qb-accounts";
 import { scheduleSetFor } from "@/lib/schedule";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
+import { logAudit, logError } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -412,6 +413,27 @@ export async function POST(request: Request) {
       }
     }
 
+    /*
+     * The audit entry for a contract. Quickbase records every one of these writes
+     * as the shared user token, so this is the only place that says which person
+     * raised the purchase order and what it was worth.
+     */
+    await logAudit({
+      action: "award.po.created",
+      actor: request.headers.get("x-actor") ?? "",
+      outcome: "ok",
+      target: { table: "purchaseOrders", recordId: poId },
+      after: {
+        poRecordId: poId,
+        costItemRecordIds: costItemIds,
+        billRecordIds: billIds,
+        insuranceRecordId: insuranceId,
+        contractPrice: input.contractPrice,
+        account: account.label,
+      },
+      details: { region: input.region, jobRecordId: input.jobRecordId, subRecordId: input.subRecordId },
+    });
+
     return NextResponse.json({
       ok: true,
       poRecordId: poId,
@@ -436,6 +458,26 @@ export async function POST(request: Request) {
     if (poId) created.push(`PO record ${poId}`);
     if (costItemId) created.push(`Cost Item record ${costItemId}`);
     if (billsCreated) created.push("the billing lines");
+
+    /*
+     * A half-written award is the worst outcome this route has, because Quickbase
+     * has no transactions and someone has to go and clean it up by hand. What was
+     * already created is the whole value of the record.
+     */
+    await logError(e, {
+      event: "award.po.failed",
+      component: "qb-award",
+      entity: { type: "job", id: input.jobRecordId },
+      details: {
+        partialCreated: created,
+        poRecordId: poId,
+        costItemRecordId: costItemId,
+        billsCreated,
+        region: input.region,
+        subRecordId: input.subRecordId,
+        contractPrice: input.contractPrice,
+      },
+    });
 
     return NextResponse.json(
       {

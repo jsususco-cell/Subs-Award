@@ -18,6 +18,7 @@ import {
   parseRecipients,
   sendMail,
 } from "@/lib/mail";
+import { log, logError } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -145,6 +146,18 @@ export async function POST(request: Request) {
       ],
     });
 
+    // A contract left the building. Recipients are recorded because "who was it
+    // actually sent to" is the question asked months later, and the mail provider's
+    // own log is not somewhere anyone here can search.
+    await log({
+      event: "award.letter.sent",
+      component: "letter-send",
+      message: `Award letter for ${input.jobName} sent to ${to.join(", ")}`,
+      entity: { type: "job", id: input.jobName },
+      items: to.length + cc.length,
+      details: { to, cc, bcc, region: input.region, subject, mode, messageId, bytes: pdf.byteLength },
+    });
+
     return NextResponse.json({
       ok: true,
       configured: true,
@@ -161,6 +174,12 @@ export async function POST(request: Request) {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Send failed";
     console.error("[letter/send]", message);
+    await logError(e, {
+      event: "award.letter.failed",
+      component: "letter-send",
+      entity: { type: "job", id: input.jobName },
+      details: { to, cc, region: input.region, mode: mailMode() },
+    });
     return NextResponse.json(
       {
         ok: false,

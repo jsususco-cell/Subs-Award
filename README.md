@@ -10,6 +10,10 @@ see [Regions](#regions).
 The whole thing runs in the browser: the workbook is parsed client-side and no
 file is ever uploaded to a server.
 
+Internal pages need a Byrdson Workspace sign-in — see [Signing in](#signing-in).
+The subcontractor-facing Fondo form does not, and is the one thing that stays
+open.
+
 ## Three ways in
 
 After the region, pick what you are doing. **Which of these a region offers is
@@ -543,6 +547,69 @@ behind: `"-686.63"`, `"$1,234.50"`, `"(500.00)"`.
 - **Copy summary** — the summary block as plain text.
 - **Download CSV** — summary, coverage roll-up, and every line item.
 - **Print** — a clean print stylesheet drops the controls and expands the tables.
+
+## Signing in
+
+Everything internal is behind a Byrdson Workspace account. The flow is the ERP's,
+ported: Google OIDC with PKCE, the Workspace domain checked at the callback, and
+an HMAC-signed session cookie that `src/proxy.ts` verifies with Web Crypto so the
+check also works on the edge. Twelve-hour sessions; changing `AUTH_SECRET` signs
+everybody out at once.
+
+There is no role model here on purpose. The domain is the gate for getting in;
+the send key is still the gate on everything that writes to Quickbase or sends
+mail, and the reviewer still types it to approve a poliza. Inventing a permission
+scheme nobody asked for would read as protection without being any.
+
+**What stays open, and why**
+
+| Path | Why |
+| --- | --- |
+| `/fondo/<accessKey>/<id>` | The subcontractor has no Workspace account. The access key in the URL is their gate. |
+| `/api/fondo` | Same, for the submission itself. |
+| `/api/fondo/notify` | n8n calls it on a schedule with `CRON_SECRET` or the send key, and authorises itself. |
+| `/login`, `/api/auth/*` | Signing in cannot require being signed in. |
+
+`/fondo/review` is deliberately *not* covered by the `/fondo/` exemption. A valid
+`x-send-key` also satisfies the proxy anywhere, because the scripts and n8n have
+no other credential and shipping sign-in must not quietly stop the scheduled work.
+
+This is also what finally closed `/api/qb`, which used to serve the job and vendor
+lists to anyone with the URL.
+
+**Two things the Quickbase dashboard embed forces**
+
+The app is embedded in an iframe on `master_dashboard.html`, which is a different
+site. So:
+
+- The session cookie is `SameSite=None`. A `Lax` cookie is simply never sent to a
+  cross-site frame, and the embed would show the sign-in page forever. Locally it
+  falls back to `Lax`, because `None` requires `Secure` and dev is plain http.
+- Sign-in opens a new tab when the page detects it is framed. Google sets
+  `X-Frame-Options` on its consent screen, so a framed window just shows a blank
+  panel. Sign in in the tab, reload the panel, and the cookie is there.
+
+The price of `SameSite=None` is that the cookie rides along on cross-site POSTs,
+so the proxy refuses any state-changing request whose `Origin` is not this app.
+A machine caller sends no `Origin` and is authorised by its key instead.
+
+**Setting it up**
+
+`AUTH_SECRET`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Without all three
+every page redirects to `/login` and says it is not configured — nothing is left
+open by a missing value. The OAuth client is "Subcontractor Award System" in
+Google Cloud project `mychatbot-465419` (Google Auth Platform → Clients),
+audience **Internal**, so only byrdsonservices.com accounts reach it at all. Its
+authorised redirect URIs are:
+
+```
+https://subs-award.vercel.app/api/auth/callback
+http://localhost:3040/api/auth/callback
+```
+
+`APP_BASE_URL` is what builds that URI, so it has to match one of them exactly.
+Preview deployments have no credentials and therefore no sign-in: they show the
+"not configured" page and nothing else, which is the safe end of that trade.
 
 ## Development
 

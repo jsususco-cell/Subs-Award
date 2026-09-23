@@ -10,12 +10,27 @@ import { REGION_KEYS, type RegionKey } from "@/lib/regions";
  *
  * Two values in the table are not regions this app awards in:
  *
+ * - "HQ" is head office and means every region, the same as leaving the field
+ *   blank. It is one of the field's offered choices and nobody has picked it
+ *   yet — which is exactly why it is handled here. It is the obvious value for
+ *   somebody setting a region on a head-office record, and treating it as an
+ *   unknown state would lock them out the moment they chose it.
  * - "VA" (Virginia) appears on inactive records only. An unknown code is
  *   dropped rather than refused — a state the roster tracks and this app does
  *   not is a fact about the business, not a broken record.
  * - No record carries "LA" (Louisiana), although the app has it. So nobody is
  *   scoped to Louisiana today, and only somebody unscoped can award there.
  */
+/** The roster's own word for head office, alongside leaving the field blank. */
+const HEAD_OFFICE = "HQ";
+
+export function isHeadOffice(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  return raw
+    .split(/[,;/]+|\s+/)
+    .some((s) => s.trim().toUpperCase() === HEAD_OFFICE);
+}
+
 export function parseRosterRegions(raw: unknown): RegionKey[] {
   if (typeof raw !== "string") return [];
   const codes = new Set(
@@ -67,7 +82,12 @@ export function accessFrom(
   if (!record) return NO_ACCESS;
   if (!record.active) return { ...NO_ACCESS, inactive: true };
 
-  const named = typeof record.region === "string" && record.region.trim().length > 0;
+  // "HQ" and a blank field say the same thing, so they are answered the same
+  // way. Read before the state codes, so "HQ, PR" is head office rather than
+  // Puerto Rico — the wider claim is the one that was written down.
+  const headOffice = !record.region || isHeadOffice(record.region);
+  const named =
+    !headOffice && typeof record.region === "string" && record.region.trim().length > 0;
   const regions = parseRosterRegions(record.region);
 
   // Named but nothing this app knows — a record scoped to Virginia only. That

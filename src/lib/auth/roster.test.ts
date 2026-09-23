@@ -87,3 +87,23 @@ test("no record and an inactive record are both refused, and are distinguishable
   const goneScoped = accessFrom({ region: "PR", active: false });
   assert.deepEqual(goneScoped.regions, []);
 });
+
+test("HQ means head office, not an unknown state", () => {
+  /*
+   * "HQ" is one of the Region field's offered choices and no record uses it
+   * yet. That is the trap: it is the obvious thing to pick for a head-office
+   * record, and parsing it as a state would drop it to nothing and lock the
+   * person out on the day somebody chose it.
+   */
+  const hq = accessFrom({ region: "HQ", active: true });
+  assert.deepEqual(hq.regions, REGION_KEYS);
+  assert.equal(hq.unscoped, true);
+
+  // The wider claim wins where both are written down.
+  const both = accessFrom({ region: "HQ, PR", active: true });
+  assert.deepEqual(both.regions, REGION_KEYS);
+  assert.equal(allows(both, "FL"), true);
+
+  // Still nothing for somebody who has left.
+  assert.deepEqual(accessFrom({ region: "HQ", active: false }).regions, []);
+});

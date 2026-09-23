@@ -560,8 +560,10 @@ shape this needs: `PR`, `FL`, `TX`, `FL, NC`, `FL, TX, NC`.
 | On the record | What you get |
 | --- | --- |
 | One or more states | Exactly those. A Florida coordinator sees Florida jobs, Florida subcontractors, and the mainland routes. |
-| **Blank** | Every region. The 18 active records with no region are the CEO, the Owner, the VP of Operations, the Financial Controller, finance and IT — scoping head office to nothing would lock out the people who need all of it. |
+| **Blank**, or `HQ` | Every region. The 18 active records with no region are the CEO, the Owner, the VP of Operations, the Financial Controller, finance and IT — scoping head office to nothing would lock out the people who need all of it. |
 | A state this app does not award in | Nothing, and the app says so. `VA` is in the roster; it must not fall through to the blank rule and hand out everything. |
+
+`HQ` is one of the field's offered choices and no record uses it yet. It is handled because it is the obvious value for somebody setting a region on a head-office record, and reading it as a state would lock them out the day they chose it.
 | No record, or an inactive one | Nothing, and the app says which of the two it was. The roster is the access list. |
 
 Puerto Rico and the mainland differ in more than the job list, so the scope is

@@ -132,3 +132,41 @@ export function accessFrom(
 export function allows(access: RegionAccess, region: RegionKey): boolean {
   return access.regions.includes(region);
 }
+
+/**
+ * Codes on a record that this app does not recognise, kept so that editing
+ * somebody's regions cannot quietly throw them away.
+ *
+ * "VA" is the live example. An administrator ticking Florida on a record that
+ * said "VA, FL" must not silently drop Virginia — the roster tracks states
+ * this app does not award in, and that is the roster's business, not ours.
+ */
+export function preservedCodes(raw: unknown): string[] {
+  if (typeof raw !== "string") return [];
+  const known = new Set<string>([...REGION_KEYS, HEAD_OFFICE]);
+  return [
+    ...new Set(
+      raw
+        .split(/[,;/]+|\s+/)
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => s && !known.has(s)),
+    ),
+  ];
+}
+
+/**
+ * Build the Region field's value back up.
+ *
+ * Head office wins and is written on its own: "HQ, PR" would resolve to head
+ * office anyway, so storing both would record a narrowing that has no effect
+ * and invite somebody to believe it does.
+ */
+export function formatRosterRegions(input: {
+  headOffice: boolean;
+  regions: RegionKey[];
+  preserved?: string[];
+}): string {
+  if (input.headOffice) return HEAD_OFFICE;
+  const ordered = REGION_KEYS.filter((k) => input.regions.includes(k));
+  return [...ordered, ...(input.preserved ?? [])].join(", ");
+}

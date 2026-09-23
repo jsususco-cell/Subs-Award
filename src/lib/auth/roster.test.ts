@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { accessFrom, allows, parseRosterRegions } from "./roster";
+import {
+  accessFrom,
+  allows,
+  formatRosterRegions,
+  parseRosterRegions,
+  preservedCodes,
+} from "./roster";
 import { REGION_KEYS } from "../regions";
 
 /*
@@ -142,4 +148,39 @@ test("a leaver keeps nothing, however many boxes are ticked", () => {
   assert.deepEqual(gone.regions, []);
   assert.equal(gone.grant, "none");
   assert.equal(gone.inactive, true);
+});
+
+test("editing somebody's regions never throws away what the roster tracks", () => {
+  // "VA" is not a region this app awards in, but it is on real records. An
+  // administrator ticking Florida must not delete it.
+  assert.deepEqual(preservedCodes("VA, FL"), ["VA"]);
+  assert.deepEqual(preservedCodes("FL, TX"), []);
+  assert.deepEqual(preservedCodes("HQ"), []);
+  assert.deepEqual(preservedCodes(""), []);
+
+  assert.equal(
+    formatRosterRegions({ headOffice: false, regions: ["FL"], preserved: ["VA"] }),
+    "FL, VA",
+  );
+});
+
+test("the field value written back is one this app reads the same way", () => {
+  // The round trip has to hold, or the screen would show one thing and the
+  // next page load another.
+  for (const regions of [["PR"], ["FL", "TX"], ["PR", "FL", "NC", "TX", "LA"]] as const) {
+    const written = formatRosterRegions({ headOffice: false, regions: [...regions] });
+    assert.deepEqual(parseRosterRegions(written), [...regions].sort(
+      (a, b) => REGION_KEYS.indexOf(a) - REGION_KEYS.indexOf(b),
+    ));
+  }
+
+  // Head office is written on its own: "HQ, PR" resolves to head office
+  // anyway, so storing both would record a narrowing that does nothing.
+  assert.equal(formatRosterRegions({ headOffice: true, regions: ["PR"] }), "HQ");
+  assert.equal(accessFrom({ region: "HQ", active: true }).grant, "head-office");
+
+  // Nobody ticked is an empty field, which means head office — so the screen
+  // must never offer "no regions at all" as a saveable state by accident.
+  assert.equal(formatRosterRegions({ headOffice: false, regions: [] }), "");
+  assert.equal(accessFrom({ region: "", active: true }).grant, "head-office");
 });

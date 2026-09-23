@@ -580,6 +580,32 @@ all — a select with a single option invites someone to hunt for the others.
 Fondo polizas are Puerto Rico work, so `/fondo/review` and the endpoints behind
 it need Puerto Rico.
 
+**Changing it**
+
+`/admin`, linked as "Region access" in the header for anyone who has it. It lists
+everybody with an email on the roster, what their Region field literally says, and
+what that resolves to — the confusion it exists to end was one person carrying "PR"
+and an Admin Access tick with nobody able to say which won.
+
+It edits two fields and no others. **Active is shown but never written**: whether
+somebody still works here has consequences well beyond this app, and an award tool
+is not where that should be settled. Codes the roster tracks and this app does not
+("VA") are carried through untouched, so ticking Florida cannot delete Virginia.
+
+Gated on Admin Access — the same tick that grants every region, so the people who
+can see everything are the people who can hand it out and there is no second list
+of administrators to keep in step. The send key is *not* accepted: everywhere else
+it stands in for a machine, and there is no machine that should be editing who
+works where. Every change is audited with before and after, because "who widened
+this" is the question somebody will actually ask later.
+
+You cannot untick your own Admin Access there. Not because it would be
+catastrophic — others hold it — but because it is a one-click way to lose the only
+screen that could undo it, and the mistake looks exactly like the app breaking.
+
+Quickbase remains the other way in; the screen is a convenience over the same two
+fields, not a second source of truth.
+
 **Where it is enforced**
 
 In the routes, not the picker. A region arrives in a query string or a JSON

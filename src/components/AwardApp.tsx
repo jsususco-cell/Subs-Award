@@ -54,6 +54,7 @@ import {
   type RegionKey,
 } from "@/lib/regions";
 import { refreshLookups } from "@/lib/qb-client";
+import type { Grant } from "@/lib/auth/roster";
 import {
   getServerSnapshot,
   getSnapshot,
@@ -103,11 +104,11 @@ interface AwardAppProps {
    * explanation instead of the app when somebody has none.
    */
   allowed: RegionKey[];
-  /** True when the record names no region, which in this roster means head office. */
-  unscoped: boolean;
+  /** Why they hold those regions, so the app can say so rather than guess. */
+  grant: Grant;
 }
 
-export default function AwardApp({ allowed, unscoped }: AwardAppProps) {
+export default function AwardApp({ allowed, grant }: AwardAppProps) {
   /*
    * The region everything starts on. It must be identical on the server and
    * the first client render, so it is derived from the prop rather than read
@@ -508,7 +509,7 @@ export default function AwardApp({ allowed, unscoped }: AwardAppProps) {
             mode={mode}
             onMode={setMode}
             allowed={allowed}
-            unscoped={unscoped}
+            grant={grant}
           />
 
           {mode === "award-po" ? (

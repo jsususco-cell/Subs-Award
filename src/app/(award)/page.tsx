@@ -48,5 +48,5 @@ export default async function Home() {
     return <NoRegions email={session.email} access={access} />;
   }
 
-  return <AwardApp allowed={access.regions} unscoped={access.unscoped} />;
+  return <AwardApp allowed={access.regions} grant={access.grant} />;
 }

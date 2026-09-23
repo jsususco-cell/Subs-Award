@@ -1,5 +1,6 @@
 "use client";
 
+import type { Grant } from "@/lib/auth/roster";
 import {
   REGIONS,
   missingSetup,
@@ -45,8 +46,8 @@ interface Props {
   onMode: (mode: Mode) => void;
   /** The regions this person may work in. Never empty. */
   allowed: RegionKey[];
-  /** Their Quickbase record names no region, so they hold all of them. */
-  unscoped: boolean;
+  /** Why they hold those regions, so the note can say which it was. */
+  grant: Grant;
 }
 
 /**
@@ -56,7 +57,7 @@ interface Props {
  * subcontractors are offered, which letter goes out and which account the cost
  * posts to — and all but the job list are silent consequences.
  */
-export default function StartBar({ region, onRegion, mode, onMode, allowed, unscoped }: Props) {
+export default function StartBar({ region, onRegion, mode, onMode, allowed, grant }: Props) {
   const cfg = REGIONS[region];
   const missing = missingSetup(cfg);
   // Only the routes this region actually has, in its own order.
@@ -100,7 +101,14 @@ export default function StartBar({ region, onRegion, mode, onMode, allowed, unsc
         </p>
       </div>
 
-      {unscoped && (
+      {grant === "admin" && (
+        <p className="border-t border-navy-100 px-4 py-2 text-xs text-navy-600/70">
+          Admin Access is ticked on your Internal Users record, so every region
+          is offered whatever its Region field says.
+        </p>
+      )}
+
+      {grant === "head-office" && (
         <p className="border-t border-navy-100 px-4 py-2 text-xs text-navy-600/70">
           Your Internal Users record names no region, so every region is
           offered. Setting one narrows this to the states you work in.

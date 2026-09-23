@@ -18,7 +18,7 @@ import { accessFrom, NO_ACCESS, type RegionAccess } from "./roster";
 
 export const INTERNAL_USERS_TABLE = "buskqh27r";
 
-const F = { recordId: 3, name: 6, email: 11, active: 19, region: 126 } as const;
+const F = { recordId: 3, name: 6, adminAccess: 8, email: 11, active: 19, region: 126 } as const;
 
 /**
  * Five minutes. Long enough that a burst of requests costs one query, short
@@ -65,7 +65,7 @@ export async function regionAccess(email: string): Promise<RegionAccess> {
   try {
     rows = await queryAll({
       from: INTERNAL_USERS_TABLE,
-      select: [F.recordId, F.name, F.email, F.active, F.region],
+      select: [F.recordId, F.name, F.adminAccess, F.email, F.active, F.region],
       where: `{${F.email}.EX.'${literal(key)}'}`,
     });
   } catch (e) {
@@ -83,6 +83,7 @@ export async function regionAccess(email: string): Promise<RegionAccess> {
       ? {
           region: record[F.region]?.value,
           active: record[F.active]?.value === true,
+          adminAccess: record[F.adminAccess]?.value === true,
           name: typeof record[F.name]?.value === "string" ? (record[F.name].value as string) : undefined,
           recordId: Number(record[F.recordId]?.value) || undefined,
         }

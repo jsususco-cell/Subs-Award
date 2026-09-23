@@ -42,17 +42,22 @@ export function parseRosterRegions(raw: unknown): RegionKey[] {
   return REGION_KEYS.filter((key) => codes.has(key));
 }
 
+/** Why somebody holds the regions they hold. Drives what the app tells them. */
+export type Grant =
+  /** The states named on their record. */
+  | "states"
+  /** Admin Access is ticked, which grants every region. */
+  | "admin"
+  /** "HQ", or no region named at all — head office, so every region. */
+  | "head-office"
+  /** Nothing. */
+  | "none";
+
 export type RegionAccess = {
   /** The regions this person may work in, in the app's display order. */
   regions: RegionKey[];
-  /**
-   * True when the record exists and is active but names no region, which in
-   * this roster means head office: the ones with no region set are the CEO,
-   * the Owner, the VP of Operations, the Financial Controller, finance and
-   * IT. Scoping them to nothing would lock out exactly the people who need
-   * every region.
-   */
-  unscoped: boolean;
+  /** Why — so the app can say "because you are an admin" rather than guess. */
+  grant: Grant;
   /** An active Internal Users record was found for this email. */
   linked: boolean;
   /** Set when a record was found but is marked inactive. */
@@ -63,7 +68,7 @@ export type RegionAccess = {
 
 export const NO_ACCESS: RegionAccess = {
   regions: [],
-  unscoped: false,
+  grant: "none",
   linked: false,
   inactive: false,
 };
@@ -77,34 +82,49 @@ export const NO_ACCESS: RegionAccess = {
  * "you have left" and "IT has not added you" need different answers.
  */
 export function accessFrom(
-  record: { region: unknown; active: boolean; name?: string; recordId?: number } | null,
+  record: {
+    region: unknown;
+    active: boolean;
+    adminAccess?: boolean;
+    name?: string;
+    recordId?: number;
+  } | null,
 ): RegionAccess {
   if (!record) return NO_ACCESS;
+  // Checked before Admin Access, deliberately. Somebody who has left keeps
+  // whatever boxes were ticked on the day they left, and a leaver holding
+  // every region is the one outcome this must not produce.
   if (!record.active) return { ...NO_ACCESS, inactive: true };
+
+  const identity = {
+    linked: true as const,
+    inactive: false as const,
+    displayName: record.name || undefined,
+    userRid: record.recordId,
+  };
+
+  // Admin Access outranks the Region field: it is how the roster says "this
+  // person is not confined to one state", and it is why an administrator who
+  // also happens to work Puerto Rico is not scoped to Puerto Rico.
+  if (record.adminAccess === true) {
+    return { regions: [...REGION_KEYS], grant: "admin", ...identity };
+  }
 
   // "HQ" and a blank field say the same thing, so they are answered the same
   // way. Read before the state codes, so "HQ, PR" is head office rather than
   // Puerto Rico — the wider claim is the one that was written down.
-  const headOffice = !record.region || isHeadOffice(record.region);
-  const named =
-    !headOffice && typeof record.region === "string" && record.region.trim().length > 0;
-  const regions = parseRosterRegions(record.region);
-
-  // Named but nothing this app knows — a record scoped to Virginia only. That
-  // is not head office, so it must not fall through to "every region".
-  if (named && regions.length === 0) {
-    return { regions: [], unscoped: false, linked: true, inactive: false,
-      displayName: record.name || undefined, userRid: record.recordId };
+  if (!record.region || isHeadOffice(record.region)) {
+    return { regions: [...REGION_KEYS], grant: "head-office", ...identity };
   }
 
+  const regions = parseRosterRegions(record.region);
+
+  // Named, but nothing this app knows — a record scoped to Virginia only.
+  // That is not head office, so it must not fall through to "every region".
   return {
-    // Unscoped is expanded here, so no caller has to remember to special-case it.
-    regions: named ? regions : [...REGION_KEYS],
-    unscoped: !named,
-    linked: true,
-    inactive: false,
-    displayName: record.name || undefined,
-    userRid: record.recordId,
+    regions,
+    grant: regions.length ? "states" : "none",
+    ...identity,
   };
 }
 

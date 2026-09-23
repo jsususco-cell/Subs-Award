@@ -44,14 +44,14 @@ test("a blank region means head office, which is every region", () => {
   // nothing would lock out exactly the people who need every region.
   const access = accessFrom({ region: "", active: true, name: "A Byrd" });
   assert.deepEqual(access.regions, REGION_KEYS);
-  assert.equal(access.unscoped, true);
+  assert.equal(access.grant, "head-office");
   assert.equal(access.linked, true);
 });
 
 test("a named region scopes, and does not leak the others", () => {
   const pr = accessFrom({ region: "PR", active: true });
   assert.deepEqual(pr.regions, ["PR"]);
-  assert.equal(pr.unscoped, false);
+  assert.equal(pr.grant, "states");
   assert.equal(allows(pr, "PR"), true);
   assert.equal(allows(pr, "FL"), false);
 
@@ -68,7 +68,7 @@ test("a record naming only an unknown state gets nothing, not everything", () =>
   // blank would hand a Virginia-only record every region in the system.
   const va = accessFrom({ region: "VA", active: true });
   assert.deepEqual(va.regions, []);
-  assert.equal(va.unscoped, false);
+  assert.equal(va.grant, "none");
   assert.equal(va.linked, true);
 });
 
@@ -97,7 +97,7 @@ test("HQ means head office, not an unknown state", () => {
    */
   const hq = accessFrom({ region: "HQ", active: true });
   assert.deepEqual(hq.regions, REGION_KEYS);
-  assert.equal(hq.unscoped, true);
+  assert.equal(hq.grant, "head-office");
 
   // The wider claim wins where both are written down.
   const both = accessFrom({ region: "HQ, PR", active: true });
@@ -106,4 +106,40 @@ test("HQ means head office, not an unknown state", () => {
 
   // Still nothing for somebody who has left.
   assert.deepEqual(accessFrom({ region: "HQ", active: false }).regions, []);
+});
+
+test("Admin Access grants every region, and outranks the Region field", () => {
+  /*
+   * The roster's own convention: six of the seven active administrators have
+   * no region at all. The seventh is a Process Improvement Specialist whose
+   * record says "PR", which scoped him to Puerto Rico while his colleague on
+   * the same job saw everything. The tick is what says "not confined to one
+   * state", so it is what decides.
+   */
+  const admin = accessFrom({ region: "PR", active: true, adminAccess: true });
+  assert.deepEqual(admin.regions, REGION_KEYS);
+  assert.equal(admin.grant, "admin");
+  assert.equal(allows(admin, "FL"), true);
+
+  // Even a region this app does not award in cannot narrow an administrator.
+  const odd = accessFrom({ region: "VA", active: true, adminAccess: true });
+  assert.deepEqual(odd.regions, REGION_KEYS);
+
+  // Absent and false both mean "not an administrator" — an undefined flag
+  // must not read as truthy and quietly widen somebody.
+  assert.equal(accessFrom({ region: "PR", active: true }).grant, "states");
+  assert.equal(
+    accessFrom({ region: "PR", active: true, adminAccess: false }).grant,
+    "states",
+  );
+});
+
+test("a leaver keeps nothing, however many boxes are ticked", () => {
+  // Admin Access is not cleared when somebody leaves, so Active has to be
+  // read first. An inactive administrator holding every region is the one
+  // outcome this must never produce.
+  const gone = accessFrom({ region: "PR", active: false, adminAccess: true });
+  assert.deepEqual(gone.regions, []);
+  assert.equal(gone.grant, "none");
+  assert.equal(gone.inactive, true);
 });

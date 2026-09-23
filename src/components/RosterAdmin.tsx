@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import BackToApp from "@/components/BackToApp";
 import type { RosterRow } from "@/lib/auth/admin";
 import { REGIONS, REGION_KEYS, type RegionKey } from "@/lib/regions";
 import { preservedCodes } from "@/lib/auth/roster";
@@ -133,6 +134,7 @@ export default function RosterAdmin({
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <header className="mb-6">
+        <BackToApp className="mb-3" />
         <h1 className="text-lg font-semibold text-navy-800">Who sees which region</h1>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-navy-600/80">
           This edits the Region field and the Admin Access tick on each

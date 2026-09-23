@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import BackToApp from "@/components/BackToApp";
 import RosterAdmin from "@/components/RosterAdmin";
 import { requireSession } from "@/lib/auth/current-user";
 import { AccessUnavailableError, regionAccess } from "@/lib/auth/access";
@@ -18,6 +19,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <div className="rounded-xl border border-navy-200 bg-white p-6 shadow-sm">
         <h1 className="text-lg font-semibold text-navy-800">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-navy-600/80">{children}</p>
+        <BackToApp className="mt-4" />
       </div>
     </div>
   );

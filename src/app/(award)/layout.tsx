@@ -1,3 +1,4 @@
+import Link from "next/link";
 import Brand from "@/components/Brand";
 import SessionBar from "@/components/SessionBar";
 
@@ -15,7 +16,9 @@ export default function AwardLayout({ children }: { children: React.ReactNode })
     <>
       <header className="no-print border-b-4 border-brand-red bg-navy-700">
         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
-          <Brand />
+          <Link href="/" aria-label="Subcontractor Award System home">
+            <Brand />
+          </Link>
           <div className="flex items-center gap-5">
             <div className="text-right">
               <h1 className="text-sm leading-tight font-semibold text-white">

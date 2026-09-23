@@ -68,36 +68,59 @@ function crossSite(request: NextRequest): boolean {
   }
 }
 
+/**
+ * Nothing this proxy sees may be held in a shared cache.
+ *
+ * Every page behind it renders for one person — their email in the header,
+ * the regions they hold, the queue they may act on — and a subcontractor's
+ * Fondo form renders one case's details. A CDN holding any of that and
+ * handing it to the next caller is the failure mode, and it is not
+ * hypothetical: this app spent a while serving a prerendered copy of the
+ * signed-out home page to everyone, made before sign-in existed, because the
+ * edge had cached it and nothing since had said not to.
+ *
+ * `force-dynamic` tells Next how to render. It does not tell the CDN what it
+ * may keep. This does.
+ */
+function uncached(res: NextResponse): NextResponse {
+  res.headers.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+  return res;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const keyed = sendKeyMatches(request.headers.get("x-send-key") ?? "");
 
   if (crossSite(request) && !keyed) {
-    return NextResponse.json(
-      { ok: false, error: "Cross-site request refused." },
-      { status: 403 },
+    return uncached(
+      NextResponse.json(
+        { ok: false, error: "Cross-site request refused." },
+        { status: 403 },
+      ),
     );
   }
 
-  if (isPublic(pathname)) return NextResponse.next();
+  if (isPublic(pathname)) return uncached(NextResponse.next());
 
   // A key is how the scripts and n8n reach the privileged routes. It was the
   // only credential this app had until now, and breaking it would break the
   // scheduled work the moment sign-in shipped.
-  if (keyed) return NextResponse.next();
+  if (keyed) return uncached(NextResponse.next());
 
   const session = await openSession(request.cookies.get(SESSION_COOKIE)?.value);
-  if (session) return NextResponse.next();
+  if (session) return uncached(NextResponse.next());
 
   // An expired API call should get a status code, not an HTML sign-in page — a
   // fetch that silently receives a login form is the hardest kind of bug to read.
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ ok: false, error: "Not signed in." }, { status: 401 });
+    return uncached(
+      NextResponse.json({ ok: false, error: "Not signed in." }, { status: 401 }),
+    );
   }
 
   const login = new URL("/login", request.url);
   login.searchParams.set("next", `${pathname}${search}`);
-  return NextResponse.redirect(login);
+  return uncached(NextResponse.redirect(login));
 }
 
 export const config = {

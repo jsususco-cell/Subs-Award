@@ -15,6 +15,7 @@ import {
   type QbRecord,
 } from "@/lib/qb-award";
 import { isContractEntry, isRegionKey, regionFor } from "@/lib/regions";
+import { refuseRegion } from "@/lib/auth/guard";
 import { trySubcontractorAccount } from "@/lib/qb-accounts";
 import { scheduleSetFor } from "@/lib/schedule";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
@@ -297,6 +298,11 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // Checked after parsing, so the refusal names a region rather than
+  // complaining about a body that was in fact well formed.
+  const refused = await refuseRegion(request, input.region);
+  if (refused) return refused;
 
   /*
    * The cost account is resolved before the first write. Quickbase has no

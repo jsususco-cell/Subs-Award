@@ -6,7 +6,8 @@
  */
 
 import "server-only";
-import type { RegionConfig } from "./regions";
+import { REGIONS, REGION_KEYS, type RegionConfig, type RegionKey } from "./regions";
+import { QB_AWARD } from "./qb-award";
 
 const API = "https://api.quickbase.com/v1";
 
@@ -306,4 +307,61 @@ export async function fetchSubs(
         `there is nobody to award ${region.label} work to. Set Region on the ` +
         `vendors who work there, then reopen this list.`,
   };
+}
+
+/**
+ * Which region a job belongs to, by its record id.
+ *
+ * Needed by the routes that are addressed by job or purchase order rather than
+ * by region — the attachment list, for one. Without it a coordinator scoped to
+ * Florida could read what is filed against a Puerto Rico case simply by
+ * changing a number in the URL, which is the sort of hole a region filter is
+ * supposed to close rather than decorate.
+ *
+ * Returns null when the job does not exist or its state is not one this system
+ * awards in; the caller decides what that means.
+ */
+export async function jobRegionKey(jobRecordId: number): Promise<RegionKey | null> {
+  if (!jobRecordId || !isConfigured()) return null;
+  const f = QB_CONFIG.fields.jobs;
+  const rows = await queryAll({
+    from: QB_CONFIG.tables.jobs,
+    select: [f.recordId, f.region],
+    where: `{${f.recordId}.EX.${jobRecordId}}`,
+  });
+  const state = String(rows[0]?.[f.region]?.value ?? "").trim();
+  if (!state) return null;
+  return (
+    REGION_KEYS.find(
+      (key) => REGIONS[key].jobRegion.toLowerCase() === state.toLowerCase(),
+    ) ?? null
+  );
+}
+
+/**
+ * Which region a purchase order belongs to, by its record id.
+ *
+ * The same problem as `jobRegionKey`, for the routes addressed by purchase
+ * order: the line items and the bills on a PO are read by id, and the region
+ * the caller sends alongside is not used to find them. Without this a Florida
+ * coordinator could name Florida, pass a Puerto Rico purchase order, and be
+ * handed its contents.
+ *
+ * Reads the same Job State lookup the purchase order document already checks
+ * itself against, so the two cannot disagree.
+ */
+export async function poRegionKey(poRecordId: number): Promise<RegionKey | null> {
+  if (!poRecordId || !isConfigured()) return null;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.pos,
+    select: [QB_AWARD.pos.recordId, QB_AWARD.pos.jobState],
+    where: `{${QB_AWARD.pos.recordId}.EX.${poRecordId}}`,
+  });
+  const state = String(rows[0]?.[QB_AWARD.pos.jobState]?.value ?? "").trim();
+  if (!state) return null;
+  return (
+    REGION_KEYS.find(
+      (key) => REGIONS[key].jobRegion.toLowerCase() === state.toLowerCase(),
+    ) ?? null
+  );
 }

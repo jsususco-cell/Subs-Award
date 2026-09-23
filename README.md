@@ -548,6 +548,64 @@ behind: `"-686.63"`, `"$1,234.50"`, `"(500.00)"`.
 - **Download CSV** — summary, coverage roll-up, and every line item.
 - **Print** — a clean print stylesheet drops the controls and expands the tables.
 
+## Who sees which region
+
+Signing in says you work here. This says where.
+
+The scope comes from the Region field on your Quickbase **Internal Users**
+record — the same table that drives the org chart, so nobody maintains a second
+list of who works where. It is a multiple-choice field already filled in the
+shape this needs: `PR`, `FL`, `TX`, `FL, NC`, `FL, TX, NC`.
+
+| On the record | What you get |
+| --- | --- |
+| One or more states | Exactly those. A Florida coordinator sees Florida jobs, Florida subcontractors, and the mainland routes. |
+| **Blank** | Every region. The 18 active records with no region are the CEO, the Owner, the VP of Operations, the Financial Controller, finance and IT — scoping head office to nothing would lock out the people who need all of it. |
+| A state this app does not award in | Nothing, and the app says so. `VA` is in the roster; it must not fall through to the blank rule and hand out everything. |
+| No record, or an inactive one | Nothing, and the app says which of the two it was. The roster is the access list. |
+
+Puerto Rico and the mainland differ in more than the job list, so the scope is
+visible rather than just restrictive: a Puerto Rico screen offers the Canopy
+upload and the categories breakdown, a mainland screen offers the purchase
+order routes and the contract breakdown. With one region there is no picker at
+all — a select with a single option invites someone to hunt for the others.
+
+Fondo polizas are Puerto Rico work, so `/fondo/review` and the endpoints behind
+it need Puerto Rico.
+
+**Where it is enforced**
+
+In the routes, not the picker. A region arrives in a query string or a JSON
+body and is trivially changed, so every route that takes one checks it against
+who is asking. Two kinds of route need different questions:
+
+- Addressed **by region** — the lookups, the award write, the letter, the PO
+  document. The region named must be one you hold.
+- Addressed **by record** — attachments by job, line items and bills by
+  purchase order. The region you send alongside is never used to find those
+  records, so the *record's* own state decides. Without this, naming Florida
+  and passing a Puerto Rico job id would have worked.
+
+The send key does **not** override this. Most of these routes require the key
+and the browser sends it, typed by the person using the app, so treating a
+valid key as permission would quietly void the whole check. The key is a second
+lock on the door, not a second identity. Only a caller with no session at all
+is treated as a machine — n8n and the scripts — and it has no regions because
+there is nobody whose regions it could mean.
+
+Decisions are cached for five minutes per person, so a burst of requests costs
+one Quickbase query and a roster change is visible while you are still looking
+at the screen. If Quickbase cannot be reached the app says so rather than
+reporting "you have no regions" — those are different, and one of them sends
+people to IT over a blip.
+
+**Two things this surfaced**
+
+- `carl@excellohomes.com` and `erin@excellohomes.com` are active Texas and
+  Florida staff on a different domain, so they cannot sign in at all.
+- No Internal Users record carries `LA`, although the app awards in Louisiana.
+  Only someone unscoped can work there today.
+
 ## Signing in
 
 Everything internal is behind a Byrdson Workspace account. The flow is the ERP's,

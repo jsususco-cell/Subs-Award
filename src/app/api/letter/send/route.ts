@@ -3,6 +3,7 @@ import { canRenderLetter, NoLetterTemplateError, renderLetter } from "@/lib/lett
 import { parseLetterInput } from "@/lib/letter-input";
 import { templateFor } from "@/lib/letter-content";
 import { regionFor } from "@/lib/regions";
+import { refuseRegion } from "@/lib/auth/guard";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 import {
   allowlist,
@@ -78,6 +79,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // Who is sending decides which regions they may send for. Before the
+  // template check, because "you do not work in Puerto Rico" is the more
+  // useful answer than "Puerto Rico has no template".
+  const refused = await refuseRegion(request, input.region);
+  if (refused) return refused;
 
   /*
    * Refused before any recipient check and long before the mail is built. This

@@ -8,6 +8,7 @@ import {
   PoNotInRegionError,
 } from "@/lib/qb-po-doc";
 import { regionFor } from "@/lib/regions";
+import { refuseRegion } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // Reads the purchase order out of Quickbase, so it is a region-scoped read.
+  const refused = await refuseRegion(request, body.region);
+  if (refused) return refused;
 
   const region = regionFor(body.region);
   const poRecordId = Number(body.poRecordId) || 0;

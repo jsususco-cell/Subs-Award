@@ -3,6 +3,7 @@ import { canRenderLetter, NoLetterTemplateError, renderLetter } from "@/lib/lett
 import { parseLetterInput } from "@/lib/letter-input";
 import { templateFor } from "@/lib/letter-content";
 import { regionFor } from "@/lib/regions";
+import { refuseRegion } from "@/lib/auth/guard";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,11 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // The letter carries this region's terms, so only someone who works in it
+  // may render one.
+  const refused = await refuseRegion(request, input.region);
+  if (refused) return refused;
 
   // A region with no template is a 400, not a 500: the request is well formed,
   // there is simply no letter to render for it.

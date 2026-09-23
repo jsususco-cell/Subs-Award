@@ -11,6 +11,7 @@ import {
   PoNotReleasedError,
 } from "@/lib/qb-po-doc";
 import { regionFor } from "@/lib/regions";
+import { refuseRegion } from "@/lib/auth/guard";
 import {
   allowlist,
   archiveBcc,
@@ -89,6 +90,8 @@ export async function POST(request: Request) {
     );
   }
 
+  const refused = await refuseRegion(request, body.region);
+  if (refused) return refused;
   const region = regionFor(body.region);
   const poRecordId = Number(body.poRecordId) || 0;
 

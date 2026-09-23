@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchJobs, fetchSubs, isConfigured } from "@/lib/quickbase";
 import { regionFor } from "@/lib/regions";
+import { refuseRegion } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,13 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const resource = params.get("resource");
   /*
-   * An unknown region resolves to the default rather than erroring: the region
-   * only ever narrows a query, so the worst case is the wrong list, and the
-   * response says which region it answered for so the caller can tell.
+   * The region used to resolve loosely, because it only narrowed a query and
+   * the worst case was the wrong list. It is now checked against who is
+   * asking, so it has to be named exactly: a Florida coordinator must not be
+   * able to read the Puerto Rico vendor list by editing a query string.
    */
+  const refused = await refuseRegion(request, params.get("region"));
+  if (refused) return refused;
   const region = regionFor(params.get("region"));
 
   if (resource !== "jobs" && resource !== "subs") {

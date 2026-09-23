@@ -95,9 +95,27 @@ function emptyLetter(region: RegionKey): LetterFields {
   };
 }
 
-const EMPTY_LETTER: LetterFields = emptyLetter(DEFAULT_REGION);
 
-export default function AwardApp() {
+interface AwardAppProps {
+  /**
+   * The regions this person may work in, resolved on the server from their
+   * Quickbase Internal Users record. Never empty — the page renders an
+   * explanation instead of the app when somebody has none.
+   */
+  allowed: RegionKey[];
+  /** True when the record names no region, which in this roster means head office. */
+  unscoped: boolean;
+}
+
+export default function AwardApp({ allowed, unscoped }: AwardAppProps) {
+  /*
+   * The region everything starts on. It must be identical on the server and
+   * the first client render, so it is derived from the prop rather than read
+   * from localStorage — Puerto Rico is only the default for someone who has
+   * Puerto Rico.
+   */
+  const home = allowed.includes(DEFAULT_REGION) ? DEFAULT_REGION : allowed[0];
+
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,7 +147,7 @@ export default function AwardApp() {
   // of prefs -- carrying it to the next file would inflate that award.
   const [adaEnabled, setAdaEnabled] = useState(false);
   const [ada, setAda] = useState(DEFAULT_ADA);
-  const [letter, setLetter] = useState<LetterFields>(EMPTY_LETTER);
+  const [letter, setLetter] = useState<LetterFields>(() => emptyLetter(home));
   // Recorded once the award is written to Quickbase, so it cannot be
   // created a second time from the same award.
   const [createdPo, setCreatedPo] = useState<CreatePoResult | null>(null);
@@ -143,23 +161,23 @@ export default function AwardApp() {
    * Preferences are per region: a hard-cost allowance tuned for Puerto Rico is
    * not a sensible starting point for a Florida award.
    */
-  const [region, setRegionState] = useState<RegionKey>(DEFAULT_REGION);
-  const regionRef = useRef<RegionKey>(DEFAULT_REGION);
+  const [region, setRegionState] = useState<RegionKey>(home);
+  const regionRef = useRef<RegionKey>(home);
 
   /*
    * Which route this award is taking. Each keeps its own state, so flipping
    * between them to compare does not throw away work in the other.
    */
   const [mode, setMode] = useState<Mode>(() =>
-    defaultRoute(regionFor(DEFAULT_REGION)),
+    defaultRoute(regionFor(home)),
   );
   const [direct, setDirect] = useState<DirectAwardFields>(() =>
-    emptyDirectAward(DEFAULT_REGION),
+    emptyDirectAward(home),
   );
   const [directPo, setDirectPo] = useState<CreatePoResult | null>(null);
   const [prefs, setPrefsState] = useState<Prefs>(defaultPrefs());
   const prefsRef = useRef<Prefs>(defaultPrefs());
-  const storeRef = useRef<PrefsStore>({ region: DEFAULT_REGION, byRegion: {} });
+  const storeRef = useRef<PrefsStore>({ region: home, byRegion: {} });
 
   const updatePrefs = useCallback((patch: Partial<Prefs>) => {
     const next = { ...prefsRef.current, ...patch };
@@ -193,6 +211,10 @@ export default function AwardApp() {
   const setRegion = useCallback(
     (next: RegionKey) => {
       if (next === regionRef.current) return;
+      // The routes enforce this too. Stopping here as well means a stale
+      // saved preference cannot quietly park somebody on a region every
+      // request will then refuse.
+      if (!allowed.includes(next)) return;
       regionRef.current = next;
       setRegionState(next);
       applyRegionPrefs(next);
@@ -216,7 +238,7 @@ export default function AwardApp() {
       setRestoredAt(null);
       setSaveNote(null);
     },
-    [applyRegionPrefs],
+    [applyRegionPrefs, allowed],
   );
 
   const { oandpPct, tiers, selectedTier, hc } = prefs;
@@ -363,6 +385,18 @@ export default function AwardApp() {
   }
 
   function openRecord(record: AwardRecord) {
+    /*
+     * History is this browser's, not this account's, so it can hold awards
+     * struck in a region the person no longer works in. Reopening one would
+     * put them on a region every request is then refused on, which reads as
+     * the app being broken rather than as a permission.
+     */
+    if (!allowed.includes(record.region)) {
+      setError(
+        `That award was struck in ${regionFor(record.region).label}, which your Quickbase record no longer covers.`,
+      );
+      return;
+    }
     // The award is reopened in the region it was struck in, so its letter,
     // schedule and account are the ones it was saved with.
     regionRef.current = record.region;
@@ -473,6 +507,8 @@ export default function AwardApp() {
             onRegion={setRegion}
             mode={mode}
             onMode={setMode}
+            allowed={allowed}
+            unscoped={unscoped}
           />
 
           {mode === "award-po" ? (

@@ -18,6 +18,7 @@ import {
   sendKeyRequired,
   sendMail,
 } from "@/lib/mail";
+import { refuseRegion } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -52,6 +53,12 @@ export async function POST(request: Request) {
       );
     }
   }
+
+  // Fondo is the Puerto Rico state insurance fund and has no mainland
+  // equivalent, so this queue is Puerto Rico work. A mainland coordinator has
+  // no business reading other companies' insurance certificates.
+  const refusedRegion = await refuseRegion(request, "PR");
+  if (refusedRegion) return refusedRegion;
 
   if (!isConfigured() || !fondoConfigured()) {
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { isConfigured } from "@/lib/quickbase";
 import { fondoConfigured } from "@/lib/fondo";
 import { polizaFile } from "@/lib/fondo-server";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
+import { refuseRegion } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,6 +28,12 @@ export async function GET(request: Request) {
       { status: 401 },
     );
   }
+  // Fondo is the Puerto Rico state insurance fund and has no mainland
+  // equivalent, so this queue is Puerto Rico work. A mainland coordinator has
+  // no business reading other companies' insurance certificates.
+  const refusedRegion = await refuseRegion(request, "PR");
+  if (refusedRegion) return refusedRegion;
+
   if (!isConfigured() || !fondoConfigured()) {
     return Response.json({ ok: false, error: "Not configured." }, { status: 503 });
   }

@@ -7,6 +7,7 @@ import {
 } from "@/lib/attachments";
 import { createAttachment, fetchAttachments } from "@/lib/qb-attachments";
 import { regionFor } from "@/lib/regions";
+import { refuseJob, refuseRegion } from "@/lib/auth/guard";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,10 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
+
+  // Addressed by job, not by region, so the job's own state is what decides.
+  const refused = await refuseJob(request, jobRecordId);
+  if (refused) return refused;
 
   try {
     return NextResponse.json({
@@ -114,7 +119,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: problem }, { status: 400 });
   }
 
-  /* The region is not trusted to be writable — it only has to exist. */
+  // The region now has to be one this person works in, not merely a region
+  // that exists: filing a document writes into the shared Attachments table
+  // against a real job.
+  const refused = await refuseRegion(request, body.region);
+  if (refused) return refused;
   const region = regionFor(body.region);
 
   try {

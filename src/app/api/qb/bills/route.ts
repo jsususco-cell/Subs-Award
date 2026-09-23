@@ -16,6 +16,7 @@ import {
   type PoOption,
 } from "@/lib/bills";
 import { isRegionKey, regionFor } from "@/lib/regions";
+import { refusePo, refuseRegion } from "@/lib/auth/guard";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -149,6 +150,8 @@ async function lineItemsFor(poRecordId: number) {
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
+  const refused = await refuseRegion(request, params.get("region"));
+  if (refused) return refused;
   const region = regionFor(params.get("region"));
   const resource = params.get("resource");
 
@@ -235,6 +238,11 @@ export async function GET(request: Request) {
           { status: 400 },
         );
       }
+
+      // Found by id, not by the region sent alongside, so the purchase order's
+      // own job state is what decides.
+      const refusedPo = await refusePo(request, poRecordId);
+      if (refusedPo) return refusedPo;
       return NextResponse.json({
         ok: true,
         configured: true,
@@ -250,6 +258,11 @@ export async function GET(request: Request) {
           { status: 400 },
         );
       }
+
+      // Found by id, not by the region sent alongside, so the purchase order's
+      // own job state is what decides.
+      const refusedPo = await refusePo(request, poRecordId);
+      if (refusedPo) return refusedPo;
 
       const costItem = await costItemFor(poRecordId);
       if (!costItem) {
@@ -342,6 +355,8 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  const refusedRegion = await refuseRegion(request, body.region);
+  if (refusedRegion) return refusedRegion;
   const region = regionFor(body.region);
 
   // Resolved before anything is written, for the same reason as the award.
@@ -356,6 +371,14 @@ export async function POST(request: Request) {
 
   const poRecordId = Number(body.poRecordId) || 0;
   const jobType = typeof body.jobType === "string" ? body.jobType : "";
+
+  // Writing against an existing purchase order, so the purchase order decides
+  // the region too — naming an allowed region is not enough if the record
+  // named belongs to another one.
+  if (poRecordId) {
+    const refusedPo = await refusePo(request, poRecordId);
+    if (refusedPo) return refusedPo;
+  }
 
   /*
    * Adding PO line items to break down more of the contract. A separate action

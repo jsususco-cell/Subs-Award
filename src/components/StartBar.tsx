@@ -2,7 +2,6 @@
 
 import {
   REGIONS,
-  REGION_KEYS,
   missingSetup,
   type AwardRoute,
   type RegionKey,
@@ -44,6 +43,10 @@ interface Props {
   onRegion: (region: RegionKey) => void;
   mode: Mode;
   onMode: (mode: Mode) => void;
+  /** The regions this person may work in. Never empty. */
+  allowed: RegionKey[];
+  /** Their Quickbase record names no region, so they hold all of them. */
+  unscoped: boolean;
 }
 
 /**
@@ -53,7 +56,7 @@ interface Props {
  * subcontractors are offered, which letter goes out and which account the cost
  * posts to — and all but the job list are silent consequences.
  */
-export default function StartBar({ region, onRegion, mode, onMode }: Props) {
+export default function StartBar({ region, onRegion, mode, onMode, allowed, unscoped }: Props) {
   const cfg = REGIONS[region];
   const missing = missingSetup(cfg);
   // Only the routes this region actually has, in its own order.
@@ -70,23 +73,39 @@ export default function StartBar({ region, onRegion, mode, onMode }: Props) {
         >
           Region
         </label>
-        <select
-          id="region"
-          value={region}
-          onChange={(e) => onRegion(e.target.value as RegionKey)}
-          className="rounded-md border border-navy-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-navy-800 focus:border-navy-500 focus:outline-none"
-        >
-          {REGION_KEYS.map((key) => (
-            <option key={key} value={key}>
-              {REGIONS[key].label}
-            </option>
-          ))}
-        </select>
+        {allowed.length > 1 ? (
+          <select
+            id="region"
+            value={region}
+            onChange={(e) => onRegion(e.target.value as RegionKey)}
+            className="rounded-md border border-navy-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-navy-800 focus:border-navy-500 focus:outline-none"
+          >
+            {allowed.map((key) => (
+              <option key={key} value={key}>
+                {REGIONS[key].label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          /* One region is not a choice. A select with a single option invites
+             someone to look for the others and conclude the app is broken. */
+          <span className="rounded-md border border-navy-200 bg-navy-50 px-2.5 py-1.5 text-sm font-semibold text-navy-800">
+            {cfg.label}
+          </span>
+        )}
         <p className="text-xs text-navy-600/70">
-          Jobs, subcontractors, the award letter and the account the cost posts
-          to all follow this.
+          {allowed.length > 1
+            ? "Jobs, subcontractors, the award letter and the account the cost posts to all follow this."
+            : `Your Quickbase record covers ${cfg.label}, so that is what this shows.`}
         </p>
       </div>
+
+      {unscoped && (
+        <p className="border-t border-navy-100 px-4 py-2 text-xs text-navy-600/70">
+          Your Internal Users record names no region, so every region is
+          offered. Setting one narrows this to the states you work in.
+        </p>
+      )}
 
       {missing.length > 0 && (
         <p className="border-t border-navy-100 px-4 py-2 text-xs text-navy-600/80">

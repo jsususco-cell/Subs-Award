@@ -7,6 +7,7 @@ import {
 import { parseLetterInput } from "@/lib/letter-input";
 import { templateFor } from "@/lib/letter-content";
 import { regionFor } from "@/lib/regions";
+import { refusePo, refuseRegion } from "@/lib/auth/guard";
 import { htmlToPdf, pdfFileName } from "@/lib/pdf";
 import { attachFile } from "@/lib/qb-attach";
 import { QB_AWARD } from "@/lib/qb-award";
@@ -89,6 +90,11 @@ export async function POST(request: Request) {
     );
   }
 
+  // The letter is written onto this purchase order's record, so the record's
+  // own region is what has to be allowed.
+  const refusedPo = await refusePo(request, poRecordId);
+  if (refusedPo) return refusedPo;
+
   const input = parseLetterInput(body.letter);
   if (!input) {
     return NextResponse.json(
@@ -100,6 +106,10 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // Writes the letter onto the purchase order record in Quickbase.
+  const refused = await refuseRegion(request, input.region);
+  if (refused) return refused;
 
   if (!canRenderLetter(input.region)) {
     return NextResponse.json(

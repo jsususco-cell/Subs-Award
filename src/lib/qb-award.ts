@@ -117,6 +117,19 @@ export const QB_AWARD = {
     title: 6,
     billPct: 48,
     billAmount: 49,
+    /*
+     * The cost basis, repeated on every draw against the same cost item.
+     *
+     * Not a rollup of anything and not rolled up by anything: the Cost Item
+     * sums only Bill Amount, Bill %, Status and Amount Paid from its bills,
+     * and the purchase order's Total Builder Cost sums the cost items. So
+     * nine milestones each carrying the same Builder Cost inflates no total,
+     * which is what makes copying it down safe as well as conventional.
+     */
+    unitCost: 44,
+    qty: 45,
+    unit: 46,
+    builderCost: 47,
     status: 14,
     relatedJob: 99,
     qbLineItem: 41,
@@ -496,6 +509,32 @@ export function buildBreakdownCostItems(
     }));
 }
 
+/**
+ * The cost basis a bill line carries alongside its percentage.
+ *
+ * Every bill line in this table written by anything other than this app
+ * carries the parent cost item's Unit Cost, Quantity, Unit and Builder Cost,
+ * with Bill Amount being Builder Cost times Bill %. Bill #78 is the shape:
+ * $130 x 6.5 hrs = $845, billed 40% = $338. Ours carried the percentage and
+ * the amount and left the four basis fields empty, so the figures were right
+ * but the row could not be read on its own — the Bills report showed a column
+ * of blanks and no way to see what the percentage was a percentage of.
+ */
+export function billBasisFields(basis: {
+  unitCost: number;
+  qty: number;
+  unit: string;
+}): QbRecord {
+  const f = QB_AWARD.billLines;
+  const qty = basis.qty || 1;
+  return {
+    [f.unitCost]: { value: round(basis.unitCost) },
+    [f.qty]: { value: qty },
+    [f.unit]: { value: basis.unit },
+    [f.builderCost]: { value: round(basis.unitCost * qty) },
+  };
+}
+
 export function buildBillRecords(
   input: AwardWriteInput,
   costItemRecordId: number,
@@ -515,6 +554,12 @@ export function buildBillRecords(
     const rec: QbRecord = {
       [f.relatedItem]: { value: costItemRecordId },
       [f.title]: { value: `${line.desc} (${line.pct}%)` },
+      // Same basis buildCostItemRecord just wrote: one lot at the award.
+      ...billBasisFields({
+        unitCost: input.award,
+        qty: 1,
+        unit: QB_AWARD.costItemUnit,
+      }),
       [f.billPct]: {
         // The whole number, as the schedule already rounded it to two decimals.
         // The fraction branch remains only so the constant above can be flipped

@@ -82,21 +82,38 @@ async function write(tableId: string, data: Raw[]): Promise<number[]> {
 }
 
 /** The cost item a PO's bills hang off, and what it is worth. */
-async function costItemFor(
-  poRecordId: number,
-): Promise<{ recordId: number; unitCost: number } | null> {
+/**
+ * The cost item a purchase order is billed against, and its basis.
+ *
+ * `contract` is what the milestones are a percentage of — unit cost times
+ * quantity. The three parts are returned as well, because a bill line copies
+ * them down rather than only the product, and a cost item billed by the hour
+ * must not be recorded on its bills as one lot.
+ */
+async function costItemFor(poRecordId: number): Promise<{
+  recordId: number;
+  contract: number;
+  unitCost: number;
+  qty: number;
+  unit: string;
+} | null> {
   const f = QB_AWARD.costItems;
   const rows = await queryAll({
     from: QB_AWARD.tables.costItems,
-    select: [f.recordId, f.unitCost, f.qty],
+    select: [f.recordId, f.unitCost, f.qty, f.unit],
     where: `{${f.relatedPO}.EX.${poRecordId}}`,
     sortBy: [{ fieldId: f.recordId, order: "ASC" }],
   });
   const first = rows[0] as Raw | undefined;
   if (!first) return null;
+  const unitCost = num(first, f.unitCost);
+  const qty = num(first, f.qty) || 1;
   return {
     recordId: num(first, f.recordId),
-    unitCost: num(first, f.unitCost) * (num(first, f.qty) || 1),
+    contract: unitCost * qty,
+    unitCost,
+    qty,
+    unit: str(first, f.unit),
   };
 }
 
@@ -286,7 +303,7 @@ export async function GET(request: Request) {
         ok: true,
         configured: true,
         costItemRecordId: costItem.recordId,
-        unitCost: costItem.unitCost,
+        unitCost: costItem.contract,
         qbLineItem: "account" in account ? account.account : null,
         qbLineItemError: "error" in account ? account.error : undefined,
         bills: await billsFor(costItem.recordId),
@@ -523,7 +540,7 @@ export async function POST(request: Request) {
      * what they are worth is not up to it.
      */
     const existing = await billsFor(costItem.recordId);
-    const contract = costItem.unitCost || Number(body.totalCost) || 0;
+    const contract = costItem.contract || Number(body.totalCost) || 0;
     const rows = billRows(region.key, jobType, contract, existing);
     if (!rows.length) {
       return NextResponse.json(
@@ -561,6 +578,11 @@ export async function POST(request: Request) {
           costItemRecordId: costItem.recordId,
           jobRecordId: Number(body.jobRecordId) || 0,
           qbLineItemLabel: account.label,
+          basis: {
+            unitCost: costItem.unitCost,
+            qty: costItem.qty,
+            unit: costItem.unit,
+          },
           row,
           backCharge: change.backCharge,
           backChargeDesc: change.backChargeDesc,

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   EMPTY_CATEGORIES,
   QB_AWARD,
+  billBasisFields,
   buildBillRecords,
   buildCostItemRecord,
   buildInsuranceRecord,
@@ -645,4 +646,60 @@ test("a contract award carries no exclusions text", () => {
     }),
   );
   assert.equal(val(po, QB_AWARD.pos.itemsNotIncluded), undefined);
+});
+
+test("a bill line carries the basis its percentage is a percentage of", () => {
+  /*
+   * Checked against bill #78 in the live table, which is the shape every
+   * bill written outside this app takes: $130 x 6.5 hrs = $845 builder cost,
+   * billed at 40% for $338. Ours wrote the 40% and the $338 and left the
+   * four basis fields empty, so the row was right and unreadable.
+   */
+  const f = QB_AWARD.billLines;
+  const basis = billBasisFields({ unitCost: 130, qty: 6.5, unit: "hrs" });
+  assert.equal(basis[f.unitCost].value, 130);
+  assert.equal(basis[f.qty].value, 6.5);
+  assert.equal(basis[f.unit].value, "hrs");
+  assert.equal(basis[f.builderCost].value, 845);
+});
+
+test("the basis is rounded to cents, like everything else that reaches Quickbase", () => {
+  const f = QB_AWARD.billLines;
+  // An award of 178275.2272727273 once reached Unit Cost unrounded and put
+  // the bills a fraction of a cent out.
+  const basis = billBasisFields({ unitCost: 178275.2272727273, qty: 1, unit: "LS" });
+  assert.equal(basis[f.unitCost].value, 178275.23);
+  assert.equal(basis[f.builderCost].value, 178275.23);
+});
+
+test("a missing quantity bills as one lot rather than as nothing", () => {
+  const f = QB_AWARD.billLines;
+  // Quantity is blank on some cost items. Multiplying by it would make the
+  // builder cost zero, which is worse than the blank we are fixing.
+  const basis = billBasisFields({ unitCost: 500, qty: 0, unit: "" });
+  assert.equal(basis[f.qty].value, 1);
+  assert.equal(basis[f.builderCost].value, 500);
+});
+
+test("every award bill line carries the award as its basis", () => {
+  const f = QB_AWARD.billLines;
+  const bills = buildBillRecords(
+    input({ region: "PR", award: 79825, jobType: "Reconstruction" }),
+    4242,
+    { id: 233, label: "Subcontractors" },
+  );
+
+  assert.ok(bills.length > 1, "a Reconstruction award bills in milestones");
+  for (const b of bills) {
+    assert.equal(b[f.unitCost].value, 79825);
+    assert.equal(b[f.qty].value, 1);
+    assert.equal(b[f.unit].value, "LS");
+    // Repeated, not divided: it is the basis each percentage applies to, and
+    // nothing rolls these up, so repeating it inflates no total.
+    assert.equal(b[f.builderCost].value, 79825);
+  }
+
+  // The draws still add up to the award, which the basis must not disturb.
+  const billed = bills.reduce((sum, b) => sum + Number(b[f.billAmount].value), 0);
+  assert.equal(Math.round(billed * 100) / 100, 79825);
 });

@@ -1,4 +1,4 @@
-import { QB_AWARD, type QbRecord } from "./qb-award";
+import { QB_AWARD, billBasisFields, type QbRecord } from "./qb-award";
 import { regionFor, type RegionKey } from "./regions";
 import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
 
@@ -198,11 +198,14 @@ export function buildBillRecord(input: {
   row: BillRow;
   backCharge: number;
   backChargeDesc: string;
+  /** The parent cost item's basis, copied down as this table does. */
+  basis?: { unitCost: number; qty: number; unit: string };
 }): QbRecord {
   const f = QB_AWARD.billLines;
   const rec: QbRecord = {
     [f.relatedItem]: { value: input.costItemRecordId },
     [f.title]: { value: billTitle(input.row.desc, input.row.pct) },
+    ...(input.basis ? billBasisFields(input.basis) : {}),
     // Whole number: Quickbase divides a percent field by 100 on write.
     [f.billPct]: {
       value: QB_AWARD.billPctAsFraction ? input.row.pct / 100 : input.row.pct,

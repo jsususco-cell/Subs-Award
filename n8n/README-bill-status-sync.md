@@ -19,13 +19,29 @@ would live in the workflow JSON and every export of it), the realm is the US
 company, and a match is refused unless QuickBooks' `TotalAmt` equals the
 Quickbase Bill Amount to the cent.
 
-## What it still will not do
+## Both QuickBooks companies, since 2026-10-08
 
-**Puerto Rico.** A QuickBooks OAuth credential belongs to one company, so one
-HTTP node cannot reach both. Only the US credential is wired, so PR bills do not
-match — skipped, not mis-written, which is what the amount guard buys. Covering
-PR needs a second node pair with `PR - Production` / realm `9341456981104069`,
-as the Payment Sync has.
+A QBO OAuth credential belongs to one company, so one HTTP node can only ever
+see one. The reference is now looked up in **both** and the answers compared:
+
+    Normalize -> Query QBO Bill — US -> Query QBO Bill — PR -> Compute
+
+- exactly one company has that DocNumber **at the matching amount** -> use it,
+  and record which company it came from
+- both do -> ambiguous, skipped and reported, never guessed
+- neither -> no match
+
+Both lookups continue on error, so one company being unreachable still leaves
+the other able to match.
+
+`Query QBO Linked BillPayments` and `Assemble Comparison Output` were removed
+with this. They existed to derive Date Paid, which this workflow has never
+written and which the Payment Sync already writes correctly across both
+companies. Status and Amount Paid both come from the Bill itself (TotalAmt,
+Balance), so nothing was lost — and keeping them would have meant a second pair
+of per-realm nodes for a field somebody else owns.
+
+## What it still will not do
 
 **The backlog.** Its row filter is `{154.EX.'Linked'}AND{123.XEX.''}`, and
 *Linked to Quickbooks* (154) is blank on 1,336 of the 1,417 bills showing the

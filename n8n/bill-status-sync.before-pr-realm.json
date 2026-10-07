@@ -1,0 +1,1062 @@
+{
+  "id": "NPt1efRbP74FT5yw",
+  "name": "QBO Bill Status Sync — Stage 2 (Write-back)",
+  "description": null,
+  "active": true,
+  "activeVersionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+  "createdAt": "2026-07-17T18:06:02.865Z",
+  "updatedAt": "2026-10-07T20:05:48.443Z",
+  "isArchived": false,
+  "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+  "versionCounter": 17,
+  "sourceWorkflowId": null,
+  "triggerCount": 1,
+  "nodes": [
+    {
+      "id": "manual_trigger",
+      "name": "Manual Trigger — Run Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        320
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "schedule_trigger",
+      "name": "Schedule Trigger — Daily 06:00",
+      "notes": "Fires 06:00 America/Chicago — the timezone is set in Workflow Settings. Before 2026-10-08 no timezone was set, so it followed the server default (Asia/Manila) and the cron was never armed. Any API save of this workflow MUST be followed by deactivate -> activate, or n8n keeps the old (or no) cron registered.",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        544
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "batch_config",
+      "name": "Set Batch Config (BATCH_LIMIT)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        432
+      ],
+      "parameters": {
+        "jsCode": "// ── BATCH_LIMIT ────────────────────────────────────────────────────────────────────────────\n// The ONE place to control how many Quickbase rows are processed AND written per run.\n// SHIPPED DEFAULT = 5 for a controlled first write-back.\n// After you verify those 5 rows updated correctly in Quickbase, raise this\n// (e.g. 1000) — or page through with SKIP — for a full run.\nconst BATCH_LIMIT = 5;\nconst SKIP = 0; // pagination offset; for a full run, increase by BATCH_LIMIT per page\nreturn [{ json: { BATCH_LIMIT, SKIP } }];\n"
+      }
+    },
+    {
+      "id": "qb_query",
+      "name": "Query Quickbase Billing Line Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        432
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.quickbase.com/v1/records/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "QB-Realm-Hostname",
+              "value": "byrdsonservices.quickbase.com"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: 'bum6mrfti', select: [3, 123, 76, 49, 14, 143, 12, 154], where: \"{154.EX.'Linked'}AND{123.XEX.''}\", options: { skip: $json.SKIP, top: $json.BATCH_LIMIT } }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mcl3DtqT5jquGme8",
+          "name": "Quickbase"
+        }
+      }
+    },
+    {
+      "id": "normalize",
+      "name": "Normalize Quickbase Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        432
+      ],
+      "parameters": {
+        "jsCode": "// Split the Quickbase /records/query response into one item per bill.\n// Response shape: { data: [ { \"<fid>\": { value: ... }, ... } ] }\n// QBO realmId is a workflow-level placeholder set ONCE here; it flows to both QBO nodes.\nconst REALM_ID = '9341457224915997'; // QuickBooks US company. The only QBO credential wired\n// to this workflow is the US one, so Puerto Rico bills will not match here and are\n// skipped rather than mis-written. Covering PR needs a second node pair with the\n// 'PR - Production' credential and realm 9341456981104069.\n\nconst resp = $input.first().json;\nconst rows = Array.isArray(resp.data) ? resp.data : [];\nconst fv = (row, fid) => (row && row[fid] && row[fid].value !== undefined ? row[fid].value : null);\n\nreturn rows.map((row) => {\n  const ref = fv(row, '123'); // Reference # — the match key (= QBO Bill DocNumber)\n  // Escape single quotes for the QBO query language by doubling them.\n  // Do NOT trim: trailing spaces are part of the stored key and are exactly what we test for.\n  const refEscaped = ref === null ? '' : String(ref).replace(/'/g, \"''\");\n  return {\n    json: {\n      realmId: REALM_ID,\n      recordId: fv(row, '3'),              // Record ID#\n      ref: ref,                             // Reference # (key used)\n      refEscaped: refEscaped,               // escaped for QBO WHERE clause\n      billId: fv(row, '76'),                // Bill ID#\n      billAmount: fv(row, '49'),            // Bill Amount\n      currentStatus: fv(row, '14'),         // Status (current Quickbase value)\n      currentAmountPaid: fv(row, '143'),    // Amount Paid (current Quickbase value)\n      currentDatePaid: fv(row, '12'),       // Date Paid (current Quickbase value)\n      linkedToQuickbooks: fv(row, '154')\n    },\n    pairedItem: { item: 0 }\n  };\n});\n"
+      }
+    },
+    {
+      "id": "qbo_bill",
+      "name": "Query QBO Bill by DocNumber",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "onError": "continueRegularOutput",
+      "position": [
+        912,
+        432
+      ],
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/{{ $json.realmId }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "=SELECT * FROM Bill WHERE DocNumber = '{{ $json.refEscaped }}'"
+            },
+            {
+              "name": "minorversion",
+              "value": "65"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "x621tPhwI7MQxxJj",
+          "name": "InProd - QBO"
+        }
+      }
+    },
+    {
+      "id": "compute",
+      "name": "Compute Status, Amount Paid & Extract Payment IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        432
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Compute Status & Amount Paid from the matched QBO Bill, and collect linked BillPayment IDs.\n// Runs once per item. $json = QBO Bill query response; the original Quickbase record is read\n// from the Normalize node via the paired item.\nconst rec = $('Normalize Quickbase Records').item.json;\nconst qbo = $json || {};\n\nconst bills = (qbo.QueryResponse && Array.isArray(qbo.QueryResponse.Bill)) ? qbo.QueryResponse.Bill : [];\nconst bill = bills[0] || null;\n\nlet matchFound = false;\nlet qboBalance = null;\nlet qboTotalAmt = null;\nlet computedStatus = '';\nlet computedAmountPaid = null;\nlet paymentIds = [];\n\n// Two QuickBooks companies can hold the same DocNumber, and this workflow can\n// only see one of them. Matching on the reference alone would let a bill from\n// the other company — or a reused number — write a real figure that belongs to\n// somebody else. The amount has to agree to the cent as well.\nconst qbBillAmountCents = rec.billAmount === null || rec.billAmount === ''\n  ? null\n  : Math.round(Number(rec.billAmount) * 100);\nlet amountMismatch = false;\n\nif (bill) {\n  const billTotalCents = Math.round(Number(bill.TotalAmt) * 100);\n  if (qbBillAmountCents !== null && billTotalCents !== qbBillAmountCents) {\n    // Found by reference, rejected on amount. Reported, never written.\n    amountMismatch = true;\n  }\n}\n\nif (bill && !amountMismatch) {\n  matchFound = true;\n  qboTotalAmt = Number(bill.TotalAmt);\n  qboBalance = Number(bill.Balance);\n  // Nothing paid (Balance == TotalAmt) -> Unpaid; any payment incl. partial -> Paid.\n  // Compare at cent level to avoid float noise.\n  const totalCents = Math.round(qboTotalAmt * 100);\n  const balCents = Math.round(qboBalance * 100);\n  computedStatus = (balCents === totalCents) ? 'Unpaid' : 'Paid';\n  computedAmountPaid = (totalCents - balCents) / 100;\n  // Collect linked BillPayment transaction IDs.\n  const linked = Array.isArray(bill.LinkedTxn) ? bill.LinkedTxn : [];\n  paymentIds = linked\n    .filter(t => t && t.TxnType === 'BillPayment' && t.TxnId != null)\n    .map(t => String(t.TxnId));\n}\n\n// Build an IN-clause for the follow-up BillPayment query. No linked payments -> '0' so the\n// request is still valid and simply returns an empty QueryResponse.\nconst hasPayments = paymentIds.length > 0;\nconst paymentInClause = hasPayments\n  ? paymentIds.map(id => `'${id.replace(/'/g, \"''\")}'`).join(',')\n  : \"'0'\";\n\nreturn {\n  json: {\n    realmId: rec.realmId,\n    recordId: rec.recordId,\n    ref: rec.ref,\n    matchFound,\n    amountMismatch,\n    qbBillAmount: rec.billAmount,\n    qboBalance,\n    qboTotalAmt,\n    computedStatus,\n    computedAmountPaid,\n    hasPayments,\n    paymentIds,\n    paymentInClause,\n    currentStatus: rec.currentStatus,\n    currentAmountPaid: rec.currentAmountPaid,\n    currentDatePaid: rec.currentDatePaid\n  }\n};\n"
+      }
+    },
+    {
+      "id": "qbo_payments",
+      "name": "Query QBO Linked BillPayments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "onError": "continueRegularOutput",
+      "position": [
+        1344,
+        432
+      ],
+      "parameters": {
+        "url": "=https://quickbooks.api.intuit.com/v3/company/{{ $json.realmId }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "=SELECT * FROM BillPayment WHERE Id IN ({{ $json.paymentInClause }})"
+            },
+            {
+              "name": "minorversion",
+              "value": "65"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "x621tPhwI7MQxxJj",
+          "name": "InProd - QBO"
+        }
+      }
+    },
+    {
+      "id": "assemble",
+      "name": "Assemble Comparison Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        432
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Assemble the final side-by-side comparison row. $json = BillPayment query response;\n// computed values come from the earlier compute node via the paired item.\nconst computed = $('Compute Status, Amount Paid & Extract Payment IDs').item.json;\nconst payResp = $json || {};\n\nconst payments = (payResp.QueryResponse && Array.isArray(payResp.QueryResponse.BillPayment))\n  ? payResp.QueryResponse.BillPayment : [];\n\n// Date Paid = latest TxnDate among linked bill payments (QBO TxnDate is yyyy-MM-dd, so lexical\n// sort gives the latest). Blank if none.\nlet computedDatePaid = '';\nif (computed.hasPayments && payments.length > 0) {\n  const dates = payments.map(p => p.TxnDate).filter(Boolean).sort();\n  computedDatePaid = dates.length ? dates[dates.length - 1] : '';\n}\n\nreturn {\n  json: {\n    recordId: computed.recordId,\n    ref: computed.ref,                         // the match key tested (Reference # / DocNumber)\n    matchFound: computed.matchFound,\n    amountMismatch: computed.amountMismatch === true,\n    qbBillAmount: computed.qbBillAmount,\n    qboBalance: computed.qboBalance,\n    qboTotalAmt: computed.qboTotalAmt,\n    computedStatus: computed.computedStatus,\n    computedAmountPaid: computed.computedAmountPaid,\n    computedDatePaid: computedDatePaid,\n    currentStatus: computed.currentStatus,\n    currentAmountPaid: computed.currentAmountPaid,\n    currentDatePaid: computed.currentDatePaid\n  }\n};\n"
+      }
+    },
+    {
+      "id": "if_match",
+      "name": "IF matchFound === true",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1792,
+        432
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond_match",
+              "leftValue": "={{ $json.matchFound }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "build_upsert",
+      "name": "Build Upsert Payload (matched rows)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2032,
+        304
+      ],
+      "parameters": {
+        "jsCode": "// Build the Quickbase bulk-upsert payload from matched rows only.\n// Merge key = field 3 (Record ID#) so writes UPDATE existing rows (never create).\n// Chunked to <= 100 records per request (Quickbase bulk-upsert safety cap).\nconst CHUNK_SIZE = 100;\nconst rows = [];\n\nfor (const it of $input.all()) {\n  const r = it.json;\n  if (r.matchFound !== true) continue; // guard: never write unmatched rows\n\n  const record = {\n    \"3\":   { value: r.recordId },            // Record ID# — merge/upsert key (keyFieldId=3)\n    \"14\":  { value: r.computedStatus },      // Status: exactly \"Paid\" or \"Unpaid\"\n    \"143\": { value: r.computedAmountPaid }   // Amount Paid (currency)\n  };\n\n  // Date Paid (field 12, timestamp): include ONLY when a payment date exists.\n  // Omit entirely when blank so an existing Quickbase value is NOT wiped out.\n  // field 12 is a timestamp -> send ISO 8601. Noon UTC avoids the calendar date\n  // shifting a day earlier when Quickbase renders in a US timezone.\n  if (r.computedDatePaid) {\n    record[\"12\"] = { value: `${r.computedDatePaid}T12:00:00Z` };\n  }\n\n  rows.push({\n    record,\n    _audit: {\n      recordId: r.recordId,\n      ref: r.ref,\n      status: r.computedStatus,\n      amountPaid: r.computedAmountPaid,\n      datePaid: r.computedDatePaid || null\n    }\n  });\n}\n\nconst out = [];\nfor (let i = 0; i < rows.length; i += CHUNK_SIZE) {\n  const chunk = rows.slice(i, i + CHUNK_SIZE);\n  out.push({\n    json: {\n      chunkIndex: out.length,\n      to: \"bum6mrfti\",\n      data: chunk.map(c => c.record),\n      fieldsToReturn: [3, 14, 143, 12],\n      _written: chunk.map(c => c._audit)\n    }\n  });\n}\n// If nothing matched, emit nothing; Summarize still reports skipped via the Assemble node.\nreturn out;\n"
+      }
+    },
+    {
+      "id": "qb_upsert",
+      "name": "Upsert to Quickbase (write-back)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "onError": "continueRegularOutput",
+      "position": [
+        2240,
+        304
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.quickbase.com/v1/records",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "QB-Realm-Hostname",
+              "value": "byrdsonservices.quickbase.com"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $json.to, data: $json.data, mergeFieldId: 3, fieldsToReturn: $json.fieldsToReturn }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mcl3DtqT5jquGme8",
+          "name": "Quickbase"
+        }
+      }
+    },
+    {
+      "id": "summarize",
+      "name": "Summarize Write-back Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        304
+      ],
+      "parameters": {
+        "jsCode": "// Summarize the write-back: what was updated, what was skipped (no match), and any errors.\nconst responses = $input.all(); // one item per upsert chunk (empty if nothing matched)\n\n// Rows we attempted to write (from the payload builder, across all chunks)\nlet attempted = [];\ntry {\n  for (const b of $('Build Upsert Payload (matched rows)').all()) {\n    attempted = attempted.concat(b.json._written || []);\n  }\n} catch (e) { /* builder produced no items */ }\n\n// Rows skipped because no QBO match was found (never written).\nconst skipped = $('Assemble Comparison Output').all()\n  .map(a => a.json)\n  .filter(r => r.matchFound !== true)\n  .map(r => ({ recordId: r.recordId, ref: r.ref }));\n\nlet updatedCount = 0;\nconst unchangedRecordIds = [];\nconst lineErrors = [];\n\nresponses.forEach((resp, idx) => {\n  const body = resp.json || {};\n  // onError=continue may surface an error object instead of a normal response.\n  if (body.error || (body.message && !body.metadata)) {\n    lineErrors.push({ chunk: idx, error: body.error || body.message });\n    return;\n  }\n  const meta = body.metadata || {};\n  updatedCount += (meta.updatedRecordIds || []).length;\n  (meta.unchangedRecordIds || []).forEach(id => unchangedRecordIds.push(id));\n  if (meta.lineErrors && typeof meta.lineErrors === 'object') {\n    for (const [line, errs] of Object.entries(meta.lineErrors)) {\n      lineErrors.push({ chunk: idx, line, errors: errs });\n    }\n  }\n});\n\nreturn [{\n  json: {\n    summary: {\n      matchedAttempted: attempted.length,\n      updated: updatedCount,\n      unchanged: unchangedRecordIds.length,\n      skippedNoMatch: skipped.length,\n      lineErrorCount: lineErrors.length\n    },\n    updatedRecords: attempted,\n    skipped,\n    unchangedRecordIds,\n    lineErrors\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "skipped_noop",
+      "name": "Skipped — No Match (No-op Log)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        560
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Manual Trigger — Run Test": {
+      "main": [
+        [
+          {
+            "node": "Set Batch Config (BATCH_LIMIT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger — Daily 06:00": {
+      "main": [
+        [
+          {
+            "node": "Set Batch Config (BATCH_LIMIT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Batch Config (BATCH_LIMIT)": {
+      "main": [
+        [
+          {
+            "node": "Query Quickbase Billing Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Quickbase Billing Line Items": {
+      "main": [
+        [
+          {
+            "node": "Normalize Quickbase Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Quickbase Records": {
+      "main": [
+        [
+          {
+            "node": "Query QBO Bill by DocNumber",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query QBO Bill by DocNumber": {
+      "main": [
+        [
+          {
+            "node": "Compute Status, Amount Paid & Extract Payment IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Status, Amount Paid & Extract Payment IDs": {
+      "main": [
+        [
+          {
+            "node": "Query QBO Linked BillPayments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query QBO Linked BillPayments": {
+      "main": [
+        [
+          {
+            "node": "Assemble Comparison Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Comparison Output": {
+      "main": [
+        [
+          {
+            "node": "IF matchFound === true",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF matchFound === true": {
+      "main": [
+        [
+          {
+            "node": "Build Upsert Payload (matched rows)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skipped — No Match (No-op Log)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Upsert Payload (matched rows)": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Quickbase (write-back)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Quickbase (write-back)": {
+      "main": [
+        [
+          {
+            "node": "Summarize Write-back Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodeGroups": [],
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "2ylZYR1i3gnPC2xV",
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "America/Chicago"
+  },
+  "staticData": {
+    "node:Schedule Trigger — Daily 06:00": {
+      "recurrenceRules": [
+        null
+      ],
+      "recurrenceRuleSignatures": [
+        null
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": null,
+  "tags": [],
+  "shared": [
+    {
+      "role": "workflow:owner",
+      "workflowId": "NPt1efRbP74FT5yw",
+      "projectId": "Ptv9mQJ4WtLfWfwR",
+      "project": {
+        "id": "Ptv9mQJ4WtLfWfwR",
+        "name": "Byrdson IT Team <it@byrdsonservices.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "2b9d921e-2b1f-4f6b-bf37-06acb3b9ccc6",
+        "createdAt": "2025-07-07T20:04:28.444Z",
+        "updatedAt": "2025-07-07T20:04:53.376Z"
+      },
+      "createdAt": "2026-07-17T22:24:37.338Z",
+      "updatedAt": "2026-07-17T22:24:37.338Z"
+    }
+  ],
+  "activeVersion": {
+    "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+    "workflowId": "NPt1efRbP74FT5yw",
+    "nodes": [
+      {
+        "id": "manual_trigger",
+        "name": "Manual Trigger — Run Test",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          320
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "schedule_trigger",
+        "name": "Schedule Trigger — Daily 06:00",
+        "notes": "Fires 06:00 America/Chicago — the timezone is set in Workflow Settings. Before 2026-10-08 no timezone was set, so it followed the server default (Asia/Manila) and the cron was never armed. Any API save of this workflow MUST be followed by deactivate -> activate, or n8n keeps the old (or no) cron registered.",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          0,
+          544
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 6
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "batch_config",
+        "name": "Set Batch Config (BATCH_LIMIT)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          432
+        ],
+        "parameters": {
+          "jsCode": "// ── BATCH_LIMIT ────────────────────────────────────────────────────────────────────────────\n// The ONE place to control how many Quickbase rows are processed AND written per run.\n// SHIPPED DEFAULT = 5 for a controlled first write-back.\n// After you verify those 5 rows updated correctly in Quickbase, raise this\n// (e.g. 1000) — or page through with SKIP — for a full run.\nconst BATCH_LIMIT = 5;\nconst SKIP = 0; // pagination offset; for a full run, increase by BATCH_LIMIT per page\nreturn [{ json: { BATCH_LIMIT, SKIP } }];\n"
+        }
+      },
+      {
+        "id": "qb_query",
+        "name": "Query Quickbase Billing Line Items",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          464,
+          432
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.quickbase.com/v1/records/query",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "QB-Realm-Hostname",
+                "value": "byrdsonservices.quickbase.com"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "User-Agent",
+                "value": "n8n"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ from: 'bum6mrfti', select: [3, 123, 76, 49, 14, 143, 12, 154], where: \"{154.EX.'Linked'}AND{123.XEX.''}\", options: { skip: $json.SKIP, top: $json.BATCH_LIMIT } }) }}",
+          "options": {},
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth"
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mcl3DtqT5jquGme8",
+            "name": "Quickbase"
+          }
+        }
+      },
+      {
+        "id": "normalize",
+        "name": "Normalize Quickbase Records",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          688,
+          432
+        ],
+        "parameters": {
+          "jsCode": "// Split the Quickbase /records/query response into one item per bill.\n// Response shape: { data: [ { \"<fid>\": { value: ... }, ... } ] }\n// QBO realmId is a workflow-level placeholder set ONCE here; it flows to both QBO nodes.\nconst REALM_ID = '9341457224915997'; // QuickBooks US company. The only QBO credential wired\n// to this workflow is the US one, so Puerto Rico bills will not match here and are\n// skipped rather than mis-written. Covering PR needs a second node pair with the\n// 'PR - Production' credential and realm 9341456981104069.\n\nconst resp = $input.first().json;\nconst rows = Array.isArray(resp.data) ? resp.data : [];\nconst fv = (row, fid) => (row && row[fid] && row[fid].value !== undefined ? row[fid].value : null);\n\nreturn rows.map((row) => {\n  const ref = fv(row, '123'); // Reference # — the match key (= QBO Bill DocNumber)\n  // Escape single quotes for the QBO query language by doubling them.\n  // Do NOT trim: trailing spaces are part of the stored key and are exactly what we test for.\n  const refEscaped = ref === null ? '' : String(ref).replace(/'/g, \"''\");\n  return {\n    json: {\n      realmId: REALM_ID,\n      recordId: fv(row, '3'),              // Record ID#\n      ref: ref,                             // Reference # (key used)\n      refEscaped: refEscaped,               // escaped for QBO WHERE clause\n      billId: fv(row, '76'),                // Bill ID#\n      billAmount: fv(row, '49'),            // Bill Amount\n      currentStatus: fv(row, '14'),         // Status (current Quickbase value)\n      currentAmountPaid: fv(row, '143'),    // Amount Paid (current Quickbase value)\n      currentDatePaid: fv(row, '12'),       // Date Paid (current Quickbase value)\n      linkedToQuickbooks: fv(row, '154')\n    },\n    pairedItem: { item: 0 }\n  };\n});\n"
+        }
+      },
+      {
+        "id": "qbo_bill",
+        "name": "Query QBO Bill by DocNumber",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "onError": "continueRegularOutput",
+        "position": [
+          912,
+          432
+        ],
+        "parameters": {
+          "url": "=https://quickbooks.api.intuit.com/v3/company/{{ $json.realmId }}/query",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "=SELECT * FROM Bill WHERE DocNumber = '{{ $json.refEscaped }}'"
+              },
+              {
+                "name": "minorversion",
+                "value": "65"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "x621tPhwI7MQxxJj",
+            "name": "InProd - QBO"
+          }
+        }
+      },
+      {
+        "id": "compute",
+        "name": "Compute Status, Amount Paid & Extract Payment IDs",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1120,
+          432
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "// Compute Status & Amount Paid from the matched QBO Bill, and collect linked BillPayment IDs.\n// Runs once per item. $json = QBO Bill query response; the original Quickbase record is read\n// from the Normalize node via the paired item.\nconst rec = $('Normalize Quickbase Records').item.json;\nconst qbo = $json || {};\n\nconst bills = (qbo.QueryResponse && Array.isArray(qbo.QueryResponse.Bill)) ? qbo.QueryResponse.Bill : [];\nconst bill = bills[0] || null;\n\nlet matchFound = false;\nlet qboBalance = null;\nlet qboTotalAmt = null;\nlet computedStatus = '';\nlet computedAmountPaid = null;\nlet paymentIds = [];\n\n// Two QuickBooks companies can hold the same DocNumber, and this workflow can\n// only see one of them. Matching on the reference alone would let a bill from\n// the other company — or a reused number — write a real figure that belongs to\n// somebody else. The amount has to agree to the cent as well.\nconst qbBillAmountCents = rec.billAmount === null || rec.billAmount === ''\n  ? null\n  : Math.round(Number(rec.billAmount) * 100);\nlet amountMismatch = false;\n\nif (bill) {\n  const billTotalCents = Math.round(Number(bill.TotalAmt) * 100);\n  if (qbBillAmountCents !== null && billTotalCents !== qbBillAmountCents) {\n    // Found by reference, rejected on amount. Reported, never written.\n    amountMismatch = true;\n  }\n}\n\nif (bill && !amountMismatch) {\n  matchFound = true;\n  qboTotalAmt = Number(bill.TotalAmt);\n  qboBalance = Number(bill.Balance);\n  // Nothing paid (Balance == TotalAmt) -> Unpaid; any payment incl. partial -> Paid.\n  // Compare at cent level to avoid float noise.\n  const totalCents = Math.round(qboTotalAmt * 100);\n  const balCents = Math.round(qboBalance * 100);\n  computedStatus = (balCents === totalCents) ? 'Unpaid' : 'Paid';\n  computedAmountPaid = (totalCents - balCents) / 100;\n  // Collect linked BillPayment transaction IDs.\n  const linked = Array.isArray(bill.LinkedTxn) ? bill.LinkedTxn : [];\n  paymentIds = linked\n    .filter(t => t && t.TxnType === 'BillPayment' && t.TxnId != null)\n    .map(t => String(t.TxnId));\n}\n\n// Build an IN-clause for the follow-up BillPayment query. No linked payments -> '0' so the\n// request is still valid and simply returns an empty QueryResponse.\nconst hasPayments = paymentIds.length > 0;\nconst paymentInClause = hasPayments\n  ? paymentIds.map(id => `'${id.replace(/'/g, \"''\")}'`).join(',')\n  : \"'0'\";\n\nreturn {\n  json: {\n    realmId: rec.realmId,\n    recordId: rec.recordId,\n    ref: rec.ref,\n    matchFound,\n    amountMismatch,\n    qbBillAmount: rec.billAmount,\n    qboBalance,\n    qboTotalAmt,\n    computedStatus,\n    computedAmountPaid,\n    hasPayments,\n    paymentIds,\n    paymentInClause,\n    currentStatus: rec.currentStatus,\n    currentAmountPaid: rec.currentAmountPaid,\n    currentDatePaid: rec.currentDatePaid\n  }\n};\n"
+        }
+      },
+      {
+        "id": "qbo_payments",
+        "name": "Query QBO Linked BillPayments",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "onError": "continueRegularOutput",
+        "position": [
+          1344,
+          432
+        ],
+        "parameters": {
+          "url": "=https://quickbooks.api.intuit.com/v3/company/{{ $json.realmId }}/query",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "quickBooksOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "=SELECT * FROM BillPayment WHERE Id IN ({{ $json.paymentInClause }})"
+              },
+              {
+                "name": "minorversion",
+                "value": "65"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "credentials": {
+          "quickBooksOAuth2Api": {
+            "id": "x621tPhwI7MQxxJj",
+            "name": "InProd - QBO"
+          }
+        }
+      },
+      {
+        "id": "assemble",
+        "name": "Assemble Comparison Output",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1568,
+          432
+        ],
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "// Assemble the final side-by-side comparison row. $json = BillPayment query response;\n// computed values come from the earlier compute node via the paired item.\nconst computed = $('Compute Status, Amount Paid & Extract Payment IDs').item.json;\nconst payResp = $json || {};\n\nconst payments = (payResp.QueryResponse && Array.isArray(payResp.QueryResponse.BillPayment))\n  ? payResp.QueryResponse.BillPayment : [];\n\n// Date Paid = latest TxnDate among linked bill payments (QBO TxnDate is yyyy-MM-dd, so lexical\n// sort gives the latest). Blank if none.\nlet computedDatePaid = '';\nif (computed.hasPayments && payments.length > 0) {\n  const dates = payments.map(p => p.TxnDate).filter(Boolean).sort();\n  computedDatePaid = dates.length ? dates[dates.length - 1] : '';\n}\n\nreturn {\n  json: {\n    recordId: computed.recordId,\n    ref: computed.ref,                         // the match key tested (Reference # / DocNumber)\n    matchFound: computed.matchFound,\n    amountMismatch: computed.amountMismatch === true,\n    qbBillAmount: computed.qbBillAmount,\n    qboBalance: computed.qboBalance,\n    qboTotalAmt: computed.qboTotalAmt,\n    computedStatus: computed.computedStatus,\n    computedAmountPaid: computed.computedAmountPaid,\n    computedDatePaid: computedDatePaid,\n    currentStatus: computed.currentStatus,\n    currentAmountPaid: computed.currentAmountPaid,\n    currentDatePaid: computed.currentDatePaid\n  }\n};\n"
+        }
+      },
+      {
+        "id": "if_match",
+        "name": "IF matchFound === true",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1792,
+          432
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "cond_match",
+                "leftValue": "={{ $json.matchFound }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "build_upsert",
+        "name": "Build Upsert Payload (matched rows)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2032,
+          304
+        ],
+        "parameters": {
+          "jsCode": "// Build the Quickbase bulk-upsert payload from matched rows only.\n// Merge key = field 3 (Record ID#) so writes UPDATE existing rows (never create).\n// Chunked to <= 100 records per request (Quickbase bulk-upsert safety cap).\nconst CHUNK_SIZE = 100;\nconst rows = [];\n\nfor (const it of $input.all()) {\n  const r = it.json;\n  if (r.matchFound !== true) continue; // guard: never write unmatched rows\n\n  const record = {\n    \"3\":   { value: r.recordId },            // Record ID# — merge/upsert key (keyFieldId=3)\n    \"14\":  { value: r.computedStatus },      // Status: exactly \"Paid\" or \"Unpaid\"\n    \"143\": { value: r.computedAmountPaid }   // Amount Paid (currency)\n  };\n\n  // Date Paid (field 12, timestamp): include ONLY when a payment date exists.\n  // Omit entirely when blank so an existing Quickbase value is NOT wiped out.\n  // field 12 is a timestamp -> send ISO 8601. Noon UTC avoids the calendar date\n  // shifting a day earlier when Quickbase renders in a US timezone.\n  if (r.computedDatePaid) {\n    record[\"12\"] = { value: `${r.computedDatePaid}T12:00:00Z` };\n  }\n\n  rows.push({\n    record,\n    _audit: {\n      recordId: r.recordId,\n      ref: r.ref,\n      status: r.computedStatus,\n      amountPaid: r.computedAmountPaid,\n      datePaid: r.computedDatePaid || null\n    }\n  });\n}\n\nconst out = [];\nfor (let i = 0; i < rows.length; i += CHUNK_SIZE) {\n  const chunk = rows.slice(i, i + CHUNK_SIZE);\n  out.push({\n    json: {\n      chunkIndex: out.length,\n      to: \"bum6mrfti\",\n      data: chunk.map(c => c.record),\n      fieldsToReturn: [3, 14, 143, 12],\n      _written: chunk.map(c => c._audit)\n    }\n  });\n}\n// If nothing matched, emit nothing; Summarize still reports skipped via the Assemble node.\nreturn out;\n"
+        }
+      },
+      {
+        "id": "qb_upsert",
+        "name": "Upsert to Quickbase (write-back)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "onError": "continueRegularOutput",
+        "position": [
+          2240,
+          304
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.quickbase.com/v1/records",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "QB-Realm-Hostname",
+                "value": "byrdsonservices.quickbase.com"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "User-Agent",
+                "value": "n8n"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ to: $json.to, data: $json.data, mergeFieldId: 3, fieldsToReturn: $json.fieldsToReturn }) }}",
+          "options": {},
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth"
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mcl3DtqT5jquGme8",
+            "name": "Quickbase"
+          }
+        }
+      },
+      {
+        "id": "summarize",
+        "name": "Summarize Write-back Results",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2464,
+          304
+        ],
+        "parameters": {
+          "jsCode": "// Summarize the write-back: what was updated, what was skipped (no match), and any errors.\nconst responses = $input.all(); // one item per upsert chunk (empty if nothing matched)\n\n// Rows we attempted to write (from the payload builder, across all chunks)\nlet attempted = [];\ntry {\n  for (const b of $('Build Upsert Payload (matched rows)').all()) {\n    attempted = attempted.concat(b.json._written || []);\n  }\n} catch (e) { /* builder produced no items */ }\n\n// Rows skipped because no QBO match was found (never written).\nconst skipped = $('Assemble Comparison Output').all()\n  .map(a => a.json)\n  .filter(r => r.matchFound !== true)\n  .map(r => ({ recordId: r.recordId, ref: r.ref }));\n\nlet updatedCount = 0;\nconst unchangedRecordIds = [];\nconst lineErrors = [];\n\nresponses.forEach((resp, idx) => {\n  const body = resp.json || {};\n  // onError=continue may surface an error object instead of a normal response.\n  if (body.error || (body.message && !body.metadata)) {\n    lineErrors.push({ chunk: idx, error: body.error || body.message });\n    return;\n  }\n  const meta = body.metadata || {};\n  updatedCount += (meta.updatedRecordIds || []).length;\n  (meta.unchangedRecordIds || []).forEach(id => unchangedRecordIds.push(id));\n  if (meta.lineErrors && typeof meta.lineErrors === 'object') {\n    for (const [line, errs] of Object.entries(meta.lineErrors)) {\n      lineErrors.push({ chunk: idx, line, errors: errs });\n    }\n  }\n});\n\nreturn [{\n  json: {\n    summary: {\n      matchedAttempted: attempted.length,\n      updated: updatedCount,\n      unchanged: unchangedRecordIds.length,\n      skippedNoMatch: skipped.length,\n      lineErrorCount: lineErrors.length\n    },\n    updatedRecords: attempted,\n    skipped,\n    unchangedRecordIds,\n    lineErrors\n  }\n}];\n"
+        }
+      },
+      {
+        "id": "skipped_noop",
+        "name": "Skipped — No Match (No-op Log)",
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [
+          2032,
+          560
+        ],
+        "parameters": {}
+      }
+    ],
+    "connections": {
+      "Manual Trigger — Run Test": {
+        "main": [
+          [
+            {
+              "node": "Set Batch Config (BATCH_LIMIT)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger — Daily 06:00": {
+        "main": [
+          [
+            {
+              "node": "Set Batch Config (BATCH_LIMIT)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Set Batch Config (BATCH_LIMIT)": {
+        "main": [
+          [
+            {
+              "node": "Query Quickbase Billing Line Items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Query Quickbase Billing Line Items": {
+        "main": [
+          [
+            {
+              "node": "Normalize Quickbase Records",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Quickbase Records": {
+        "main": [
+          [
+            {
+              "node": "Query QBO Bill by DocNumber",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Query QBO Bill by DocNumber": {
+        "main": [
+          [
+            {
+              "node": "Compute Status, Amount Paid & Extract Payment IDs",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Compute Status, Amount Paid & Extract Payment IDs": {
+        "main": [
+          [
+            {
+              "node": "Query QBO Linked BillPayments",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Query QBO Linked BillPayments": {
+        "main": [
+          [
+            {
+              "node": "Assemble Comparison Output",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Assemble Comparison Output": {
+        "main": [
+          [
+            {
+              "node": "IF matchFound === true",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "IF matchFound === true": {
+        "main": [
+          [
+            {
+              "node": "Build Upsert Payload (matched rows)",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Skipped — No Match (No-op Log)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Upsert Payload (matched rows)": {
+        "main": [
+          [
+            {
+              "node": "Upsert to Quickbase (write-back)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert to Quickbase (write-back)": {
+        "main": [
+          [
+            {
+              "node": "Summarize Write-back Results",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "Byrdson IT Team",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "createdAt": "2026-10-07T20:04:25.333Z",
+    "updatedAt": "2026-10-07T20:04:25.333Z",
+    "workflowPublishHistory": [
+      {
+        "id": 5470,
+        "workflowId": "NPt1efRbP74FT5yw",
+        "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+        "event": "activated",
+        "userId": "2b9d921e-2b1f-4f6b-bf37-06acb3b9ccc6",
+        "createdAt": "2026-10-07T20:04:28.528Z"
+      },
+      {
+        "id": 5471,
+        "workflowId": "NPt1efRbP74FT5yw",
+        "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+        "event": "deactivated",
+        "userId": "2b9d921e-2b1f-4f6b-bf37-06acb3b9ccc6",
+        "createdAt": "2026-10-07T20:04:51.961Z"
+      },
+      {
+        "id": 5472,
+        "workflowId": "NPt1efRbP74FT5yw",
+        "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+        "event": "activated",
+        "userId": "2b9d921e-2b1f-4f6b-bf37-06acb3b9ccc6",
+        "createdAt": "2026-10-07T20:04:51.961Z"
+      },
+      {
+        "id": 5473,
+        "workflowId": "NPt1efRbP74FT5yw",
+        "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+        "event": "deactivated",
+        "userId": "2b9d921e-2b1f-4f6b-bf37-06acb3b9ccc6",
+        "createdAt": "2026-10-07T20:05:06.682Z"
+      },
+      {
+        "id": 5474,
+        "workflowId": "NPt1efRbP74FT5yw",
+        "versionId": "3329bedb-e8df-4106-94a1-cda51bc85f9b",
+        "event": "activated",
+        "userId": "2b9d921e-2b1f-4f6b-bf37-06acb3b9ccc6",
+        "createdAt": "2026-10-07T20:05:51.725Z"
+      }
+    ]
+  }
+}

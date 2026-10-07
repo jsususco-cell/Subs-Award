@@ -47,8 +47,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, configured: false, items: [] });
   }
 
+  /*
+   * Vendor Status reads what a subcontractor already has, so it asks for every
+   * vendor in the region rather than the award bench. Cached separately — the
+   * two lists differ, and handing one request's answer to the other is how a
+   * screen quietly shows the wrong set.
+   */
+  const everyVendor = resource === "subs" && params.get("scope") === "all";
+
   // Cached per region: the Florida job list is not the Puerto Rico one.
-  const cacheKey = `${resource}:${region.key}`;
+  const cacheKey = `${resource}:${region.key}${everyVendor ? ":all" : ""}`;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < TTL_MS) {
     return NextResponse.json(hit.payload);
@@ -56,7 +64,9 @@ export async function GET(request: Request) {
 
   try {
     const { items, warning } =
-      resource === "jobs" ? await fetchJobs(region) : await fetchSubs(region);
+      resource === "jobs"
+        ? await fetchJobs(region)
+        : await fetchSubs(region, { everyVendor });
 
     const payload = {
       ok: true,

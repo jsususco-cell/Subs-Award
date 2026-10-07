@@ -216,6 +216,7 @@ async function countUnassigned(): Promise<number> {
 /** Vendors for a region — award-eligible ones only where the region says so. */
 export async function fetchSubs(
   region: RegionConfig,
+  opts: { everyVendor?: boolean } = {},
 ): Promise<{ items: SubOption[]; warning?: string }> {
   const f = QB_CONFIG.fields.vendors;
   const select: number[] = [f.recordId, f.company, f.trade];
@@ -226,8 +227,14 @@ export async function fetchSubs(
    * "Eligible for Award" is the approved bench in Puerto Rico. On the mainland
    * the field is barely maintained — two vendors carry it — so filtering on it
    * there leaves almost nobody to award to, and the region alone is the filter.
+   *
+   * `everyVendor` turns the bench off. It is for the screens that read what a
+   * subcontractor already has rather than choose who to award next: 41 of the
+   * 67 Puerto Rico subcontractors holding a purchase order are not on the
+   * bench, and Vendor Status could not find any of them.
    */
-  const eligible = region.awardEligibleOnly ? `{${f.eligible}.EX.true}` : "";
+  const eligible =
+    region.awardEligibleOnly && !opts.everyVendor ? `{${f.eligible}.EX.true}` : "";
   const regionOr = region.vendorRegions
     .map((v) => `{${f.region}.EX.'${v.replace(/'/g, "")}'}`)
     .join("OR");

@@ -291,7 +291,15 @@ test("the mainland is raised straight against a purchase order", () => {
     assert.equal(defaultRoute(REGIONS[key]), "award-po");
   }
 
-  assert.deepEqual(REGIONS.PR.routes, ["canopy", "award-po", "bill-po"]);
+  // Puerto Rico offers the same four and the Canopy upload on top, which is
+  // the one route that genuinely belongs to a region rather than to history.
+  assert.deepEqual(REGIONS.PR.routes, [
+    "canopy",
+    "award-po",
+    "bill-po",
+    "vendor-status",
+    "attachments",
+  ]);
   assert.ok(allowsRoute(REGIONS.PR, "canopy"));
   assert.equal(defaultRoute(REGIONS.PR), "canopy");
 });
@@ -334,11 +342,13 @@ test("the money is entered the way the region works", () => {
   for (const key of MAINLAND) {
     assert.equal(REGIONS[key].awardEntry, "contract");
     assert.ok(isContractEntry(REGIONS[key]));
-    // Vendor Status sits beside billing, where it is useful.
+  }
+  // Vendor Status sits beside billing, where it is useful, and that is true
+  // everywhere. Puerto Rico also reads it on Quickbase code page 59; having
+  // both is not a conflict, and this one is filtered to the region.
+  for (const key of REGION_KEYS) {
     assert.ok(allowsRoute(REGIONS[key], "vendor-status"));
   }
-  // Puerto Rico reads vendor status on Quickbase code page 59 instead.
-  assert.ok(!allowsRoute(REGIONS.PR, "vendor-status"));
 });
 
 test("each region posts to its own QuickBooks location", () => {

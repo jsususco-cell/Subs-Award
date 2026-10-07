@@ -188,7 +188,14 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
     insurance: "fondo",
     qboLocation: "PR",
     defaultProgram: "PR R3",
-    routes: ["canopy", "award-po", "bill-po"],
+    /*
+     * Vendor status and attachments arrived as mainland features and were
+     * simply never extended here; neither panel has ever had any
+     * region-specific logic, they take the region as a filter and nothing
+     * else. Puerto Rico has the purchase orders, the draws and the shared
+     * Attachments table the same as anywhere.
+     */
+    routes: ["canopy", "award-po", "bill-po", "vendor-status", "attachments"],
     awardEntry: "categories",
     awardEligibleOnly: true,
     poDocument: false,

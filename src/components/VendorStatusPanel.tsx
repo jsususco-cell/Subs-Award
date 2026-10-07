@@ -3,7 +3,7 @@
 import { useState } from "react";
 import LookupField from "./LookupField";
 import { money, pct as fmtPct } from "@/lib/format";
-import { loadSubs } from "@/lib/qb-client";
+import { loadEverySub } from "@/lib/qb-client";
 import type { PoOption } from "@/lib/bills";
 import { regionFor, type RegionKey } from "@/lib/regions";
 
@@ -70,11 +70,9 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
         <div className="p-4 sm:max-w-md">
           <LookupField
             region={region}
-            label={
-              cfg.awardEligibleOnly
-                ? "Subcontractor (award-eligible)"
-                : "Subcontractor"
-            }
+            /* Every subcontractor in the region, not the award bench — this
+               screen reads what somebody already has. */
+            label="Subcontractor"
             value={sub}
             placeholder="Company name"
             onChange={(v, extra) => {
@@ -82,7 +80,7 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
               void pickSub(extra?.recordId ?? "");
             }}
             loadChoices={async () => {
-              const r = await loadSubs(region);
+              const r = await loadEverySub(region);
               return {
                 configured: r.configured,
                 warning: r.warning,

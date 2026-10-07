@@ -35,15 +35,18 @@ const inflight = new Map<string, Promise<Lookup<unknown>>>();
 async function load<T>(
   resource: "jobs" | "subs",
   region: RegionKey,
+  scope?: "all",
 ): Promise<Lookup<T>> {
-  const key = `${resource}:${region}`;
+  const key = `${resource}:${region}${scope ? `:${scope}` : ""}`;
   const existing = inflight.get(key);
   if (existing) return existing as Promise<Lookup<T>>;
 
   const promise = (async (): Promise<Lookup<unknown>> => {
     try {
       const res = await fetch(
-        `/api/qb?resource=${resource}&region=${encodeURIComponent(region)}`,
+        `/api/qb?resource=${resource}&region=${encodeURIComponent(region)}${
+          scope ? `&scope=${scope}` : ""
+        }`,
       );
       const body = await res.json();
       if (!body.ok) {
@@ -82,6 +85,16 @@ export function loadJobs(region: RegionKey): Promise<Lookup<JobOption>> {
 
 export function loadSubs(region: RegionKey): Promise<Lookup<SubOption>> {
   return load<SubOption>("subs", region);
+}
+
+/**
+ * Every subcontractor in the region, bench or not.
+ *
+ * For the screens that read what somebody already has. Choosing who to award
+ * still uses loadSubs, which keeps Puerto Rico's approved bench.
+ */
+export function loadEverySub(region: RegionKey): Promise<Lookup<SubOption>> {
+  return load<SubOption>("subs", region, "all");
 }
 
 /** Drop the cached lookups so the next open refetches. */

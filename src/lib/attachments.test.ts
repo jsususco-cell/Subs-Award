@@ -7,7 +7,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   tooBig,
 } from "./attachments";
-import { REGIONS } from "./regions";
+import { REGION_KEYS, REGIONS } from "./regions";
 
 const ok = { jobRecordId: 1885, fileName: "invoice.pdf", bytes: 120_000 };
 
@@ -60,12 +60,14 @@ test("the categories are ones the table already uses", () => {
   );
 });
 
-test("attachments are offered on the mainland, and not in Puerto Rico", () => {
-  for (const key of ["FL", "NC", "TX", "LA"] as const) {
+test("attachments are offered in every region", () => {
+  // Mainland-only at first, because that is where the feature was built. The
+  // panel never had any region-specific logic and the Attachments table is
+  // shared, so Puerto Rico was missing it for no reason but history.
+  for (const key of REGION_KEYS) {
     assert.ok(
       REGIONS[key].routes.includes("attachments"),
       `${key} should offer attachments`,
     );
   }
-  assert.ok(!REGIONS.PR.routes.includes("attachments"));
 });

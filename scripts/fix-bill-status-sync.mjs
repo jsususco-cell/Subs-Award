@@ -51,7 +51,7 @@
  * needs a second node pair, as the Payment Sync has.
  */
 import { n8n } from "./n8n.mjs";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 
 const ID = "NPt1efRbP74FT5yw";
 const APPLY = process.argv.includes("--apply");

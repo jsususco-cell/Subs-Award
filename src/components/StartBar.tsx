@@ -134,44 +134,57 @@ export default function StartBar({ region, onRegion, mode, onMode, allowed, gran
             there is no Canopy scope upload here.
           </p>
         )}
-        <div
-          className={`grid gap-2 ${
-            offered.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"
-          }`}
-        >
+        {/*
+          One row, shared equally, wrapping only when the screen is too narrow
+          for it. The routes are a choice of five at most and each is two or
+          three words, so a card apiece was a block of chrome above the work.
+
+          The description moves out of the tile and under the row, showing the
+          chosen route's only. It still carries real information — "no scope
+          file", "break down more of a contract" — so it is kept rather than
+          dropped, just not repeated five times.
+        */}
+        <div className="flex flex-wrap gap-2">
           {offered.map((m) => {
             const active = mode === m.id;
             return (
               <label
                 key={m.id}
-                className={`cursor-pointer rounded-lg border px-3 py-2.5 transition ${
+                title={m.hint}
+                className={`flex min-w-0 flex-1 basis-36 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition ${
                   active
                     ? "border-navy-600 bg-navy-50 ring-1 ring-navy-600/30"
                     : "border-navy-200 bg-white hover:bg-navy-50/50"
                 }`}
               >
-                <span className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="mode"
-                    value={m.id}
-                    checked={active}
-                    onChange={() => onMode(m.id)}
-                    className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-navy-700)]"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-navy-800">
-                      {m.label}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-navy-600/70">
-                      {m.hint}
-                    </span>
-                  </span>
+                <input
+                  type="radio"
+                  name="mode"
+                  value={m.id}
+                  checked={active}
+                  onChange={() => onMode(m.id)}
+                  className="h-3.5 w-3.5 shrink-0 accent-[var(--color-navy-700)]"
+                />
+                {/* Wraps rather than truncating. A label clipped to "Bill an
+                    existing..." with no ellipsis to click is worse than a pill
+                    that grows a second line on a narrow screen. */}
+                <span
+                  className={`text-sm leading-tight ${
+                    active ? "font-semibold text-navy-800" : "font-medium text-navy-700"
+                  }`}
+                >
+                  {m.label}
                 </span>
               </label>
             );
           })}
         </div>
+
+        {offered.find((m) => m.id === mode)?.hint ? (
+          <p className="mt-2 text-xs leading-relaxed text-navy-600/70">
+            {offered.find((m) => m.id === mode)?.hint}
+          </p>
+        ) : null}
       </fieldset>
     </div>
   );

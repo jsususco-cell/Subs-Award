@@ -135,7 +135,7 @@ test("a back charge has to say what it was for", () => {
   assert.match(backChargeProblem(2000, "Materials", 1000) ?? "", /more than the bill/);
 });
 
-test("a new bill sends the whole percentage, not a fraction", () => {
+test("a new bill sends the fraction, not the whole percentage", () => {
   const rows = billRows("PR", "Repair", 1000, []);
   const rec = buildBillRecord({
     costItemRecordId: 500,
@@ -147,8 +147,9 @@ test("a new bill sends the whole percentage, not a fraction", () => {
   });
 
   assert.equal(val(rec, f.title), "Pago Inicial (50%)");
-  // 50, never 0.5 — Quickbase divides a percent field by 100 on write.
-  assert.equal(val(rec, f.billPct), 50);
+  // 0.5, never 50. Quickbase stores a percent field as the fraction and
+  // displays it times a hundred, so 50 here reports as 5000%.
+  assert.equal(val(rec, f.billPct), 0.5);
   assert.equal(val(rec, f.billAmount), 500);
   assert.equal(val(rec, f.relatedItem), 500);
   assert.equal(val(rec, f.relatedJob), 687);

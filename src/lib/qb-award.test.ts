@@ -145,42 +145,42 @@ test("the cost item holds the contract amount and the required QB line item", ()
   assert.equal(val(ci, f.relatedQbLineItem), ACCOUNT.id);
 });
 
-test("bill percentages are sent whole, because the API divides by 100", () => {
+test("bill percentages are sent as fractions, because that is what is stored", () => {
   /*
-   * Send 10, Quickbase stores 0.1, the record displays 10%. Reading a bill back
-   * shows the 0.1 and looks like an argument for sending fractions -- it is not,
-   * because a read shows what is stored, not what was sent.
+   * Send 0.5, Quickbase stores 0.5, the record displays 50%. There is no
+   * division on write.
    *
-   * Live bills #4300/#4319/#4328/#4344/#4352/#4400 are titled "Movilización
-   * (10%)" by the Quickbase award code page, which sends the whole number, and
-   * every one of them stores 0.1.
+   * This assertion ran the other way round until 2026-10-09, and the argument
+   * for it was good enough to fool a careful reading: bills storing 0.1 under
+   * the title "Movilización (10%)" look like proof that 10 went in and was
+   * divided. It is not, because nobody checked what the code page that wrote
+   * them actually sends — if it sends 0.1 then 0.1 is just what was stored.
+   *
+   * What settled it was a payload we control. The app sent 50 and bills #5374
+   * and #5375 store 50, reported as 5000%.
    */
-  assert.equal(QB_AWARD.billPctAsFraction, false);
+  assert.equal(QB_AWARD.billPctAsFraction, true);
 
   const bills = buildBillRecords(input(), 9001, ACCOUNT);
   const f = QB_AWARD.billLines;
   // Movilización is capped on this award, so its share is 5.61%, not 10%.
-  assert.equal(val(bills[0], f.billPct), 5.61);
-  assert.equal(val(bills[5], f.billPct), 20.98);
+  assert.equal(val(bills[0], f.billPct), 0.0561);
+  assert.equal(val(bills[5], f.billPct), 0.2098);
   assert.ok(
-    bills.every((b) => Number(val(b, f.billPct)) <= 100),
-    "no bill may exceed 100%",
-  );
-  // The regression this guards: a fraction here files the bill at 1/100th.
-  assert.ok(
-    bills.every((b) => Number(val(b, f.billPct)) > 1),
-    "a value at or below 1 means fractions crept back in",
+    bills.every((b) => Number(val(b, f.billPct)) <= 1),
+    "a value above 1 means whole numbers crept back in, and files the bill at 100x",
   );
 
-  // A two-payment schedule sends 50, not 0.5.
-  const whole = buildBillRecords(input({ jobType: "Repair" }), 9001, ACCOUNT);
-  assert.equal(val(whole[0], f.billPct), 50);
+  // A two-payment schedule sends 0.5, not 50 — the exact mistake that showed
+  // up in the Billed Cost Items report as 5000%.
+  const half = buildBillRecords(input({ jobType: "Repair" }), 9001, ACCOUNT);
+  assert.equal(val(half[0], f.billPct), 0.5);
 
   // The stated share must describe the amount actually being paid. Checked in
   // this direction because the percentage is rounded to two decimals, so the
   // inverse (amount / pct) carries that rounding magnified by a small pct.
   for (const b of bills) {
-    const share = Number(val(b, f.billPct));
+    const share = Number(val(b, f.billPct)) * 100;
     const amount = Number(val(b, f.billAmount));
     assert.ok(
       Math.abs(share - (amount / 178275.23) * 100) <= 0.005 + 1e-9,
@@ -238,7 +238,7 @@ test("the job type picks the schedule, so a repair gets two bills", () => {
     9001,
     ACCOUNT,
   );
-  assert.equal(val(relocation[0], QB_AWARD.billLines.billPct), 20);
+  assert.equal(val(relocation[0], QB_AWARD.billLines.billPct), 0.2);
 });
 
 test("the plan describes exactly what would be written", () => {

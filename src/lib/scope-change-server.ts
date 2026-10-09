@@ -103,7 +103,16 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
 export interface ScopeChangePlan {
   schedule: AwardSchedule;
   absorption: Absorption;
-  /** What each bill would be written to, or null when nothing would change. */
+  /** The contract on the cost item before and after, and the difference. */
+  contractBefore: number;
+  contractAfter: number;
+  delta: number;
+  /**
+   * Contract not yet on the schedule. The change lands only on the milestones
+   * that have been billed, so this carries straight across untouched.
+   */
+  unbilled: number;
+  /** What each bill would be written to. Empty when nothing would change. */
   writes: { recordId: number; desc: string; amount: number; billPct: number }[];
 }
 
@@ -122,8 +131,22 @@ export async function planScopeChange(
   const schedule = await awardSchedule(poRecordId);
   if (!schedule) return null;
 
+  /*
+   * The change is measured against the CONTRACT, not against what has been
+   * billed so far. Those are the same number on a schedule that is fully
+   * billed and wildly different on one that is not: PO-14559 carries a
+   * $154,361.73 contract with $54,026.60 billed, where measuring against the
+   * billed total would have called a rise to $170,000 a $115,973 change
+   * instead of a $15,638 one.
+   *
+   * The delta then lands only on the billed outstanding milestones, so the
+   * part of the contract not yet on the schedule carries across unchanged.
+   */
   const billed = Math.round(schedule.lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
-  const absorption = absorbScopeChange(schedule.lines, Math.round((revisedTotal - billed) * 100) / 100);
+  const contractBefore = schedule.contract;
+  const delta = Math.round((revisedTotal - contractBefore) * 100) / 100;
+  const unbilled = Math.round((contractBefore - billed) * 100) / 100;
+  const absorption = absorbScopeChange(schedule.lines, delta);
 
   const writes = absorption.problem
     ? []
@@ -138,5 +161,13 @@ export async function planScopeChange(
           billPct: Math.round((l.restatedPct / 100) * 1e6) / 1e6,
         }));
 
-  return { schedule, absorption, writes };
+  return {
+    schedule,
+    absorption,
+    contractBefore,
+    contractAfter: Math.round((contractBefore + delta) * 100) / 100,
+    delta,
+    unbilled,
+    writes,
+  };
 }

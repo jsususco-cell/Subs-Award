@@ -108,3 +108,34 @@ test("the restated share describes the revised contract, and is offered not appl
   const paid = r.lines.find((l) => l.desc === "Milestone 1");
   assert.equal(paid?.restatedPct, 8.33, "a paid milestone is a smaller share of a bigger contract");
 });
+
+test("the change is measured against the contract, not against what is billed", () => {
+  /*
+   * PO-14559 carries a $154,361.73 contract with only $54,026.60 billed —
+   * three milestones instead of eight. Measuring the change against the
+   * billed total called a rise to $170,000 a $115,973 change instead of a
+   * $15,638 one, seven times too big. The delta then lands only on the
+   * billed outstanding milestones, so the unbilled remainder is untouched.
+   */
+  const contract = 154361.73;
+  const billed = 54026.6;
+  const revised = 170000;
+
+  const delta = Math.round((revised - contract) * 100) / 100;
+  assert.equal(delta, 15638.27);
+
+  const unbilled = Math.round((contract - billed) * 100) / 100;
+  const lines: ScheduleLine[] = [
+    { desc: "Billed A", pct: 10, amount: 15436.17, locked: false },
+    { desc: "Billed B", pct: 15, amount: 23154.26, locked: false },
+    { desc: "Billed C", pct: 10, amount: 15436.17, locked: false },
+  ];
+  const r = absorbScopeChange(lines, delta);
+  assert.equal(r.problem, null);
+
+  // The schedule grew by exactly the delta, and the unbilled remainder of the
+  // contract is the same money it was before.
+  const after = Math.round(r.lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  assert.equal(after, Math.round((billed + delta) * 100) / 100);
+  assert.equal(Math.round((after + unbilled) * 100) / 100, revised);
+});

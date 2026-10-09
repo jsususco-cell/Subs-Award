@@ -26,12 +26,12 @@ const { schedule: s, absorption: a, writes } = plan;
 const m = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 console.log(`${s.poNumber}  job ${s.jobName} (${s.jobState})  cost item ${s.costItemRecordId}`);
-console.log(`contract on the cost item: ${m(s.contract)}    billed across milestones: ${m(a.previousTotal)}`);
-if (Math.abs(s.contract - a.previousTotal) > 0.02) {
-  console.log(`  ! only ${m(a.previousTotal)} of the contract is billed — ${m(s.contract - a.previousTotal)} is not on the schedule yet`);
+console.log(`contract   ${m(plan.contractBefore)}  ->  ${m(plan.contractAfter)}      change of ${m(plan.delta)}`);
+console.log(`schedule   ${m(a.previousTotal)} billed, of which ${m(a.lockedTotal)} is paid`);
+if (plan.unbilled > 0.02) {
+  console.log(`           ${m(plan.unbilled)} of the contract is not on the schedule yet — it carries across unchanged`);
 }
-console.log(`already paid: ${m(a.lockedTotal)}    still outstanding: ${a.outstandingPct}% of the schedule`);
-console.log(`revised to ${m(a.newTotal)}  =>  change of ${m(a.delta)}\n`);
+console.log(`           ${a.outstandingPct}% of the schedule is still outstanding and can absorb the change\n`);
 
 if (a.problem) {
   console.log("REFUSED:", a.problem);
@@ -41,12 +41,16 @@ if (a.problem) {
 console.log("  milestone                          was         takes            now    bill %");
 for (const l of a.lines) {
   console.log(
-    "  " + l.desc.slice(0, 28).padEnd(30) +
+    "  " +
+      l.desc.slice(0, 28).padEnd(30) +
       m(l.before).padStart(12) +
       (l.locked ? "(paid)" : m(l.took)).padStart(13) +
       m(l.amount).padStart(15) +
       `${l.restatedPct}%`.padStart(10),
   );
 }
-console.log(`\n  revised schedule totals ${m(a.lines.reduce((x, l) => x + l.amount, 0))}`);
+
+const after = Math.round(a.lines.reduce((x, l) => x + l.amount, 0) * 100) / 100;
+console.log(`\n  revised schedule totals ${m(after)}`);
+console.log(`  plus ${m(plan.unbilled)} not yet billed = ${m(Math.round((after + plan.unbilled) * 100) / 100)}, the revised contract`);
 console.log(`  bills that would be rewritten: ${writes.length}`);

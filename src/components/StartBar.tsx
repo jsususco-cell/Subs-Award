@@ -37,6 +37,11 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
     label: "Attachments",
     hint: "Documents filed against a job — invoices, award letters, permits.",
   },
+  {
+    id: "scope-change",
+    label: "Scope change",
+    hint: "The scope has been revised. Compare it against the award, then spread the difference across the milestones still outstanding.",
+  },
 ];
 
 interface Props {

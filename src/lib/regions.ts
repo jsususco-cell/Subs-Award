@@ -35,9 +35,16 @@ export type InsuranceKind = "fondo" | "none";
  * - `bill-po` — draw bills against a purchase order that already exists.
  * - `vendor-status` — what a subcontractor is owed and has been paid.
  * - `attachments` — documents filed against a job: invoices, letters, permits.
+ * - `scope-change` — the scope has been revised, so the difference is spread
+ *   across the milestones still outstanding on an award already made.
  */
 export type AwardRoute =
-  "canopy" | "award-po" | "bill-po" | "vendor-status" | "attachments";
+  | "canopy"
+  | "award-po"
+  | "bill-po"
+  | "vendor-status"
+  | "attachments"
+  | "scope-change";
 
 /**
  * How the money is entered on an award.
@@ -195,7 +202,14 @@ export const REGIONS: Record<RegionKey, RegionConfig> = {
      * else. Puerto Rico has the purchase orders, the draws and the shared
      * Attachments table the same as anywhere.
      */
-    routes: ["canopy", "award-po", "bill-po", "vendor-status", "attachments"],
+    routes: [
+      "canopy",
+      "award-po",
+      "bill-po",
+      "vendor-status",
+      "attachments",
+      "scope-change",
+    ],
     awardEntry: "categories",
     awardEligibleOnly: true,
     poDocument: false,

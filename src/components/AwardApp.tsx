@@ -14,6 +14,7 @@ import LetterPanel, { type LetterFields } from "./LetterPanel";
 import type { CreatePoResult } from "./CreatePoPanel";
 import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
+import ScopeChangePanel from "./ScopeChangePanel";
 import StartBar, { type Mode } from "./StartBar";
 import DirectAwardPanel, {
   emptyDirectAward,
@@ -538,6 +539,8 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
             <VendorStatusPanel key={region} region={region} />
           ) : mode === "attachments" ? (
             <AttachmentsPanel key={region} region={region} />
+          ) : mode === "scope-change" ? (
+            <ScopeChangePanel key={region} />
           ) : (
             <>
               <StepRail

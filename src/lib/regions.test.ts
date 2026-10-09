@@ -291,14 +291,17 @@ test("the mainland is raised straight against a purchase order", () => {
     assert.equal(defaultRoute(REGIONS[key]), "award-po");
   }
 
-  // Puerto Rico offers the same four and the Canopy upload on top, which is
-  // the one route that genuinely belongs to a region rather than to history.
+  // Puerto Rico offers the same four, the Canopy upload, and the scope
+  // change. Canopy is the one route that genuinely belongs to a region
+  // rather than to history; the scope change is Puerto Rico's because its
+  // milestone schedule is what absorbs the difference.
   assert.deepEqual(REGIONS.PR.routes, [
     "canopy",
     "award-po",
     "bill-po",
     "vendor-status",
     "attachments",
+    "scope-change",
   ]);
   assert.ok(allowsRoute(REGIONS.PR, "canopy"));
   assert.equal(defaultRoute(REGIONS.PR), "canopy");
@@ -323,6 +326,7 @@ test("every region offers at least one route, and only real ones", () => {
     "bill-po",
     "vendor-status",
     "attachments",
+    "scope-change",
   ];
   for (const key of REGION_KEYS) {
     const { routes } = REGIONS[key];

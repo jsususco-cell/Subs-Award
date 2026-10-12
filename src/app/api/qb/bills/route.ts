@@ -247,6 +247,60 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, configured: true, items });
     }
 
+    /*
+     * The milestone schedule for a purchase order, read-only, for the tree
+     * under each row on Vendor Status.
+     *
+     * Every bill on every cost item of the purchase order, which is what the
+     * Billed Cost Items report shows. Deliberately not narrowed to the award
+     * line: this is a view of what is billed, not a decision about what to
+     * bill against.
+     */
+    if (resource === "schedule") {
+      const poRecordId = Number(params.get("po")) || 0;
+      if (!poRecordId) {
+        return NextResponse.json(
+          { ok: false, error: "A purchase order is required." },
+          { status: 400 },
+        );
+      }
+      const refusedPo = await refusePo(request, poRecordId);
+      if (refusedPo) return refusedPo;
+
+      const c = QB_AWARD.costItems;
+      const f = QB_AWARD.billLines;
+      const items = (await queryAll({
+        from: QB_AWARD.tables.costItems,
+        select: [c.recordId],
+        where: `{${c.relatedPO}.EX.${poRecordId}}`,
+      })) as Raw[];
+      if (!items.length) {
+        return NextResponse.json({ ok: true, configured: true, milestones: [] });
+      }
+
+      const rows = (await queryAll({
+        from: QB_AWARD.tables.billLines,
+        select: [f.recordId, f.title, f.billPct, f.billAmount, f.status, 143, 12],
+        where: items.map((i) => `{${f.relatedItem}.EX.${num(i, c.recordId)}}`).join("OR"),
+        sortBy: [{ fieldId: f.recordId, order: "ASC" }],
+      })) as Raw[];
+
+      return NextResponse.json({
+        ok: true,
+        configured: true,
+        milestones: rows.map((r) => ({
+          recordId: num(r, f.recordId),
+          title: str(r, f.title),
+          // Stored as the fraction; shown as a percentage.
+          pct: Math.round(num(r, f.billPct) * 100 * 100) / 100,
+          amount: num(r, f.billAmount),
+          paid: num(r, 143),
+          status: str(r, f.status),
+          datePaid: str(r, 12),
+        })),
+      });
+    }
+
     if (resource === "lineitems") {
       const poRecordId = Number(params.get("po")) || 0;
       if (!poRecordId) {

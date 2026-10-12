@@ -15,6 +15,7 @@ import AttachToPo from "./AttachToPo";
 import { canRenderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
+import ScopeChangePanel from "./ScopeChangePanel";
 
 const PO_STATUSES = ["Unreleased", "Released", "Approved"];
 const EXPENSE_CLASSES = ["PO", "Non-PO"];
@@ -125,6 +126,14 @@ export default function CreatePoPanel({
   const [partial, setPartial] = useState<string | null>(null);
   const [sendKey, setSendKey] = useState("");
   const [keyNeeded, setKeyNeeded] = useState(false);
+  /*
+   * Set when Quickbase already has a purchase order for this job and
+   * subcontractor. That is not a mistake to report — it is how a revised
+   * scope announces itself, so it opens the scope change instead.
+   */
+  const [alreadyAwarded, setAlreadyAwarded] = useState<
+    { recordId: number; poNumber: string; contractPrice: number } | null
+  >(null);
   const [createInsurance, setCreateInsurance] = useState(true);
   const [sendLetter, setSendLetter] = useState(true);
   const [poDownloading, setPoDownloading] = useState(false);
@@ -235,6 +244,9 @@ export default function CreatePoPanel({
       billCount?: number;
       insuranceRecordId?: number | null;
       insuranceExisting?: boolean;
+      /** Set when this job and subcontractor already have a purchase order. */
+      duplicate?: boolean;
+      existingPo?: { recordId: number; poNumber: string; contractPrice: number };
     };
     try {
       const res = await fetch("/api/qb/award", {
@@ -258,6 +270,10 @@ export default function CreatePoPanel({
         setError(
           "This deployment needs a send key before it will write to Quickbase.",
         );
+      } else if (body.duplicate && body.existingPo) {
+        // A second award on the same job and subcontractor is a revised
+        // scope, not a duplicate to refuse.
+        setAlreadyAwarded(body.existingPo);
       } else {
         setError(body.error ?? "Could not create the purchase order.");
         if (body.partial) setPartial(body.partial);
@@ -544,6 +560,24 @@ export default function CreatePoPanel({
           Saved with this award, so it will not be created twice.
         </p>
       </section>
+    );
+  }
+
+  /*
+   * Quickbase already has a purchase order for this job and subcontractor, so
+   * this upload is a revised scope. The scope change takes over from here: a
+   * second purchase order would be the duplicate, not the answer.
+   */
+  if (alreadyAwarded) {
+    return (
+      <ScopeChangePanel
+        poRecordId={alreadyAwarded.recordId}
+        poNumber={alreadyAwarded.poNumber}
+        previousTotal={alreadyAwarded.contractPrice}
+        newTotal={award}
+        jobName={jobName}
+        subcontractor={subcontractor}
+      />
     );
   }
 

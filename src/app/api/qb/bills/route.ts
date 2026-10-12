@@ -17,6 +17,7 @@ import {
 } from "@/lib/bills";
 import { isRegionKey, regionFor } from "@/lib/regions";
 import { refusePo, refuseRegion } from "@/lib/auth/guard";
+import { scopeChangesFor, summarise } from "@/lib/scope-history";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -244,7 +245,29 @@ export async function GET(request: Request) {
         totalPaidPct: num(r, f.totalPaidPct),
       }));
 
-      return NextResponse.json({ ok: true, configured: true, items });
+      /*
+       * What each of these was worth before it was revised, so the change is
+       * visible without opening the purchase order. One query for the whole
+       * list rather than one per row.
+       */
+      const changes = await scopeChangesFor(items.map((i) => i.recordId));
+      const withHistory = items.map((i) => {
+        const c = summarise(changes.get(i.recordId) ?? []);
+        return c
+          ? {
+              ...i,
+              change: {
+                at: c.at,
+                actor: c.actor,
+                contractBefore: c.contractBefore,
+                contractAfter: c.contractAfter,
+                delta: c.delta,
+              },
+            }
+          : i;
+      });
+
+      return NextResponse.json({ ok: true, configured: true, items: withHistory });
     }
 
     /*
@@ -285,19 +308,45 @@ export async function GET(request: Request) {
         sortBy: [{ fieldId: f.recordId, order: "ASC" }],
       })) as Raw[];
 
+      /*
+       * What each milestone was worth before the last scope change.
+       *
+       * Quickbase has no answer to this — Bill Amount is overwritten in place
+       * and the table keeps no prior value — so it comes from what this app
+       * recorded when it applied the change. A milestone with no entry shows
+       * no previous figure, which is the honest answer rather than a dash
+       * standing in for "unchanged".
+       */
+      const change = summarise((await scopeChangesFor([poRecordId])).get(poRecordId) ?? []);
+
       return NextResponse.json({
         ok: true,
         configured: true,
-        milestones: rows.map((r) => ({
-          recordId: num(r, f.recordId),
-          title: str(r, f.title),
-          // Stored as the fraction; shown as a percentage.
-          pct: Math.round(num(r, f.billPct) * 100 * 100) / 100,
-          amount: num(r, f.billAmount),
-          paid: num(r, 143),
-          status: str(r, f.status),
-          datePaid: str(r, 12),
-        })),
+        change: change
+          ? {
+              at: change.at,
+              actor: change.actor,
+              contractBefore: change.contractBefore,
+              contractAfter: change.contractAfter,
+              delta: change.delta,
+            }
+          : null,
+        milestones: rows.map((r) => {
+          const recordId = num(r, f.recordId);
+          const was = change?.lines[recordId];
+          return {
+            recordId,
+            title: str(r, f.title),
+            // Stored as the fraction; shown as a percentage.
+            pct: Math.round(num(r, f.billPct) * 100 * 100) / 100,
+            amount: num(r, f.billAmount),
+            paid: num(r, 143),
+            status: str(r, f.status),
+            datePaid: str(r, 12),
+            previousAmount: was ? was.before : null,
+            previousPct: was ? was.pctBefore : null,
+          };
+        }),
       });
     }
 

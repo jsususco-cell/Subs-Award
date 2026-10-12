@@ -427,3 +427,92 @@ export function startRun(opts: {
 }
 
 export const __schema = QB;
+
+// --- reading back ------------------------------------------------------------
+
+export interface AuditRecord {
+  at: string;
+  actor: string;
+  action: string;
+  targetId: string;
+  before: string;
+  after: string;
+}
+
+/**
+ * Read audit entries back out of the System Log.
+ *
+ * The log is the only place a before-and-after is kept. Quickbase overwrites a
+ * field when it changes and keeps no prior value — Billing Line Items have no
+ * history fields at all — so what a milestone was worth before a scope change
+ * exists only because this app recorded it on the way past.
+ *
+ * Never throws and never returns a partial failure: a screen that shows what
+ * changed must not go blank because the log app is unreachable, so an empty
+ * list is the worst case.
+ */
+export async function readAudit(opts: {
+  action: string;
+  targetTable?: string;
+  targetIds: string[];
+  limit?: number;
+}): Promise<AuditRecord[]> {
+  const ids = [...new Set(opts.targetIds.filter(Boolean))];
+  if (!loggingEnabled || !ids.length) return [];
+
+  const esc = (v: string) => v.replace(/'/g, "");
+  const where =
+    `{${QB.audit.action}.EX.'${esc(opts.action)}'}` +
+    (opts.targetTable ? `AND{${QB.audit.targetTable}.EX.'${esc(opts.targetTable)}'}` : "") +
+    `AND(${ids.map((i) => `{${QB.audit.targetId}.EX.'${esc(i)}'}`).join("OR")})`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch("https://api.quickbase.com/v1/records/query", {
+      method: "POST",
+      headers: {
+        "QB-Realm-Hostname": REALM,
+        Authorization: `QB-USER-TOKEN ${TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: QB.tables.audit,
+        select: [
+          QB.env.time,
+          QB.env.actor,
+          QB.audit.action,
+          QB.audit.targetId,
+          QB.audit.before,
+          QB.audit.after,
+        ],
+        where,
+        sortBy: [{ fieldId: QB.env.time, order: "DESC" }],
+        options: { top: opts.limit ?? 200 },
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error(`[log] read ${res.status}`);
+      return [];
+    }
+    const body = (await res.json()) as { data?: Record<string, { value: unknown }>[] };
+    const s = (r: Record<string, { value: unknown }>, fid: number): string => {
+      const v = r[String(fid)]?.value;
+      return typeof v === "string" ? v : v == null ? "" : String(v);
+    };
+    return (body.data ?? []).map((r) => ({
+      at: s(r, QB.env.time),
+      actor: s(r, QB.env.actor),
+      action: s(r, QB.audit.action),
+      targetId: s(r, QB.audit.targetId),
+      before: s(r, QB.audit.before),
+      after: s(r, QB.audit.after),
+    }));
+  } catch (err) {
+    console.error(`[log] read failed: ${(err as Error).message}`);
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}

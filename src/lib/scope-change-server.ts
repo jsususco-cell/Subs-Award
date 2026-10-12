@@ -379,6 +379,26 @@ async function write(table: string, data: QbRecord[]): Promise<number[]> {
  * Quickbase has no transactions, so a failure part way is reported with what
  * had already been written rather than pretended away.
  */
+/**
+ * The schedule either side of the change, as the audit entry records it.
+ *
+ * absorption.lines is built by mapping over schedule.lines, so the two line
+ * up by position; the record id comes from the schedule, which is the side
+ * that knows it.
+ */
+function snapshot(
+  plan: ScopeChangePlan,
+  side: "before" | "after",
+): { recordId: number; desc: string; amount: number; pct: number; locked: boolean }[] {
+  return plan.absorption.lines.map((l, i) => ({
+    recordId: plan.schedule.lines[i]?.recordId ?? 0,
+    desc: l.desc,
+    amount: side === "before" ? l.before : l.amount,
+    pct: side === "before" ? l.pct : l.restatedPct,
+    locked: l.locked,
+  }));
+}
+
 export async function applyScopeChange(
   poRecordId: number,
   revisedTotal: number,
@@ -453,8 +473,26 @@ export async function applyScopeChange(
     outcome: "ok",
     target: { table: QB_AWARD.tables.pos, recordId: poRecordId },
     changedFields: ["Unit Cost", "Bill Amount", "Bill %"],
-    before: { contract: plan.contractBefore },
-    after: { contract: plan.contractAfter, delta: plan.delta },
+    /*
+     * The milestones as well as the contract, line by line.
+     *
+     * This is the only record that a milestone was ever worth anything else.
+     * Quickbase overwrites Bill Amount in place and the Billing Line Item
+     * table has no history fields, so if this is not written here, "what did
+     * it change from" has no answer anywhere afterwards.
+     *
+     * Keyed by the bill's record id, because the description is not unique
+     * and the order is not stable.
+     */
+    before: {
+      contract: plan.contractBefore,
+      lines: snapshot(plan, "before"),
+    },
+    after: {
+      contract: plan.contractAfter,
+      delta: plan.delta,
+      lines: snapshot(plan, "after"),
+    },
     details: {
       costItemRecordId: schedule.costItemRecordId,
       billsUpdated: plan.writes.length,

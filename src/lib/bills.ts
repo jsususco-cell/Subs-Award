@@ -15,6 +15,15 @@ import { scheduleForJobType, scheduleLines, scheduleSetFor } from "./schedule";
  */
 
 /** A purchase order the current vendor could be billed against. */
+/** A recorded scope change, from the System Log rather than from Quickbase. */
+export interface PoChange {
+  at: string;
+  actor: string;
+  contractBefore: number;
+  contractAfter: number;
+  delta: number;
+}
+
 export interface PoOption {
   recordId: number;
   poNumber: string;
@@ -38,6 +47,12 @@ export interface PoOption {
   totalAmountPaid: number;
   /** A fraction — 1 is fully paid. */
   totalPaidPct: number;
+  /*
+   * Only present when this purchase order has been revised through the app.
+   * Quickbase keeps no prior value, so its absence means nothing was
+   * recorded — not that nothing changed.
+   */
+  change?: PoChange;
 }
 
 /** A Billing Line Item already on the cost item. */

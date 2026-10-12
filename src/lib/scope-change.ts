@@ -172,3 +172,33 @@ export function absorbScopeChange(
     problem: null,
   };
 }
+
+export interface ScopeChange {
+  at: string;
+  actor: string;
+  contractBefore: number;
+  contractAfter: number;
+  delta: number;
+  /** Keyed by the billing line item's record id. */
+  lines: Record<number, { before: number; after: number; pctBefore: number; pctAfter: number }>;
+}
+
+/**
+ * The oldest recorded contract and the newest, collapsed into one before and
+ * after.
+ *
+ * A purchase order can be revised more than once, and the question the screen
+ * asks is what it started at and what it stands at now — not what each step
+ * was. The per-milestone figures come from the most recent change, because
+ * that is the one whose line-up still matches the milestones on screen.
+ */
+export function summarise(changes: ScopeChange[]): ScopeChange | null {
+  if (!changes.length) return null;
+  const newest = changes[0];
+  const oldest = changes[changes.length - 1];
+  return {
+    ...newest,
+    contractBefore: oldest.contractBefore,
+    delta: Math.round((newest.contractAfter - oldest.contractBefore) * 100) / 100,
+  };
+}

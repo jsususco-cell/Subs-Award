@@ -25,12 +25,23 @@ interface Milestone {
   paid: number;
   status: string;
   datePaid: string;
+  /** What it was worth before the last recorded scope change, if any. */
+  previousAmount: number | null;
+  previousPct: number | null;
+}
+
+interface Change {
+  at: string;
+  actor: string;
+  contractBefore: number;
+  contractAfter: number;
+  delta: number;
 }
 
 type Branch =
   | { state: "loading" }
   | { state: "error"; error: string }
-  | { state: "ready"; milestones: Milestone[] };
+  | { state: "ready"; milestones: Milestone[]; change: Change | null };
 
 export default function VendorStatusPanel({ region }: { region: RegionKey }) {
   const cfg = regionFor(region);
@@ -63,7 +74,7 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
       setBranches((b) => ({
         ...b,
         [poRecordId]: body.ok
-          ? { state: "ready", milestones: body.milestones ?? [] }
+          ? { state: "ready", milestones: body.milestones ?? [], change: body.change ?? null }
           : { state: "error", error: body.error ?? "Could not load the schedule." },
       }));
     } catch {
@@ -209,6 +220,19 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                     >
                       Status
                     </th>
+                    {/*
+                      * What the contract was before it was revised, beside
+                      * what it is now. Blank on a purchase order with no
+                      * recorded change, which is most of them — Quickbase
+                      * keeps no prior value, so this fills from the first
+                      * scope change applied through this app onwards.
+                      */}
+                    <th scope="col" className="py-2 text-right font-semibold">
+                      Was
+                    </th>
+                    <th scope="col" className="px-4 py-2 text-right font-semibold">
+                      Now
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -265,10 +289,33 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                           <td className="px-4 py-2">
                             <Pill status={p.billingStatus} />
                           </td>
+                          <td className="tabular py-2 text-right whitespace-nowrap text-navy-600/80">
+                            {p.change ? money(p.change.contractBefore) : "—"}
+                          </td>
+                          <td className="px-4 py-2 text-right whitespace-nowrap">
+                            {p.change ? (
+                              <>
+                                <span className="tabular font-medium text-navy-800">
+                                  {money(p.change.contractAfter)}
+                                </span>
+                                <span
+                                  className={`tabular block text-xs ${
+                                    p.change.delta < 0 ? "text-brand-red" : "text-navy-600/70"
+                                  }`}
+                                  title={`Changed by ${p.change.actor}`}
+                                >
+                                  {p.change.delta > 0 ? "+" : ""}
+                                  {money(p.change.delta)} · {shortDate(p.change.at)}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-navy-600/40">—</span>
+                            )}
+                          </td>
                         </tr>
                         {shown && (
                           <tr className="border-b border-navy-50 last:border-0">
-                            <td colSpan={6} className="bg-navy-50/50 px-4 pt-1 pb-3">
+                            <td colSpan={8} className="bg-navy-50/50 px-4 pt-1 pb-3">
                               <Schedule branch={branch} contract={contract} />
                             </td>
                           </tr>
@@ -283,7 +330,10 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
 
           <p className="border-t border-navy-100 px-4 py-2 text-xs text-navy-600/70">
             Read-only. Quickbase computes the paid figures from the bills, so
-            they change when a bill does, not when this screen is opened.
+            they change when a bill does, not when this screen is opened. Was
+            and Now are blank unless a scope change was applied through this
+            app — Quickbase overwrites an amount rather than keeping what it
+            was, so nothing earlier can be recovered.
           </p>
         </section>
       )}
@@ -344,6 +394,13 @@ function Schedule({
 
   return (
     <div className="border-l-2 border-navy-300 pl-3">
+      {branch.change ? (
+        <p className="mb-1 text-xs text-navy-700">
+          Scope changed {shortDate(branch.change.at)} by {branch.change.actor}:{" "}
+          <span className="tabular">{money(branch.change.contractBefore)}</span> →{" "}
+          <span className="tabular font-semibold">{money(branch.change.contractAfter)}</span>
+        </p>
+      ) : null}
       <table className="w-full text-xs">
         <thead>
           <tr className="text-left tracking-wide text-navy-600/70 uppercase">
@@ -361,6 +418,12 @@ function Schedule({
             </th>
             <th scope="col" className="py-1 font-semibold">
               Status
+            </th>
+            <th scope="col" className="py-1 pl-3 text-right font-semibold">
+              Was
+            </th>
+            <th scope="col" className="py-1 pl-3 text-right font-semibold">
+              Now
             </th>
           </tr>
         </thead>
@@ -385,6 +448,16 @@ function Schedule({
                   </span>
                 ) : null}
               </td>
+              <td className="tabular py-1 pl-3 text-right whitespace-nowrap text-navy-600/80">
+                {m.previousAmount == null ? "—" : money(m.previousAmount)}
+              </td>
+              <td className="tabular py-1 pl-3 text-right whitespace-nowrap font-medium text-navy-800">
+                {m.previousAmount == null ? (
+                  <span className="font-normal text-navy-600/40">—</span>
+                ) : (
+                  money(m.amount)
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -400,6 +473,12 @@ function Schedule({
               {money(branch.milestones.reduce((s, m) => s + m.paid, 0))}
             </td>
             <td />
+            <td className="tabular py-1 pl-3 text-right">
+              {branch.change ? money(branch.change.contractBefore) : ""}
+            </td>
+            <td className="tabular py-1 pl-3 text-right">
+              {branch.change ? money(branch.change.contractAfter) : ""}
+            </td>
           </tr>
         </tfoot>
       </table>

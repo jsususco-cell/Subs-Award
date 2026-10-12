@@ -3,7 +3,7 @@
 import { useState } from "react";
 import FileDrop from "./FileDrop";
 import LookupField from "./LookupField";
-import { loadJobs, loadEverySub } from "@/lib/qb-client";
+import { loadJobs } from "@/lib/qb-client";
 import { money } from "@/lib/format";
 import type { RegionKey } from "@/lib/regions";
 
@@ -23,6 +23,13 @@ import type { RegionKey } from "@/lib/regions";
  *
  * Both are checked before the upload rather than after, so nothing is parsed
  * and no figure is shown that is about to be thrown away.
+ *
+ * The first gate is passed by choosing an award, not by naming a
+ * subcontractor. A case can be awarded to several subcontractors, and one
+ * subcontractor can hold several purchase orders on it, so naming the
+ * subcontractor and taking their latest purchase order answered a different
+ * question. The case's own awards are offered instead, and the one being
+ * revised is picked from them.
  */
 
 export type ScopeIntent = "new" | "scope-change";
@@ -36,6 +43,9 @@ export interface ExistingAward {
   /** The purchase order's own title and scope, to carry into the letter. */
   title?: string;
   scope?: string;
+  /** Who it was awarded to, read from the purchase order rather than asked. */
+  subRecordId: number;
+  subcontractor: string;
 }
 
 /**
@@ -61,6 +71,22 @@ interface Props {
   onFile: (file: File, revision: RevisionContext | null) => void;
 }
 
+/**
+ * The first line of the purchase order's scope.
+ *
+ * Scope holds the whole award letter, so printing it whole ran the award
+ * letter's body through a one-line label. The opening line is what tells one
+ * award on a case from another.
+ */
+function firstLine(text: string | undefined): string {
+  return (
+    (text ?? "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find(Boolean) ?? ""
+  );
+}
+
 function shortDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
@@ -72,52 +98,54 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
   const [intent, setIntent] = useState<ScopeIntent>("new");
   const [job, setJob] = useState("");
   const [jobRecordId, setJobRecordId] = useState("");
-  const [sub, setSub] = useState("");
-  const [subRecordId, setSubRecordId] = useState("");
   /* Kept so the steps after the upload open filled in rather than blank. */
   const [jobAddress, setJobAddress] = useState("");
   const [jobType, setJobType] = useState("");
+  /** The awards on the chosen case, and which of them is being revised. */
+  const [awards, setAwards] = useState<ExistingAward[] | null>(null);
+  const [looking, setLooking] = useState(false);
   const [award, setAward] = useState<ExistingAward | null>(null);
-  const [checked, setChecked] = useState(false);
-  const [checking, setChecking] = useState(false);
+  /** What the award field shows, which is not the award itself. */
+  const [awardLabel, setAwardLabel] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
 
   const changing = intent === "scope-change";
-  const picked = Boolean(jobRecordId && subRecordId);
 
   function reset() {
+    setAwards(null);
     setAward(null);
-    setChecked(false);
+    setAwardLabel("");
     setProblem(null);
   }
 
-  /** Gate one: the case has to have a purchase order to change. */
-  async function checkAward() {
-    setChecking(true);
-    setProblem(null);
-    setAward(null);
-    setChecked(false);
+  /**
+   * Gate one: the case has to have an award to change.
+   *
+   * Read as soon as the case is chosen, because the answer is a list to pick
+   * from rather than a yes or no — there is nothing to confirm first.
+   */
+  async function loadAwards(recordId: string) {
+    reset();
+    if (!recordId) return;
+    setLooking(true);
     try {
-      const res = await fetch(
-        `/api/qb/scope-change?job=${encodeURIComponent(jobRecordId)}&sub=${encodeURIComponent(subRecordId)}`,
-      );
+      const res = await fetch(`/api/qb/scope-change?job=${encodeURIComponent(recordId)}`);
       const body = await res.json();
       if (!body.ok) {
-        setProblem(body.error ?? "Could not check the case.");
+        setProblem(body.error ?? "Could not read the awards on this case.");
         return;
       }
-      if (!body.award) {
-        setProblem(
-          `${job || "That case"} has no purchase order for ${sub || "that subcontractor"}, so there is no award to change. Upload it as a new scope instead.`,
-        );
-        return;
+      const found: ExistingAward[] = body.awards ?? [];
+      setAwards(found);
+      // One award is not a choice, so it is made.
+      if (found.length === 1) {
+        setAward(found[0]);
+        setAwardLabel(`${found[0].poNumber}  ·  ${money(found[0].contract)}`);
       }
-      setAward(body.award);
-      setChecked(true);
     } catch {
       setProblem("Could not reach Quickbase.");
     } finally {
-      setChecking(false);
+      setLooking(false);
     }
   }
 
@@ -143,8 +171,9 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
       jobName: job,
       jobAddress,
       jobType,
-      subRecordId,
-      subcontractor: sub,
+      // From the purchase order itself, so it is the award's own vendor.
+      subRecordId: String(award.subRecordId),
+      subcontractor: award.subcontractor,
     });
   }
 
@@ -203,10 +232,10 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
         {changing ? (
           <div className="border-t border-navy-100 px-4 py-3">
             <p className="mb-3 text-xs leading-relaxed text-navy-600/70">
-              Pick the case and the subcontractor first. The award has to exist
-              before a change can land on it.
+              Pick the case, then the purchase order this revised scope
+              belongs to. Only its awarded purchase orders are offered.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:max-w-sm">
               <LookupField
                 label="Case"
                 value={job}
@@ -214,10 +243,11 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
                 region={region}
                 onChange={(v, extra) => {
                   setJob(v);
-                  setJobRecordId(extra?.recordId ?? "");
+                  const recordId = extra?.recordId ?? "";
+                  setJobRecordId(recordId);
                   setJobAddress(extra?.address ?? "");
                   setJobType(extra?.jobType ?? "");
-                  reset();
+                  void loadAwards(recordId);
                 }}
                 loadChoices={async () => {
                   const r = await loadJobs(region);
@@ -238,48 +268,79 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
                   };
                 }}
               />
-              <LookupField
-                label="Subcontractor"
-                value={sub}
-                placeholder="Company name"
-                region={region}
-                onChange={(v, extra) => {
-                  setSub(v);
-                  setSubRecordId(extra?.recordId ?? "");
-                  reset();
-                }}
-                loadChoices={async () => {
-                  const r = await loadEverySub(region);
-                  return {
-                    configured: r.configured,
-                    warning: r.warning,
-                    error: r.error,
-                    choices: r.items.map((v) => ({
-                      id: v.id,
-                      label: v.company,
-                      hint: [v.trade, v.email].filter(Boolean).join("  ·  "),
-                      extra: { recordId: v.id },
-                    })),
-                  };
-                }}
-              />
             </div>
 
-            <button
-              type="button"
-              onClick={checkAward}
-              disabled={!picked || checking}
-              className="mt-3 rounded-md bg-navy-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-navy-800 disabled:cursor-not-allowed disabled:bg-navy-200 disabled:text-navy-600/60"
-            >
-              {checking ? "Checking…" : "Check the award"}
-            </button>
-
-            {award && checked ? (
-              <p className="mt-3 rounded-lg border border-navy-200 bg-navy-50 px-3 py-2 text-xs leading-relaxed text-navy-700">
-                {award.poNumber} was awarded on {shortDate(award.awardedOn)} at{" "}
-                <strong className="tabular">{money(award.contract)}</strong>. Upload the
-                revised scope below; it has to be newer than that.
+            {looking ? (
+              <p className="mt-3 text-xs text-navy-600/70">
+                Looking for awards on this case…
               </p>
+            ) : null}
+
+            {awards && awards.length === 0 ? (
+              <p className="mt-3 rounded-lg border border-brand-red/30 bg-brand-red-50 px-3 py-2 text-xs leading-relaxed text-brand-red-dark">
+                {job || "That case"} has no awarded purchase order, so there is
+                nothing for a scope change to land on. Upload it as a new scope
+                instead.
+              </p>
+            ) : null}
+
+            {awards && awards.length > 0 ? (
+              <div className="mt-4">
+                {/*
+                  * A searchable field rather than a list of every award.
+                  *
+                  * A case can carry twenty or more purchase orders, and a
+                  * list of that many pushes the upload off the bottom of the
+                  * screen — the award is chosen, then the page has to be
+                  * scrolled back up to use it. One row stays one row whatever
+                  * the case holds, and types ahead on the purchase order
+                  * number or the subcontractor.
+                  *
+                  * Keyed by the case so the options are the case's own: this
+                  * field caches what it loaded, and without the key the second
+                  * case asked about would still offer the first one's awards.
+                  */}
+                <LookupField
+                  key={jobRecordId}
+                  label={awards.length === 1 ? "Award" : `Award (${awards.length} on this case)`}
+                  value={awardLabel}
+                  placeholder="PO number or subcontractor"
+                  region={region}
+                  onChange={(v, extra) => {
+                    setAwardLabel(v);
+                    const picked = extra?.recordId
+                      ? (awards.find((a) => String(a.poRecordId) === extra.recordId) ?? null)
+                      : null;
+                    setAward(picked);
+                    setProblem(null);
+                  }}
+                  loadChoices={async () => ({
+                    configured: true,
+                    choices: awards.map((a) => ({
+                      id: String(a.poRecordId),
+                      label: `${a.poNumber}  ·  ${money(a.contract)}`,
+                      hint: [
+                        a.subcontractor,
+                        `awarded ${shortDate(a.awardedOn)}`,
+                        firstLine(a.scope || a.title),
+                      ]
+                        .filter(Boolean)
+                        .join("  ·  "),
+                      extra: { recordId: String(a.poRecordId) },
+                    })),
+                  })}
+                />
+
+                {award ? (
+                  <p className="mt-3 rounded-lg border border-navy-200 bg-navy-50 px-3 py-2 text-xs leading-relaxed text-navy-700">
+                    Revising {award.poNumber}
+                    {award.subcontractor ? ` to ${award.subcontractor}` : ""}, awarded
+                    on {shortDate(award.awardedOn)} at{" "}
+                    <strong className="tabular">{money(award.contract)}</strong>. Upload
+                    the revised scope below; it has to be newer than that.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -294,12 +355,12 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
         ) : null}
       </section>
 
-      {!changing || checked ? (
+      {!changing || award ? (
         <FileDrop onFile={handleFile} busy={busy} fileName={fileName} />
       ) : (
         <p className="rounded-xl border border-dashed border-navy-200 bg-white px-4 py-8 text-center text-sm text-navy-600/60">
-          Pick the case and subcontractor, then check the award, before uploading
-          the revised scope.
+          Pick the case, then the award being revised, before uploading the
+          revised scope.
         </p>
       )}
     </div>

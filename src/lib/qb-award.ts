@@ -23,6 +23,8 @@ export const QB_AWARD = {
     poNumber: 17,
     relatedJob: 13,
     relatedSub: 21,
+    /** "Performed By" — the subcontractor's name, looked up from the vendor. */
+    subName: 22,
     jobName: 14,
     title: 6,
     scope: 40,

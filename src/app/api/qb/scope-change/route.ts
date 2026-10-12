@@ -4,7 +4,7 @@ import { refuseJob, refusePo } from "@/lib/auth/guard";
 import {
   applyScopeChange,
   awardSchedule,
-  existingAward,
+  awardsForJob,
   planScopeChange,
 } from "@/lib/scope-change-server";
 import { currentSession } from "@/lib/auth/current-user";
@@ -20,31 +20,27 @@ export const maxDuration = 60;
  * and accepted before any milestone moves, so working out the change and
  * applying it are deliberately separate requests.
  *
- * GET  ?po=14107        -> the award as it stands
+ * GET  ?job=1234       -> every award on that case, to pick one
+ * GET  ?po=14107       -> that award's schedule as it stands
  * POST { poRecordId, revisedTotal } -> what would change, line by line
  */
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
 
   /*
-   * Asked by case and subcontractor, which is what the upload step knows
-   * before anything has been parsed: has this case been awarded to this
-   * subcontractor already, and when. A null answer is the answer — it means
-   * this is a first award, not a revision — so it comes back ok with
-   * `award: null` rather than as a 404.
+   * Asked by case, which is all the upload step knows before anything has
+   * been parsed: what has this case been awarded, and to whom. An empty list
+   * is an answer — it means this is a first award, not a revision — so it
+   * comes back ok with no awards rather than as a 404.
    */
   const jobRecordId = Number(params.get("job")) || 0;
-  const subRecordId = Number(params.get("sub")) || 0;
-  if (jobRecordId && subRecordId) {
+  if (jobRecordId) {
     const refusedJob = await refuseJob(request, jobRecordId);
     if (refusedJob) return refusedJob;
     if (!isConfigured()) {
       return NextResponse.json({ ok: false, error: "Quickbase is not configured." }, { status: 503 });
     }
-    return NextResponse.json({
-      ok: true,
-      award: await existingAward(jobRecordId, subRecordId),
-    });
+    return NextResponse.json({ ok: true, awards: await awardsForJob(jobRecordId) });
   }
 
   const poRecordId = Number(params.get("po")) || 0;

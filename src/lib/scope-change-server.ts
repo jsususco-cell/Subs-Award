@@ -221,6 +221,9 @@ export interface ExistingAward {
   /** The purchase order's own title and scope, to carry into the letter. */
   title: string;
   scope: string;
+  /** Who it was awarded to. Carried so the case alone is enough to pick one. */
+  subRecordId: number;
+  subcontractor: string;
 }
 
 /**
@@ -233,21 +236,40 @@ export interface ExistingAward {
  * Deliberately not filtered by purchase order status, for the same reason the
  * duplicate guard is not: a released PO is still the one that exists.
  */
-export async function existingAward(
-  jobRecordId: number,
-  subRecordId: number,
-): Promise<ExistingAward | null> {
+/**
+ * Every award on a case, so a revised scope is matched to a purchase order
+ * rather than to a subcontractor.
+ *
+ * A case can be awarded to more than one subcontractor, and the same
+ * subcontractor can hold more than one purchase order on it. Asking for the
+ * subcontractor and then taking their latest purchase order answered a
+ * different question from the one being asked — the revised scope belongs to
+ * a particular award, so that is what is chosen.
+ *
+ * Only purchase orders carrying an award cost item are returned: a purchase
+ * order raised for something else on the same case has no contract a scope
+ * change could land on.
+ */
+export async function awardsForJob(jobRecordId: number): Promise<ExistingAward[]> {
   const p = QB_AWARD.pos;
-  const rows = (await queryAll({
+  const pos = (await queryAll({
     from: QB_AWARD.tables.pos,
     // 1 is Date Created on every Quickbase table.
-    select: [p.recordId, p.poNumber, p.contractPrice, p.jobName, p.title, p.scope, 1],
-    where: `{${p.relatedJob}.EX.${jobRecordId}}AND{${p.relatedSub}.EX.${subRecordId}}`,
+    select: [
+      p.recordId,
+      p.poNumber,
+      p.contractPrice,
+      p.jobName,
+      p.title,
+      p.scope,
+      p.relatedSub,
+      p.subName,
+      1,
+    ],
+    where: `{${p.relatedJob}.EX.${jobRecordId}}`,
     sortBy: [{ fieldId: p.recordId, order: "DESC" }],
   })) as Raw[];
-  const po = rows[0];
-  if (!po) return null;
-  const poRecordId = num(po, p.recordId);
+  if (!pos.length) return [];
 
   /*
    * The contract is the award cost item, not the purchase order's Contract
@@ -260,29 +282,37 @@ export async function existingAward(
    * scope change belongs to the award line, because that is the line whose
    * Billed Cost Items it rewrites.
    *
-   * Reading it the way planScopeChange does also means the figure compared
-   * on screen and the figure the plan works from cannot disagree.
+   * Read for every purchase order at once rather than one query each, and
+   * read the way planScopeChange does, so the figure compared on screen and
+   * the figure the plan works from cannot disagree.
    */
   const c = QB_AWARD.costItems;
   const items = ((await queryAll({
     from: QB_AWARD.tables.costItems,
-    select: [c.recordId, c.unitCost, c.qty, c.costType],
-    where: `{${c.relatedPO}.EX.${poRecordId}}`,
+    select: [c.recordId, c.unitCost, c.qty, c.costType, c.relatedPO],
+    where: pos.map((po) => `{${c.relatedPO}.EX.${num(po, p.recordId)}}`).join("OR"),
     sortBy: [{ fieldId: c.recordId, order: "ASC" }],
   })) as Raw[]).filter((i) => isAwardItem(i, c.costType));
-  return {
-    poRecordId,
-    poNumber: str(po, p.poNumber),
-    contract: items.length
-      ? Math.round(
-          items.reduce((sum, i) => sum + num(i, c.unitCost) * (num(i, c.qty) || 1), 0) * 100,
-        ) / 100
-      : num(po, p.contractPrice),
-    awardedOn: str(po, 1),
-    jobName: str(po, p.jobName),
-    title: str(po, p.title),
-    scope: str(po, p.scope),
-  };
+
+  const contracts = new Map<number, number>();
+  for (const i of items) {
+    const po = rel(i, c.relatedPO) || num(i, c.relatedPO);
+    contracts.set(po, (contracts.get(po) ?? 0) + num(i, c.unitCost) * (num(i, c.qty) || 1));
+  }
+
+  return pos
+    .filter((po) => contracts.has(num(po, p.recordId)))
+    .map((po) => ({
+      poRecordId: num(po, p.recordId),
+      poNumber: str(po, p.poNumber),
+      contract: Math.round((contracts.get(num(po, p.recordId)) ?? 0) * 100) / 100,
+      awardedOn: str(po, 1),
+      jobName: str(po, p.jobName),
+      title: str(po, p.title),
+      scope: str(po, p.scope),
+      subRecordId: rel(po, p.relatedSub) || num(po, p.relatedSub),
+      subcontractor: str(po, p.subName),
+    }));
 }
 
 /** Change Orders (bunq4tpad) — the fields this app fills in. */

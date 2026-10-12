@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import LookupField from "./LookupField";
 import NumberField from "./NumberField";
-import { loadJobs, loadSubs } from "@/lib/qb-client";
+import { loadJobs, loadSubs, loadEverySub } from "@/lib/qb-client";
 import PaymentSchedule from "./PaymentSchedule";
 import {
   scheduleForJobType,
@@ -74,6 +74,33 @@ export default function LetterPanel({
   const [letterError, setLetterError] = useState<string | null>(null);
   const [subEmail, setSubEmail] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
+
+  /*
+   * A revision's subcontractor is the purchase order's own, so it arrives
+   * already filled in and the lookup that would have carried their email
+   * never runs. Resolve it once from the vendor list, or the one letter that
+   * needs no retyping is the one that opens with an empty To.
+   *
+   * Every vendor rather than the award bench: a vendor can hold a purchase
+   * order without being eligible for a new award, and this is about a
+   * purchase order that already exists.
+   */
+  useEffect(() => {
+    const recordId = fields.subRecordId;
+    if (!revising || !recordId || subEmail) return;
+    let live = true;
+    void loadEverySub(region)
+      .then((r) => {
+        const match = r.items.find((v) => v.id === recordId);
+        if (live && match?.email) setSubEmail(match.email);
+      })
+      .catch(() => {
+        /* The address can still be typed; nothing here is worth an error. */
+      });
+    return () => {
+      live = false;
+    };
+  }, [revising, fields.subRecordId, subEmail, region]);
   const chosen = result.tierRows.find((r) => r.selected);
   const cfg = regionFor(region);
   const template = templateFor(cfg);

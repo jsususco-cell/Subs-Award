@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import { refuseJob, refusePo } from "@/lib/auth/guard";
-import { awardSchedule, existingAward, planScopeChange } from "@/lib/scope-change-server";
+import {
+  applyScopeChange,
+  awardSchedule,
+  existingAward,
+  planScopeChange,
+} from "@/lib/scope-change-server";
+import { currentSession } from "@/lib/auth/current-user";
+import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -121,4 +128,75 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, plan });
+}
+
+/**
+ * Apply the change: the award's Unit Cost, then the milestones under it.
+ *
+ * Separate from working it out, and a different verb, so a review that has
+ * been read is what precedes a write rather than the same request doing both.
+ * Gated by the send key like every other route that writes to Quickbase.
+ */
+export async function PUT(request: Request) {
+  if (sendKeyRequired()) {
+    if (!sendKey()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Applying a scope change is disabled on this deployment: LETTER_SEND_KEY is not set.",
+        },
+        { status: 503 },
+      );
+    }
+    if (!sendKeyMatches(request.headers.get("x-send-key") ?? "")) {
+      return NextResponse.json(
+        { ok: false, keyRequired: true, error: "Send key missing or incorrect." },
+        { status: 401 },
+      );
+    }
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
+  }
+
+  const poRecordId = Number(body.poRecordId) || 0;
+  const revisedTotal = Number(body.revisedTotal);
+  if (!poRecordId || !Number.isFinite(revisedTotal) || revisedTotal < 0) {
+    return NextResponse.json(
+      { ok: false, error: "A purchase order and a revised total are required." },
+      { status: 400 },
+    );
+  }
+
+  const refused = await refusePo(request, poRecordId);
+  if (refused) return refused;
+
+  if (!isConfigured()) {
+    return NextResponse.json({ ok: false, error: "Quickbase is not configured." }, { status: 503 });
+  }
+
+  const session = await currentSession();
+  try {
+    const result = await applyScopeChange(
+      poRecordId,
+      revisedTotal,
+      session?.email ?? "scope-change",
+    );
+    return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "The change could not be applied.";
+    console.error("[qb/scope-change] apply", message);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `Quickbase would not accept the change. ${message}`,
+      },
+      { status: 502 },
+    );
+  }
 }

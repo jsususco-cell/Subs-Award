@@ -1,6 +1,7 @@
 import "server-only";
-import { QB_AWARD } from "./qb-award";
-import { queryAll } from "./quickbase";
+import { QB_AWARD, type QbRecord } from "./qb-award";
+import { QB_CONFIG, queryAll } from "./quickbase";
+import { logAudit } from "./log";
 import { absorbScopeChange, type Absorption, type ScheduleLine } from "./scope-change";
 
 /**
@@ -53,6 +54,8 @@ export interface AwardSchedule {
   jobState: string;
   subRecordId: number;
   costItemRecordId: number;
+  /** The award item's quantity, so a revised contract divides back correctly. */
+  costItemQty: number;
   /** Unit cost x quantity on the cost item — what the milestones divide up. */
   contract: number;
   /** Every bill on the cost item, in record order, as the schedule. */
@@ -113,6 +116,7 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
     jobState: str(po, p.jobState),
     subRecordId: rel(po, p.relatedSub),
     costItemRecordId: num(items[0], c.recordId),
+    costItemQty: num(items[0], c.qty) || 1,
     contract:
       Math.round(
         items.reduce((sum, i) => sum + num(i, c.unitCost) * (num(i, c.qty) || 1), 0) * 100,
@@ -278,5 +282,167 @@ export async function existingAward(
     jobName: str(po, p.jobName),
     title: str(po, p.title),
     scope: str(po, p.scope),
+  };
+}
+
+/** Change Orders (bunq4tpad) — the fields this app fills in. */
+const CO = {
+  table: "bunq4tpad",
+  title: 7,
+  description: 13,
+  relatedJob: 14,
+  relatedSub: 16,
+  relatedPo: 39,
+  classification: 57,
+  subAmount: 113,
+} as const;
+
+export interface AppliedScopeChange {
+  poRecordId: number;
+  costItemRecordId: number;
+  contractBefore: number;
+  contractAfter: number;
+  delta: number;
+  billsUpdated: number;
+  changeOrderRecordId: number | null;
+  changeOrderError: string | null;
+}
+
+async function write(table: string, data: QbRecord[]): Promise<number[]> {
+  const res = await fetch("https://api.quickbase.com/v1/records", {
+    method: "POST",
+    headers: {
+      "QB-Realm-Hostname": QB_CONFIG.realm,
+      Authorization: `QB-USER-TOKEN ${QB_CONFIG.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ to: table, data, mergeFieldId: 3, fieldsToReturn: [3] }),
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Quickbase ${res.status} writing ${table}: ${text.slice(0, 300)}`);
+  const body = JSON.parse(text) as {
+    metadata?: { createdRecordIds?: number[]; lineErrors?: Record<string, unknown> };
+  };
+  // Quickbase answers 200 to a write it rejected, so a failed update would
+  // otherwise read exactly like a clean one.
+  const errs = body.metadata?.lineErrors;
+  if (errs && Object.keys(errs).length) {
+    throw new Error(`Quickbase rejected rows in ${table}: ${JSON.stringify(errs).slice(0, 300)}`);
+  }
+  return body.metadata?.createdRecordIds ?? [];
+}
+
+/**
+ * Apply a scope change: the award's Unit Cost, then the milestones under it.
+ *
+ * The plan is worked out again here from Quickbase rather than taken from the
+ * caller. The browser showed a review, but between reading it and pressing
+ * Apply a milestone may have been paid, and a figure that arrived in a request
+ * body is not evidence of anything. If the fresh plan refuses, nothing is
+ * written.
+ *
+ * Order matters. The cost item moves first because it is the contract the
+ * milestones are a share of; if the bills moved first and the cost item write
+ * then failed, the schedule would sum to more than the contract it belongs to.
+ *
+ * Quickbase has no transactions, so a failure part way is reported with what
+ * had already been written rather than pretended away.
+ */
+export async function applyScopeChange(
+  poRecordId: number,
+  revisedTotal: number,
+  actor: string,
+): Promise<{ ok: true; applied: AppliedScopeChange } | { ok: false; error: string }> {
+  const plan = await planScopeChange(poRecordId, revisedTotal);
+  if (!plan) return { ok: false, error: "That purchase order has no award line to change." };
+  if (plan.absorption.problem) return { ok: false, error: plan.absorption.problem };
+  if (!plan.writes.length) {
+    return { ok: false, error: "Nothing would change on the schedule." };
+  }
+
+  const c = QB_AWARD.costItems;
+  const b = QB_AWARD.billLines;
+  const { schedule } = plan;
+
+  // 1. The contract. Unit Cost x Quantity is what rolls up, so the quantity
+  //    already on the record is divided back out rather than assumed to be
+  //    one — writing the whole contract as the unit cost of a two-unit item
+  //    would double it.
+  const qty = schedule.costItemQty || 1;
+  await write(QB_AWARD.tables.costItems, [
+    {
+      [c.recordId]: { value: schedule.costItemRecordId },
+      [c.unitCost]: { value: Math.round((plan.contractAfter / qty) * 100) / 100 },
+    },
+  ]);
+
+  // 2. The milestones under it.
+  await write(
+    QB_AWARD.tables.billLines,
+    plan.writes.map((w) => ({
+      [b.recordId]: { value: w.recordId },
+      [b.billAmount]: { value: w.amount },
+      // The fraction, which is what a Quickbase percent field stores.
+      [b.billPct]: { value: w.billPct },
+    })),
+  );
+
+  // 3. The change order. Last, and never fatal: the money is already right,
+  //    and a missing document is worth reporting rather than rolling back a
+  //    schedule that is now correct.
+  let changeOrderRecordId: number | null = null;
+  let changeOrderError: string | null = null;
+  try {
+    const ids = await write(CO.table, [
+      {
+        [CO.title]: { value: `Scope change — ${schedule.jobName}` },
+        [CO.description]: {
+          value:
+            `Revised scope for ${schedule.jobName} on ${schedule.poNumber}. ` +
+            `Contract ${plan.contractBefore.toFixed(2)} to ${plan.contractAfter.toFixed(2)}, ` +
+            `a change of ${plan.delta.toFixed(2)}, spread across ${plan.writes.length} ` +
+            `outstanding milestone${plan.writes.length === 1 ? "" : "s"}. ` +
+            `Applied from the Subcontractor Award System by ${actor}.`,
+        },
+        [CO.relatedJob]: { value: schedule.jobRecordId },
+        [CO.relatedSub]: { value: schedule.subRecordId },
+        [CO.relatedPo]: { value: poRecordId },
+        [CO.subAmount]: { value: plan.delta },
+        [CO.classification]: { value: "Intended for Purchase Order" },
+      },
+    ]);
+    changeOrderRecordId = ids[0] ?? null;
+  } catch (e) {
+    changeOrderError = e instanceof Error ? e.message : "The change order was not created.";
+  }
+
+  await logAudit({
+    action: "award.scope.changed",
+    actor,
+    outcome: "ok",
+    target: { table: QB_AWARD.tables.pos, recordId: poRecordId },
+    changedFields: ["Unit Cost", "Bill Amount", "Bill %"],
+    before: { contract: plan.contractBefore },
+    after: { contract: plan.contractAfter, delta: plan.delta },
+    details: {
+      costItemRecordId: schedule.costItemRecordId,
+      billsUpdated: plan.writes.length,
+      changeOrderRecordId,
+    },
+  });
+
+  return {
+    ok: true,
+    applied: {
+      poRecordId,
+      costItemRecordId: schedule.costItemRecordId,
+      contractBefore: plan.contractBefore,
+      contractAfter: plan.contractAfter,
+      delta: plan.delta,
+      billsUpdated: plan.writes.length,
+      changeOrderRecordId,
+      changeOrderError,
+    },
   };
 }

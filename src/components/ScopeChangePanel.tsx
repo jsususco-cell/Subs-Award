@@ -64,6 +64,17 @@ export default function ScopeChangePanel({
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState<{
+    contractBefore: number;
+    contractAfter: number;
+    delta: number;
+    billsUpdated: number;
+    changeOrderRecordId: number | null;
+    changeOrderError: string | null;
+  } | null>(null);
+  const [sendKey, setSendKey] = useState("");
+  const [keyNeeded, setKeyNeeded] = useState(false);
 
   const delta = Math.round((newTotal - previousTotal) * 100) / 100;
 
@@ -88,6 +99,71 @@ export default function ScopeChangePanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function apply() {
+    setApplying(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/qb/scope-change", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sendKey ? { "x-send-key": sendKey } : {}),
+        },
+        body: JSON.stringify({ poRecordId, revisedTotal: newTotal }),
+      });
+      const body = await res.json();
+      if (!body.ok) {
+        if (body.keyRequired) setKeyNeeded(true);
+        setError(body.error ?? "The change could not be applied.");
+        return;
+      }
+      setApplied(body.applied);
+    } catch {
+      setError("Could not reach Quickbase. Nothing was written.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  if (applied) {
+    return (
+      <section className="overflow-hidden rounded-xl border border-navy-300 bg-white shadow-sm">
+        <header className="border-b border-navy-100 bg-navy-50 px-4 py-3">
+          <h2 className="text-sm font-semibold tracking-wide text-navy-700 uppercase">
+            Scope change applied
+          </h2>
+        </header>
+        <div className="px-4 py-3 text-sm text-navy-800">
+          <p>
+            {poNumber} now carries{" "}
+            <strong className="tabular">{money(applied.contractAfter)}</strong>, up
+            from {money(applied.contractBefore)} — a change of{" "}
+            <strong className="tabular">{money(applied.delta)}</strong> across{" "}
+            {applied.billsUpdated} milestone
+            {applied.billsUpdated === 1 ? "" : "s"}.
+          </p>
+          <p className="mt-2 text-xs text-navy-600/70">
+            The award&rsquo;s Unit Cost was updated first, then the billing lines
+            under it.
+          </p>
+          {applied.changeOrderRecordId ? (
+            <p className="mt-2 text-xs text-navy-600/70">
+              Change order #{applied.changeOrderRecordId} was raised against{" "}
+              {poNumber}.
+            </p>
+          ) : null}
+          {applied.changeOrderError ? (
+            <p className="mt-2 rounded-lg border border-brand-red/30 bg-brand-red-50 px-3 py-2 text-xs text-brand-red-dark">
+              <strong>The figures are correct, but no change order was raised:</strong>{" "}
+              {applied.changeOrderError} Raise one by hand — applying this again
+              would move the milestones a second time.
+            </p>
+          ) : null}
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -220,10 +296,37 @@ export default function ScopeChangePanel({
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-navy-600/60">
-            Applying this is not wired up yet. It will rewrite these bills and
-            raise a change order against {poNumber}.
-          </p>
+          <div className="mt-4 rounded-lg border border-navy-200 bg-navy-50/60 px-3 py-3">
+            <p className="text-xs leading-relaxed text-navy-700">
+              Applying this updates the award&rsquo;s <strong>Unit Cost</strong> to{" "}
+              {money(plan.contractAfter)}, rewrites the{" "}
+              <strong>{plan.writes.length} billing line
+              {plan.writes.length === 1 ? "" : "s"}</strong> above, and raises a
+              change order against {poNumber}. Read the table first — this is the
+              review.
+            </p>
+            {keyNeeded ? (
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-medium text-navy-700">
+                  Send key
+                </span>
+                <input
+                  type="password"
+                  value={sendKey}
+                  onChange={(e) => setSendKey(e.target.value)}
+                  className="w-56 rounded-md border border-navy-200 px-2.5 py-1.5 text-sm focus:border-navy-500 focus:outline-none"
+                />
+              </label>
+            ) : null}
+            <button
+              type="button"
+              onClick={apply}
+              disabled={applying}
+              className="mt-2 rounded-md bg-brand-red px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-red-dark disabled:cursor-not-allowed disabled:bg-navy-200 disabled:text-navy-600/60"
+            >
+              {applying ? "Applying…" : "Apply the scope change"}
+            </button>
+          </div>
         </div>
       ) : null}
     </section>

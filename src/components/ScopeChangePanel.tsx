@@ -97,8 +97,9 @@ export default function ScopeChangePanel({
           This case is already awarded
         </h2>
         <p className="mt-1 text-xs leading-relaxed text-navy-600/80">
-          {jobName} already has {poNumber} against {subcontractor}. This upload is
-          a revised scope, so the difference belongs on the milestones still
+          {jobName || "This case"} already has {poNumber}
+          {subcontractor ? ` against ${subcontractor}` : ""}. This upload is a
+          revised scope, so the difference belongs on the milestones still
           outstanding rather than on a second purchase order.
         </p>
       </header>

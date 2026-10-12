@@ -57,19 +57,28 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
   const po = pos[0];
   if (!po) return null;
 
+  /*
+   * Every cost item on the purchase order, not the first one.
+   *
+   * PO-1212 carries three — Survey $950, Sales tax $38 and an Award Letter
+   * line of $24,864.29 — and reading items[0] reported that $25,852.29
+   * contract as a $950 award. A purchase order is one subcontractor's
+   * contract on one job, so its value is all of its cost items and its
+   * schedule is all of their bills.
+   */
   const items = (await queryAll({
     from: QB_AWARD.tables.costItems,
     select: [c.recordId, c.unitCost, c.qty],
     where: `{${c.relatedPO}.EX.${poRecordId}}`,
     sortBy: [{ fieldId: c.recordId, order: "ASC" }],
   })) as Raw[];
-  const item = items[0];
-  if (!item) return null;
+  if (!items.length) return null;
 
+  const itemIds = items.map((i) => num(i, c.recordId)).filter(Boolean);
   const bills = (await queryAll({
     from: QB_AWARD.tables.billLines,
     select: [b.recordId, b.title, b.billPct, b.billAmount, b.status, 143],
-    where: `{${b.relatedItem}.EX.${item[c.recordId] ? num(item, c.recordId) : 0}}`,
+    where: itemIds.map((id) => `{${b.relatedItem}.EX.${id}}`).join("OR"),
     sortBy: [{ fieldId: b.recordId, order: "ASC" }],
   })) as Raw[];
 
@@ -80,8 +89,11 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
     jobName: str(po, p.jobName),
     jobState: str(po, p.jobState),
     subRecordId: rel(po, p.relatedSub),
-    costItemRecordId: num(item, c.recordId),
-    contract: Math.round(num(item, c.unitCost) * (num(item, c.qty) || 1) * 100) / 100,
+    costItemRecordId: num(items[0], c.recordId),
+    contract:
+      Math.round(
+        items.reduce((sum, i) => sum + num(i, c.unitCost) * (num(i, c.qty) || 1), 0) * 100,
+      ) / 100,
     lines: bills.map((r) => {
       const amountPaid = num(r, 143);
       const status = str(r, b.status);
@@ -179,6 +191,9 @@ export interface ExistingAward {
   /** When the purchase order was raised — what a revised file must postdate. */
   awardedOn: string;
   jobName: string;
+  /** The purchase order's own title and scope, to carry into the letter. */
+  title: string;
+  scope: string;
 }
 
 /**
@@ -199,7 +214,7 @@ export async function existingAward(
   const rows = (await queryAll({
     from: QB_AWARD.tables.pos,
     // 1 is Date Created on every Quickbase table.
-    select: [p.recordId, p.poNumber, p.contractPrice, p.jobName, 1],
+    select: [p.recordId, p.poNumber, p.contractPrice, p.jobName, p.title, p.scope, 1],
     where: `{${p.relatedJob}.EX.${jobRecordId}}AND{${p.relatedSub}.EX.${subRecordId}}`,
     sortBy: [{ fieldId: p.recordId, order: "DESC" }],
   })) as Raw[];
@@ -223,15 +238,17 @@ export async function existingAward(
     where: `{${c.relatedPO}.EX.${poRecordId}}`,
     sortBy: [{ fieldId: c.recordId, order: "ASC" }],
   })) as Raw[];
-  const item = items[0];
-
   return {
     poRecordId,
     poNumber: str(po, p.poNumber),
-    contract: item
-      ? Math.round(num(item, c.unitCost) * (num(item, c.qty) || 1) * 100) / 100
+    contract: items.length
+      ? Math.round(
+          items.reduce((sum, i) => sum + num(i, c.unitCost) * (num(i, c.qty) || 1), 0) * 100,
+        ) / 100
       : num(po, p.contractPrice),
     awardedOn: str(po, 1),
     jobName: str(po, p.jobName),
+    title: str(po, p.title),
+    scope: str(po, p.scope),
   };
 }

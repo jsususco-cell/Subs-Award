@@ -33,14 +33,32 @@ export interface ExistingAward {
   contract: number;
   awardedOn: string;
   jobName: string;
+  /** The purchase order's own title and scope, to carry into the letter. */
+  title?: string;
+  scope?: string;
+}
+
+/**
+ * Everything the upload step already knows about a revision, so the steps
+ * after it open filled in. The case is in the system; nothing downstream
+ * should ask for it again.
+ */
+export interface RevisionContext {
+  award: ExistingAward;
+  jobRecordId: string;
+  jobName: string;
+  jobAddress: string;
+  jobType: string;
+  subRecordId: string;
+  subcontractor: string;
 }
 
 interface Props {
   region: RegionKey;
   busy: boolean;
   fileName: string | null;
-  /** The file, with the award it revises when this is a scope change. */
-  onFile: (file: File, award: ExistingAward | null) => void;
+  /** The file, with the revision context when this is a scope change. */
+  onFile: (file: File, revision: RevisionContext | null) => void;
 }
 
 function shortDate(iso: string): string {
@@ -56,6 +74,9 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
   const [jobRecordId, setJobRecordId] = useState("");
   const [sub, setSub] = useState("");
   const [subRecordId, setSubRecordId] = useState("");
+  /* Kept so the steps after the upload open filled in rather than blank. */
+  const [jobAddress, setJobAddress] = useState("");
+  const [jobType, setJobType] = useState("");
   const [award, setAward] = useState<ExistingAward | null>(null);
   const [checked, setChecked] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -116,7 +137,15 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
       return;
     }
     setProblem(null);
-    onFile(file, award);
+    onFile(file, {
+      award,
+      jobRecordId,
+      jobName: job,
+      jobAddress,
+      jobType,
+      subRecordId,
+      subcontractor: sub,
+    });
   }
 
   return (
@@ -186,6 +215,8 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
                 onChange={(v, extra) => {
                   setJob(v);
                   setJobRecordId(extra?.recordId ?? "");
+                  setJobAddress(extra?.address ?? "");
+                  setJobType(extra?.jobType ?? "");
                   reset();
                 }}
                 loadChoices={async () => {
@@ -198,7 +229,11 @@ export default function ScopeIntake({ region, busy, fileName, onFile }: Props) {
                       id: j.id,
                       label: j.name,
                       hint: [j.address, j.jobType].filter(Boolean).join("  ·  "),
-                      extra: { recordId: j.id },
+                      extra: {
+                        recordId: j.id,
+                        address: j.address ?? "",
+                        jobType: j.jobType ?? "",
+                      },
                     })),
                   };
                 }}

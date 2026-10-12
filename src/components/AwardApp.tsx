@@ -13,7 +13,7 @@ import LetterPanel, { type LetterFields } from "./LetterPanel";
 import type { CreatePoResult } from "./CreatePoPanel";
 import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
-import ScopeIntake, { type ExistingAward } from "./ScopeIntake";
+import ScopeIntake, { type RevisionContext } from "./ScopeIntake";
 import StartBar, { type Mode } from "./StartBar";
 import DirectAwardPanel, {
   emptyDirectAward,
@@ -157,7 +157,7 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
    * to be awarded already. Carried from the upload step to the create step,
    * which hands over to the scope change rather than raising a second PO.
    */
-  const [revising, setRevising] = useState<ExistingAward | null>(null);
+  const [revising, setRevising] = useState<RevisionContext | null>(null);
 
   /*
    * Region and preferences both start at their defaults so the server and the
@@ -292,8 +292,27 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
   );
 
   const handleFile = useCallback(
-    async (file: File, award: ExistingAward | null = null) => {
-      setRevising(award);
+    async (file: File, revision: RevisionContext | null = null) => {
+      setRevising(revision);
+      /*
+       * A revision is of something already in the system, so the steps after
+       * this one open filled in: the case, its address and type, and the
+       * subcontractor all come from the record that was picked, and the
+       * scope of work from the purchase order being revised.
+       */
+      if (revision) {
+        setLetter((prev) => ({
+          ...prev,
+          jobName: revision.jobName,
+          jobAddress: revision.jobAddress,
+          jobType: revision.jobType,
+          subcontractor: revision.subcontractor,
+          jobRecordId: revision.jobRecordId,
+          subRecordId: revision.subRecordId,
+          scopeOfWork:
+            prev.scopeOfWork || revision.award.scope || revision.award.title || "",
+        }));
+      }
       setBusy(true);
       setError(null);
       try {
@@ -760,7 +779,7 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
 
               {step === "letter" && (
                 <LetterPanel
-                  revising={revising}
+                  revising={revising?.award ?? null}
                   region={region}
                   fields={letter}
                   onField={(patch) =>

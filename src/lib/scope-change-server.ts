@@ -171,3 +171,67 @@ export async function planScopeChange(
     writes,
   };
 }
+
+export interface ExistingAward {
+  poRecordId: number;
+  poNumber: string;
+  contract: number;
+  /** When the purchase order was raised — what a revised file must postdate. */
+  awardedOn: string;
+  jobName: string;
+}
+
+/**
+ * The award a case already carries, if it carries one.
+ *
+ * A scope change needs somewhere to land, and that somewhere is the purchase
+ * order raised for this job and this subcontractor. Returning null is the
+ * answer to "is this a revision or a first award", not a failure.
+ *
+ * Deliberately not filtered by purchase order status, for the same reason the
+ * duplicate guard is not: a released PO is still the one that exists.
+ */
+export async function existingAward(
+  jobRecordId: number,
+  subRecordId: number,
+): Promise<ExistingAward | null> {
+  const p = QB_AWARD.pos;
+  const rows = (await queryAll({
+    from: QB_AWARD.tables.pos,
+    // 1 is Date Created on every Quickbase table.
+    select: [p.recordId, p.poNumber, p.contractPrice, p.jobName, 1],
+    where: `{${p.relatedJob}.EX.${jobRecordId}}AND{${p.relatedSub}.EX.${subRecordId}}`,
+    sortBy: [{ fieldId: p.recordId, order: "DESC" }],
+  })) as Raw[];
+  const po = rows[0];
+  if (!po) return null;
+  const poRecordId = num(po, p.recordId);
+
+  /*
+   * The contract comes off the cost item, not off the purchase order's
+   * Contract Price. That field is the mainland's; a Puerto Rico purchase
+   * order leaves it empty, so reading it showed PO-14107 — a real $199,786.46
+   * award — as $0.00.
+   *
+   * Reading it the way planScopeChange does also means the figure compared
+   * on screen and the figure the plan works from cannot disagree.
+   */
+  const c = QB_AWARD.costItems;
+  const items = (await queryAll({
+    from: QB_AWARD.tables.costItems,
+    select: [c.recordId, c.unitCost, c.qty],
+    where: `{${c.relatedPO}.EX.${poRecordId}}`,
+    sortBy: [{ fieldId: c.recordId, order: "ASC" }],
+  })) as Raw[];
+  const item = items[0];
+
+  return {
+    poRecordId,
+    poNumber: str(po, p.poNumber),
+    contract: item
+      ? Math.round(num(item, c.unitCost) * (num(item, c.qty) || 1) * 100) / 100
+      : num(po, p.contractPrice),
+    awardedOn: str(po, 1),
+    jobName: str(po, p.jobName),
+  };
+}

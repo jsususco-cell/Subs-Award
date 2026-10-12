@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
-import { refusePo } from "@/lib/auth/guard";
-import { awardSchedule, planScopeChange } from "@/lib/scope-change-server";
+import { refuseJob, refusePo } from "@/lib/auth/guard";
+import { awardSchedule, existingAward, planScopeChange } from "@/lib/scope-change-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,7 +17,30 @@ export const maxDuration = 60;
  * POST { poRecordId, revisedTotal } -> what would change, line by line
  */
 export async function GET(request: Request) {
-  const poRecordId = Number(new URL(request.url).searchParams.get("po")) || 0;
+  const params = new URL(request.url).searchParams;
+
+  /*
+   * Asked by case and subcontractor, which is what the upload step knows
+   * before anything has been parsed: has this case been awarded to this
+   * subcontractor already, and when. A null answer is the answer — it means
+   * this is a first award, not a revision — so it comes back ok with
+   * `award: null` rather than as a 404.
+   */
+  const jobRecordId = Number(params.get("job")) || 0;
+  const subRecordId = Number(params.get("sub")) || 0;
+  if (jobRecordId && subRecordId) {
+    const refusedJob = await refuseJob(request, jobRecordId);
+    if (refusedJob) return refusedJob;
+    if (!isConfigured()) {
+      return NextResponse.json({ ok: false, error: "Quickbase is not configured." }, { status: 503 });
+    }
+    return NextResponse.json({
+      ok: true,
+      award: await existingAward(jobRecordId, subRecordId),
+    });
+  }
+
+  const poRecordId = Number(params.get("po")) || 0;
   if (!poRecordId) {
     return NextResponse.json(
       { ok: false, error: "A purchase order is required." },

@@ -16,6 +16,7 @@ import { canRenderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
 import ScopeChangePanel from "./ScopeChangePanel";
+import type { ExistingAward } from "./ScopeIntake";
 
 const PO_STATUSES = ["Unreleased", "Released", "Approved"];
 const EXPENSE_CLASSES = ["PO", "Non-PO"];
@@ -43,6 +44,12 @@ export interface CreatePoResult {
 }
 
 interface Props {
+  /**
+   * The award this upload revises, when the upload step said so. Present
+   * means the scope change opens straight away rather than after a create
+   * is attempted and refused as a duplicate.
+   */
+  revising?: ExistingAward | null;
   /** Quickbase record ids, only known when picked from the lookups. */
   jobRecordId: string;
   subRecordId: string;
@@ -94,6 +101,7 @@ function storedKey(): string {
 }
 
 export default function CreatePoPanel({
+  revising = null,
   categories,
   house,
   itemsNotIncluded,
@@ -133,7 +141,17 @@ export default function CreatePoPanel({
    */
   const [alreadyAwarded, setAlreadyAwarded] = useState<
     { recordId: number; poNumber: string; contractPrice: number } | null
-  >(null);
+  >(
+    // Declared a scope change at the upload step, so the award is known
+    // already and there is nothing to attempt before showing the comparison.
+    revising
+      ? {
+          recordId: revising.poRecordId,
+          poNumber: revising.poNumber,
+          contractPrice: revising.contract,
+        }
+      : null,
+  );
   const [createInsurance, setCreateInsurance] = useState(true);
   const [sendLetter, setSendLetter] = useState(true);
   const [poDownloading, setPoDownloading] = useState(false);

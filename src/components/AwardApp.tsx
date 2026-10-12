@@ -9,11 +9,11 @@ import {
 } from "react";
 import AwardPanel from "./AwardPanel";
 import ExtractPanel from "./ExtractPanel";
-import FileDrop from "./FileDrop";
 import LetterPanel, { type LetterFields } from "./LetterPanel";
 import type { CreatePoResult } from "./CreatePoPanel";
 import PreviewPanel from "./PreviewPanel";
 import HistoryRail from "./HistoryRail";
+import ScopeIntake, { type ExistingAward } from "./ScopeIntake";
 import StartBar, { type Mode } from "./StartBar";
 import DirectAwardPanel, {
   emptyDirectAward,
@@ -152,6 +152,12 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
   // Recorded once the award is written to Quickbase, so it cannot be
   // created a second time from the same award.
   const [createdPo, setCreatedPo] = useState<CreatePoResult | null>(null);
+  /*
+   * Set when the upload was declared a scope change and the case turned out
+   * to be awarded already. Carried from the upload step to the create step,
+   * which hands over to the scope change rather than raising a second PO.
+   */
+  const [revising, setRevising] = useState<ExistingAward | null>(null);
 
   /*
    * Region and preferences both start at their defaults so the server and the
@@ -286,7 +292,8 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
   );
 
   const handleFile = useCallback(
-    async (file: File) => {
+    async (file: File, award: ExistingAward | null = null) => {
+      setRevising(award);
       setBusy(true);
       setError(null);
       try {
@@ -656,10 +663,11 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
 
               {step === "upload" && (
                 <div className="mx-auto max-w-2xl">
-                  <FileDrop
-                    onFile={handleFile}
+                  <ScopeIntake
+                    region={region}
                     busy={busy}
                     fileName={fileName}
+                    onFile={handleFile}
                   />
                   <HowItWorks />
                 </div>
@@ -752,6 +760,7 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
 
               {step === "letter" && (
                 <LetterPanel
+                  revising={revising}
                   region={region}
                   fields={letter}
                   onField={(patch) =>

@@ -15,6 +15,7 @@ import { regionFor, type RegionKey } from "@/lib/regions";
 import { templateFor } from "@/lib/letter-content";
 import SendLetterPanel from "./SendLetterPanel";
 import CreatePoPanel, { type CreatePoResult } from "./CreatePoPanel";
+import type { ExistingAward } from "./ScopeIntake";
 import { money, pct } from "@/lib/format";
 import type { AwardResult } from "@/lib/types";
 
@@ -34,6 +35,8 @@ export interface LetterFields {
 }
 
 interface Props {
+  /** The award this upload revises, when it was declared a scope change. */
+  revising?: ExistingAward | null;
   /** Decides the job and vendor lists, the letter and the payment schedule. */
   region: RegionKey;
   fields: LetterFields;
@@ -55,6 +58,7 @@ interface Props {
  * stops short of rendering a document rather than inventing a layout.
  */
 export default function LetterPanel({
+  revising = null,
   region,
   fields,
   onField,
@@ -328,6 +332,7 @@ export default function LetterPanel({
       </section>
 
       <CreatePoPanel
+        revising={revising}
         jobRecordId={fields.jobRecordId}
         subRecordId={fields.subRecordId}
         jobName={fields.jobName}

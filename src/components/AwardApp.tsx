@@ -294,25 +294,6 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
   const handleFile = useCallback(
     async (file: File, revision: RevisionContext | null = null) => {
       setRevising(revision);
-      /*
-       * A revision is of something already in the system, so the steps after
-       * this one open filled in: the case, its address and type, and the
-       * subcontractor all come from the record that was picked, and the
-       * scope of work from the purchase order being revised.
-       */
-      if (revision) {
-        setLetter((prev) => ({
-          ...prev,
-          jobName: revision.jobName,
-          jobAddress: revision.jobAddress,
-          jobType: revision.jobType,
-          subcontractor: revision.subcontractor,
-          jobRecordId: revision.jobRecordId,
-          subRecordId: revision.subRecordId,
-          scopeOfWork:
-            prev.scopeOfWork || revision.award.scope || revision.award.title || "",
-        }));
-      }
       setBusy(true);
       setError(null);
       try {
@@ -328,7 +309,28 @@ export default function AwardApp({ allowed, grant }: AwardAppProps) {
         setLessOandPOverride(null);
         setAdaEnabled(false);
         setAda(DEFAULT_ADA);
-        setLetter(emptyLetter(regionRef.current));
+        /*
+         * A new file clears the letter, which is right for a fresh award and
+         * wrong for a revision: the case, the subcontractor and the scope are
+         * already in the system, so they are filled in here rather than asked
+         * for again. Seeded as part of the reset — doing it before would be
+         * undone by the reset a few lines later, which is exactly what
+         * happened the first time.
+         */
+        setLetter(
+          revision
+            ? {
+                ...emptyLetter(regionRef.current),
+                jobName: revision.jobName,
+                jobAddress: revision.jobAddress,
+                jobType: revision.jobType,
+                subcontractor: revision.subcontractor,
+                jobRecordId: revision.jobRecordId,
+                subRecordId: revision.subRecordId,
+                scopeOfWork: revision.award.scope || revision.award.title || "",
+              }
+            : emptyLetter(regionRef.current),
+        );
         setCreatedPo(null);
         setShowIgnored(false);
         setActiveId(null);

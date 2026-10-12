@@ -23,6 +23,28 @@ const rel = (r: Raw, f: number): number => {
   return Number(typeof v === "object" && v !== null ? v.id : v) || 0;
 };
 
+
+/**
+ * Is this cost item the award, rather than something else on the same
+ * purchase order?
+ *
+ * Cost Type is what separates them, and it is the app's own convention —
+ * buildCostItemRecord writes "Subcontractor". PO-1212 carries a Survey
+ * (Labor), its Sales tax (Other) and the award (Subcontractor); summing all
+ * three reported a $24,864.29 award as $25,852.29, and reading the first
+ * reported it as $950. The scope change belongs to the award line, because
+ * that is the line whose Billed Cost Items it rewrites.
+ *
+ * Multi-choice, so the value can arrive as an array or a single string.
+ */
+function isAwardItem(r: Raw, fid: number): boolean {
+  const v = val(r, fid);
+  const list = Array.isArray(v) ? v : [v];
+  return list.some(
+    (x) => String(x ?? "").trim().toLowerCase() === QB_AWARD.costItemCostType.toLowerCase(),
+  );
+}
+
 export interface AwardSchedule {
   poRecordId: number;
   poNumber: string;
@@ -66,12 +88,13 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
    * contract on one job, so its value is all of its cost items and its
    * schedule is all of their bills.
    */
-  const items = (await queryAll({
+  const all = (await queryAll({
     from: QB_AWARD.tables.costItems,
-    select: [c.recordId, c.unitCost, c.qty],
+    select: [c.recordId, c.unitCost, c.qty, c.costType],
     where: `{${c.relatedPO}.EX.${poRecordId}}`,
     sortBy: [{ fieldId: c.recordId, order: "ASC" }],
   })) as Raw[];
+  const items = all.filter((i) => isAwardItem(i, c.costType));
   if (!items.length) return null;
 
   const itemIds = items.map((i) => num(i, c.recordId)).filter(Boolean);
@@ -223,21 +246,26 @@ export async function existingAward(
   const poRecordId = num(po, p.recordId);
 
   /*
-   * The contract comes off the cost item, not off the purchase order's
-   * Contract Price. That field is the mainland's; a Puerto Rico purchase
-   * order leaves it empty, so reading it showed PO-14107 — a real $199,786.46
-   * award — as $0.00.
+   * The contract is the award cost item, not the purchase order's Contract
+   * Price and not the sum of everything on it.
+   *
+   * Contract Price is the mainland's field and a Puerto Rico purchase order
+   * leaves it empty, so reading it showed PO-14107 — a real $199,786.46
+   * award — as $0.00. Summing every cost item is wrong the other way:
+   * PO-1212 carries a Survey and its sales tax beside the award, and the
+   * scope change belongs to the award line, because that is the line whose
+   * Billed Cost Items it rewrites.
    *
    * Reading it the way planScopeChange does also means the figure compared
    * on screen and the figure the plan works from cannot disagree.
    */
   const c = QB_AWARD.costItems;
-  const items = (await queryAll({
+  const items = ((await queryAll({
     from: QB_AWARD.tables.costItems,
-    select: [c.recordId, c.unitCost, c.qty],
+    select: [c.recordId, c.unitCost, c.qty, c.costType],
     where: `{${c.relatedPO}.EX.${poRecordId}}`,
     sortBy: [{ fieldId: c.recordId, order: "ASC" }],
-  })) as Raw[];
+  })) as Raw[]).filter((i) => isAwardItem(i, c.costType));
   return {
     poRecordId,
     poNumber: str(po, p.poNumber),

@@ -252,24 +252,37 @@ export function summarise(changes: ScopeChange[]): ScopeChange | null {
   const newest = changes[0];
   const older = changes.slice(1);
 
+  /*
+   * Each line shows its own last change, which is not always the purchase
+   * order's last change.
+   *
+   * A revision rewrites only what is still outstanding, and an advance moves
+   * one milestone and leaves the rest. A change records every line on the
+   * schedule regardless, with the same figure on both sides for the ones it
+   * left alone — so looking only at the newest entry showed blanks against
+   * milestones that had plainly moved, and hid the advance that moved them.
+   *
+   * The line's Was is what it was immediately before the last change that
+   * actually moved it. A line that has never moved has no before and no
+   * after, and is left out rather than reported as unchanged-to-unchanged.
+   */
+  const touched = new Set<number>();
+  for (const c of changes) for (const k of Object.keys(c.lines)) touched.add(Number(k));
+
   const lines: ScopeChange["lines"] = {};
-  for (const [key, line] of Object.entries(newest.lines)) {
-    const recordId = Number(key);
-    /*
-     * A change records every line on the schedule, not only the ones it
-     * rewrites, so a paid milestone and a bill raised by an advance appear
-     * here with the same figure on both sides. Reporting those puts one
-     * number in both columns and says a change happened.
-     */
-    if (Math.abs(line.after - line.before) < 0.005) continue;
-    // Dated by the change that set the Was figure, per line: a revision
-    // rewrites only what is still outstanding, so two lines on one purchase
-    // order can have been last touched at different times.
-    const previous = older.find((c) => c.lines[recordId]);
+  for (const recordId of touched) {
+    const moved = changes.findIndex(
+      (c) => c.lines[recordId] && Math.abs(c.lines[recordId].after - c.lines[recordId].before) >= 0.005,
+    );
+    if (moved === -1) continue;
+    const at = changes[moved];
+    // Dated by whatever set the Was figure: the nearest earlier change that
+    // touched this same line.
+    const previous = changes.slice(moved + 1).find((c) => c.lines[recordId]);
     lines[recordId] = {
-      ...line,
+      ...at.lines[recordId],
       atBefore: previous ? previous.at : null,
-      atAfter: newest.at,
+      atAfter: at.at,
     };
   }
 

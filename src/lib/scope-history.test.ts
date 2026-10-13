@@ -144,3 +144,64 @@ test("a reduction keeps its sign", () => {
   const r = summarise([change(31000, 24000, "2026-10-13T14:00:00Z")]);
   assert.equal(r?.delta, -7000);
 });
+
+test("a line moved by an earlier revision still reports that move", () => {
+  /*
+   * PO-15489. The advance took 5380 from $92,206.83 to $42,206.83, and the
+   * scope change after it left 5380 alone while moving 5381. Reading only the
+   * newest entry showed a blank against a milestone that had plainly halved,
+   * and hid the advance that did it.
+   */
+  const reduction: ScopeChange = {
+    at: "2026-10-13T15:46:17Z",
+    actor: "a@b.com",
+    contractBefore: 184413.66,
+    contractAfter: 170010.51,
+    delta: -14403.15,
+    lines: {
+      5380: { before: 42206.83, after: 42206.83, pctBefore: 22.89, pctAfter: 22.89 },
+      5381: { before: 92206.83, after: 77803.68, pctBefore: 50, pctAfter: 45.76 },
+      5382: { before: 50000, after: 50000, pctBefore: 27.11, pctAfter: 27.11 },
+    },
+  };
+  const advance: ScopeChange = {
+    at: "2026-10-13T15:33:38Z",
+    actor: "a@b.com",
+    contractBefore: 184413.66,
+    contractAfter: 184413.66,
+    delta: 0,
+    lines: { 5380: { before: 92206.83, after: 42206.83, pctBefore: 50, pctAfter: 22.89 } },
+  };
+  const first: ScopeChange = {
+    at: "2026-10-13T15:29:18Z",
+    actor: "a@b.com",
+    contractBefore: 150000,
+    contractAfter: 184413.66,
+    delta: 34413.66,
+    lines: {
+      5380: { before: 75000, after: 92206.83, pctBefore: 50, pctAfter: 50 },
+      5381: { before: 75000, after: 92206.83, pctBefore: 50, pctAfter: 50 },
+    },
+  };
+
+  const r = summarise([reduction, advance, first]);
+
+  // Its own last move, which is the advance, not the purchase order's.
+  assert.equal(r?.lines[5380]?.before, 92206.83);
+  assert.equal(r?.lines[5380]?.after, 42206.83);
+  assert.equal(r?.lines[5380]?.atAfter, "2026-10-13T15:33:38Z");
+  assert.equal(r?.lines[5380]?.atBefore, "2026-10-13T15:29:18Z");
+
+  // And 5381's is the reduction, a different revision again.
+  assert.equal(r?.lines[5381]?.after, 77803.68);
+  assert.equal(r?.lines[5381]?.atAfter, "2026-10-13T15:46:17Z");
+
+  // 5382 was raised by the advance and has never moved since, so it has no
+  // before and no after — not a figure repeated in both columns.
+  assert.equal(r?.lines[5382], undefined);
+
+  // The lines that did move account for the schedule as it was.
+  const column = Object.values(r?.lines ?? {}).reduce((sum, l) => sum + l.before, 0);
+  assert.equal(Math.round(column * 100) / 100, 184413.66);
+  assert.equal(r?.scheduleBefore, 184413.66);
+});

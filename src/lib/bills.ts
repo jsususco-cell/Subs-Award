@@ -22,6 +22,8 @@ export interface PoChange {
   contractBefore: number;
   contractAfter: number;
   delta: number;
+  /** When the contract it was awarded at took effect: the PO's own creation. */
+  atBefore: string;
 }
 
 export interface PoOption {
@@ -53,6 +55,8 @@ export interface PoOption {
    * recorded — not that nothing changed.
    */
   change?: PoChange;
+  /** Date Created on the purchase order. */
+  createdAt?: string;
 }
 
 /** A Billing Line Item already on the cost item. */

@@ -34,6 +34,9 @@ interface Milestone {
   /** What it was worth before the last recorded scope change, if any. */
   previousAmount: number | null;
   previousPct: number | null;
+  /** When each figure took effect. */
+  previousAt: string | null;
+  currentAt: string | null;
 }
 
 interface Change {
@@ -42,6 +45,7 @@ interface Change {
   contractBefore: number;
   contractAfter: number;
   delta: number;
+  atBefore?: string;
 }
 
 type Branch =
@@ -315,28 +319,31 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                           <td className="px-4 py-2">
                             <Pill status={p.billingStatus} />
                           </td>
-                          <td className="tabular py-2 text-right whitespace-nowrap text-navy-600/80">
-                            {moved ? money(moved.contractBefore) : "—"}
+                          <td className="py-2 text-right whitespace-nowrap">
+                            <Dated
+                              amount={moved ? moved.contractBefore : null}
+                              at={moved?.atBefore ?? p.createdAt}
+                            />
                           </td>
-                          <td className="px-4 py-2 text-right whitespace-nowrap">
+                          <td
+                            className="px-4 py-2 text-right whitespace-nowrap"
+                            title={moved ? `Changed by ${moved.actor}` : undefined}
+                          >
+                            <Dated
+                              amount={moved ? moved.contractAfter : null}
+                              at={moved?.at}
+                              strong
+                            />
                             {moved ? (
-                              <>
-                                <span className="tabular font-medium text-navy-800">
-                                  {money(moved.contractAfter)}
-                                </span>
-                                <span
-                                  className={`tabular block text-xs ${
-                                    moved.delta < 0 ? "text-brand-red" : "text-navy-600/70"
-                                  }`}
-                                  title={`Changed by ${moved.actor}`}
-                                >
-                                  {moved.delta > 0 ? "+" : ""}
-                                  {money(moved.delta)} · {shortDate(moved.at)}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-navy-600/40">—</span>
-                            )}
+                              <span
+                                className={`tabular block text-xs ${
+                                  moved.delta < 0 ? "text-brand-red" : "text-navy-600/70"
+                                }`}
+                              >
+                                {moved.delta > 0 ? "+" : ""}
+                                {money(moved.delta)}
+                              </span>
+                            ) : null}
                           </td>
                         </tr>
                         {shown && (
@@ -368,6 +375,38 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * A figure with the date it took effect under it.
+ *
+ * The date is the point of the pair: $7,982.50 and $4,982.50 side by side say
+ * what changed, and the two dates say when each of them started being true.
+ */
+function Dated({
+  amount,
+  at,
+  strong = false,
+}: {
+  amount: number | null;
+  at: string | null | undefined;
+  strong?: boolean;
+}) {
+  if (amount == null) return <span className="text-navy-600/40">—</span>;
+  return (
+    <>
+      <span
+        className={`tabular block ${strong ? "font-medium text-navy-800" : "text-navy-600/80"}`}
+      >
+        {money(amount)}
+      </span>
+      {at ? (
+        <span className="block text-xs whitespace-nowrap text-navy-600/60">
+          {shortDate(at)}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -490,15 +529,15 @@ function Schedule({
                   </span>
                 ) : null}
               </td>
-              <td className="tabular py-1 pl-3 text-right whitespace-nowrap text-navy-600/80">
-                {m.previousAmount == null ? "—" : money(m.previousAmount)}
+              <td className="py-1 pl-3 text-right whitespace-nowrap">
+                <Dated amount={m.previousAmount} at={m.previousAt} />
               </td>
-              <td className="tabular py-1 pl-3 text-right whitespace-nowrap font-medium text-navy-800">
-                {m.previousAmount == null ? (
-                  <span className="font-normal text-navy-600/40">—</span>
-                ) : (
-                  money(m.amount)
-                )}
+              <td className="py-1 pl-3 text-right whitespace-nowrap">
+                <Dated
+                  amount={m.previousAmount == null ? null : m.amount}
+                  at={m.currentAt}
+                  strong
+                />
               </td>
               <td className="py-1 pl-3 text-right">
                 <AdvancePayment milestone={m} onApplied={onChanged} />

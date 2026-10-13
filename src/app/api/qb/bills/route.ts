@@ -215,6 +215,8 @@ export async function GET(request: Request) {
           f.billingStatus,
           f.totalAmountPaid,
           f.totalPaidPct,
+          // 1 is Date Created — when the contract it was awarded at took effect.
+          1,
         ],
         // Region-filtered on the PO's own "Job - State" lookup, so a Florida
         // vendor is never offered a Puerto Rico purchase order.
@@ -243,6 +245,7 @@ export async function GET(request: Request) {
         billingStatus: str(r, f.billingStatus),
         totalAmountPaid: num(r, f.totalAmountPaid),
         totalPaidPct: num(r, f.totalPaidPct),
+        createdAt: str(r, 1),
       }));
 
       /*
@@ -262,6 +265,12 @@ export async function GET(request: Request) {
                 contractBefore: c.contractBefore,
                 contractAfter: c.contractAfter,
                 delta: c.delta,
+                /*
+                 * The contract summarises from the oldest recorded change
+                 * back, so what it was before that has stood since the
+                 * purchase order was raised.
+                 */
+                atBefore: i.createdAt,
               },
             }
           : i;
@@ -303,7 +312,8 @@ export async function GET(request: Request) {
 
       const rows = (await queryAll({
         from: QB_AWARD.tables.billLines,
-        select: [f.recordId, f.title, f.billPct, f.billAmount, f.status, 143, 12],
+        // 1 is Date Created on every Quickbase table.
+        select: [f.recordId, f.title, f.billPct, f.billAmount, f.status, 143, 12, 1],
         where: items.map((i) => `{${f.relatedItem}.EX.${num(i, c.recordId)}}`).join("OR"),
         sortBy: [{ fieldId: f.recordId, order: "ASC" }],
       })) as Raw[];
@@ -345,6 +355,14 @@ export async function GET(request: Request) {
             datePaid: str(r, 12),
             previousAmount: was ? was.before : null,
             previousPct: was ? was.pctBefore : null,
+            /*
+             * Each figure dated by when it took effect. The current one was
+             * set by the change; the previous one by whatever change set it
+             * before that, or — far more often — it has stood since the line
+             * was raised, which only the record knows.
+             */
+            previousAt: was ? (was.atBefore ?? str(r, 1)) : null,
+            currentAt: was && change ? change.at : null,
           };
         }),
       });

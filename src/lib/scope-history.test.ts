@@ -55,3 +55,45 @@ test("a reduction keeps its sign", () => {
   const r = summarise([change(31000, 24000, "2026-10-13T14:00:00Z")]);
   assert.equal(r?.delta, -7000);
 });
+
+test("each line's previous figure is dated by the change that set it", () => {
+  /*
+   * Two changes, both touching milestone 4321. Its "before" in the newest
+   * entry is what the older entry left behind, so that older entry's date is
+   * when the figure started being true.
+   */
+  const r = summarise([
+    change(25000, 31000, "2026-10-13T14:00:00Z"),
+    change(20000, 25000, "2026-10-01T09:00:00Z"),
+  ]);
+  assert.equal(r?.lines[4321]?.atBefore, "2026-10-01T09:00:00Z");
+});
+
+test("a first change leaves the previous date to the record itself", () => {
+  // Nothing earlier set it, so the figure has stood since the line was raised
+  // and only Quickbase knows that date. Null rather than a guess.
+  const r = summarise([change(20000, 25000, "2026-10-13T14:00:00Z")]);
+  assert.equal(r?.lines[4321]?.atBefore, null);
+});
+
+test("lines touched at different times are dated differently", () => {
+  const newest: ScopeChange = {
+    at: "2026-10-13T14:00:00Z",
+    actor: "a@b.com",
+    contractBefore: 25000,
+    contractAfter: 31000,
+    delta: 6000,
+    lines: {
+      10: { before: 1, after: 2, pctBefore: 1, pctAfter: 2 },
+      20: { before: 3, after: 4, pctBefore: 3, pctAfter: 4 },
+    },
+  };
+  const middle: ScopeChange = {
+    ...newest,
+    at: "2026-10-05T09:00:00Z",
+    lines: { 20: { before: 2, after: 3, pctBefore: 2, pctAfter: 3 } },
+  };
+  const r = summarise([newest, middle, { ...middle, at: "2026-10-01T09:00:00Z" }]);
+  assert.equal(r?.lines[10]?.atBefore, null, "never touched before");
+  assert.equal(r?.lines[20]?.atBefore, "2026-10-05T09:00:00Z", "the nearer of the two");
+});

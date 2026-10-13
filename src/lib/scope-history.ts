@@ -87,6 +87,7 @@ export async function scopeChangesFor(
         after: a.amount,
         pctBefore: b.pct,
         pctAfter: a.pct,
+        atBefore: null,
       };
     }
 

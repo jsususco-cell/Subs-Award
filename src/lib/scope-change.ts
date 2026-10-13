@@ -196,7 +196,22 @@ export interface ScopeChange {
   contractAfter: number;
   delta: number;
   /** Keyed by the billing line item's record id. */
-  lines: Record<number, { before: number; after: number; pctBefore: number; pctAfter: number }>;
+  lines: Record<
+    number,
+    {
+      before: number;
+      after: number;
+      pctBefore: number;
+      pctAfter: number;
+      /*
+       * When the "before" figure took effect: the previous change that
+       * touched this same line. Null when there was none, which is the usual
+       * case — the figure has stood since the line was created, and only the
+       * record itself knows that date.
+       */
+      atBefore?: string | null;
+    }
+  >;
 }
 
 /**
@@ -212,8 +227,25 @@ export function summarise(changes: ScopeChange[]): ScopeChange | null {
   if (!changes.length) return null;
   const newest = changes[0];
   const oldest = changes[changes.length - 1];
+
+  /*
+   * Each line's "before" is dated by the change that set it, which is the
+   * next older one that touched that same line. Looked up per line rather
+   * than taken from the entry as a whole: a change rewrites the milestones
+   * still outstanding, so two lines on one purchase order can have been last
+   * touched at different times.
+   */
+  const older = changes.slice(1);
+  const lines: ScopeChange["lines"] = {};
+  for (const [key, line] of Object.entries(newest.lines)) {
+    const recordId = Number(key);
+    const previous = older.find((c) => c.lines[recordId]);
+    lines[recordId] = { ...line, atBefore: previous ? previous.at : null };
+  }
+
   return {
     ...newest,
+    lines,
     contractBefore: oldest.contractBefore,
     delta: Math.round((newest.contractAfter - oldest.contractBefore) * 100) / 100,
   };

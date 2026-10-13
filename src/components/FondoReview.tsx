@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { money } from "@/lib/format";
 import { coverageOf } from "@/lib/fondo";
 import type { ReviewItem } from "@/lib/fondo-server";
+import { rememberKey, storedKey, subscribeToKey } from "@/lib/send-key";
 
 /**
  * Isaac's queue.
@@ -18,37 +19,12 @@ import type { ReviewItem } from "@/lib/fondo-server";
  * are other companies' insurance certificates.
  */
 
-const KEY_STORE = "subs-award:send-key";
-
-/**
+/*
  * The remembered send key, read through useSyncExternalStore rather than
- * mirrored into state by a mount effect. Snapshots must be referentially
- * stable, so the value is cached after the first read; the server snapshot is
- * empty, which is what keeps the first paint identical on both sides.
+ * mirrored into state by a mount effect. The server snapshot is empty, which
+ * is what keeps the first paint identical on both sides; a string snapshot
+ * needs no caching, since useSyncExternalStore compares with Object.is.
  */
-let keyCache: string | null = null;
-
-function storedKey(): string {
-  if (keyCache === null) {
-    try {
-      keyCache = localStorage.getItem(KEY_STORE) ?? "";
-    } catch {
-      keyCache = "";
-    }
-  }
-  return keyCache;
-}
-
-function rememberKey(key: string): void {
-  keyCache = key;
-  try {
-    localStorage.setItem(KEY_STORE, key);
-  } catch {
-    /* private mode — it just will not be remembered */
-  }
-}
-
-const noSubscribe = () => () => {};
 const emptyKey = () => "";
 
 type Outcome = { action: "approve" | "return"; notified: boolean; notifyError: string | null };
@@ -65,7 +41,7 @@ export default function FondoReview({ items }: { items: ReviewItem[] }) {
 
   // The typed value wins once there is one; until then the remembered key
   // shows, so a returning reviewer does not have to enter it again.
-  const remembered = useSyncExternalStore(noSubscribe, storedKey, emptyKey);
+  const remembered = useSyncExternalStore(subscribeToKey, storedKey, emptyKey);
   const [typedKey, setTypedKey] = useState<string | null>(null);
   const sendKey = typedKey ?? remembered;
 

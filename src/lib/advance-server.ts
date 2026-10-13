@@ -1,6 +1,8 @@
 import "server-only";
 import { QB_AWARD, billBasisFields, type QbRecord } from "./qb-award";
-import { QB_CONFIG, queryAll } from "./quickbase";
+import { QB_CONFIG, poRegionKey, queryAll } from "./quickbase";
+import { regionFor } from "./regions";
+import { trySubcontractorAccount } from "./qb-accounts";
 import { logAudit } from "./log";
 import { planAdvance, type AdvancePlan } from "./advance";
 
@@ -134,6 +136,9 @@ export interface AppliedAdvance {
   amountAfter: number;
   advance: number;
   newBillRecordId: number | null;
+  /** The QuickBooks account the new bill was coded to, when one resolved. */
+  qbLineItem: string | null;
+  accountError: string | null;
 }
 
 async function write(table: string, data: QbRecord[]): Promise<number[]> {
@@ -197,7 +202,19 @@ export async function applyAdvance(
     },
   ]);
 
-  // 2. The advance, as a bill of its own under the same cost item.
+  /*
+   * 2. The advance, as a bill of its own under the same cost item.
+   *
+   * QB Line Item is the QuickBooks account the draw is coded to, resolved the
+   * same way the billing screen resolves it — by the purchase order's own
+   * region, since the account differs between Puerto Rico and the mainland.
+   * Leaving it out produced a line that sat outside the Subcontractors group
+   * in Billed Cost Items and had nothing to sync against.
+   *
+   * Not fatal if it cannot be resolved: the money is right either way, and a
+   * blank account is visible and fixable where a refused advance would leave
+   * the milestone already reduced with no bill raised against it.
+   */
   let newBillRecordId: number | null = null;
   const record: QbRecord = {
     [b.relatedItem]: { value: context.costItemRecordId },
@@ -207,6 +224,18 @@ export async function applyAdvance(
     [b.billPct]: { value: plan.bill.fraction },
     [b.costType]: { value: QB_AWARD.billLineCostType },
   };
+  let accountError: string | null = null;
+  try {
+    const key = await poRegionKey(context.poRecordId);
+    const resolved = await trySubcontractorAccount(regionFor(key));
+    if ("account" in resolved) {
+      record[b.qbLineItem] = { value: resolved.account.label };
+    } else {
+      accountError = resolved.error;
+    }
+  } catch (e) {
+    accountError = e instanceof Error ? e.message : "Could not resolve the account.";
+  }
   if (context.jobRecordId) record[b.relatedJob] = { value: context.jobRecordId };
   const ids = await write(QB_AWARD.tables.billLines, [record]);
   newBillRecordId = ids[0] ?? null;
@@ -251,6 +280,8 @@ export async function applyAdvance(
     details: {
       advance: plan.bill.amount,
       newBillRecordId,
+      qbLineItem: record[b.qbLineItem]?.value ?? null,
+      accountError,
       costItemRecordId: context.costItemRecordId,
       poNumber: context.poNumber,
     },
@@ -267,6 +298,8 @@ export async function applyAdvance(
       amountAfter: plan.from.amountAfter,
       advance: plan.bill.amount,
       newBillRecordId,
+      qbLineItem: (record[b.qbLineItem]?.value as string) ?? null,
+      accountError,
     },
   };
 }

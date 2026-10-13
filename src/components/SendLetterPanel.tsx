@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { defaultBody, defaultSubject } from "@/lib/letter-email";
 import type { LetterInput } from "@/lib/letter";
+import { rememberKey, storedKey } from "@/lib/send-key";
 
 interface Props {
   letter: LetterInput;
@@ -13,15 +14,6 @@ interface Props {
 
 type Stage = "compose" | "confirming" | "sending" | "sent";
 
-const KEY_STORE = "subs-award:send-key";
-
-function storedKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORE) ?? "";
-  } catch {
-    return "";
-  }
-}
 
 export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
   const [to, setTo] = useState("");
@@ -48,7 +40,9 @@ export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
     setStage("sending");
     setError(null);
     try {
-      const key = sendKey || storedKey();
+      // Typing one anywhere is the last time any screen asks for it.
+      if (sendKey.trim()) rememberKey(sendKey);
+      const key = sendKey.trim() || storedKey();
       const res = await fetch("/api/letter/send", {
         method: "POST",
         headers: {
@@ -75,11 +69,6 @@ export default function SendLetterPanel({ letter, suggestedTo, ready }: Props) {
         }
         setStage("compose");
         return;
-      }
-      try {
-        localStorage.setItem(KEY_STORE, key);
-      } catch {
-        /* private mode — the key just will not be remembered */
       }
       setSentTo([...(body.to ?? []), ...(body.cc ?? [])]);
       setStage("sent");

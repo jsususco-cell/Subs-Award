@@ -15,6 +15,7 @@ import AttachToPo from "./AttachToPo";
 import { canRenderLetter, type LetterInput } from "@/lib/letter";
 import { regionFor } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
+import { rememberKey, storedKey } from "@/lib/send-key";
 import ScopeChangePanel from "./ScopeChangePanel";
 import type { ExistingAward } from "./ScopeIntake";
 
@@ -90,15 +91,6 @@ interface Props {
 
 type Stage = "idle" | "confirming" | "working";
 
-const KEY_STORE = "subs-award:send-key";
-
-function storedKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORE) ?? "";
-  } catch {
-    return "";
-  }
-}
 
 export default function CreatePoPanel({
   revising = null,
@@ -250,7 +242,9 @@ export default function CreatePoPanel({
     setStage("working");
     setError(null);
     setPartial(null);
-    const key = sendKey || storedKey();
+    // Typing one anywhere is the last time any screen asks for it.
+      if (sendKey.trim()) rememberKey(sendKey);
+      const key = sendKey.trim() || storedKey();
 
     let body: {
       ok?: boolean;
@@ -302,11 +296,6 @@ export default function CreatePoPanel({
 
     // The records exist from here on, so nothing below may report failure of
     // the whole operation -- only of the letter.
-    try {
-      localStorage.setItem(KEY_STORE, key);
-    } catch {
-      /* private mode -- the key just will not be remembered */
-    }
 
     const result: CreatePoResult = {
       poRecordId: body.poRecordId as number,

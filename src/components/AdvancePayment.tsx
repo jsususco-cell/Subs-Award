@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { money } from "@/lib/format";
+import { rememberKey, storedKey } from "@/lib/send-key";
 
 /**
  * Paying part of a milestone early.
@@ -16,15 +17,6 @@ import { money } from "@/lib/format";
  * rather than after.
  */
 
-const KEY_STORE = "subs-award:send-key";
-
-function storedKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORE) ?? "";
-  } catch {
-    return "";
-  }
-}
 
 interface Milestone {
   recordId: number;
@@ -105,7 +97,9 @@ export default function AdvancePayment({
     setApplying(true);
     setError(null);
     try {
-      const key = sendKey || storedKey();
+      // Typing one anywhere is the last time any screen asks for it.
+      if (sendKey.trim()) rememberKey(sendKey);
+      const key = sendKey.trim() || storedKey();
       const res = await fetch("/api/qb/advance", {
         method: "PUT",
         headers: {
@@ -121,11 +115,6 @@ export default function AdvancePayment({
         return;
       }
       if (key) {
-        try {
-          localStorage.setItem(KEY_STORE, key);
-        } catch {
-          /* A browser that will not remember it is not a failure. */
-        }
       }
       setOpen(false);
       setAmount("");

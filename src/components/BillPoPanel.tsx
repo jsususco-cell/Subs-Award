@@ -17,16 +17,8 @@ import {
 import { breakdownTotal, type BreakdownRow } from "@/lib/qb-award";
 import { isContractEntry, regionFor, type RegionKey } from "@/lib/regions";
 import { scheduleSetFor } from "@/lib/schedule";
+import { rememberKey, storedKey } from "@/lib/send-key";
 
-const KEY_STORE = "subs-award:send-key";
-
-function storedKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORE) ?? "";
-  } catch {
-    return "";
-  }
-}
 
 /** What the user has typed on a row, keyed by milestone number. */
 interface Draft {
@@ -230,7 +222,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
     setError(null);
     setDone(null);
     try {
-      const key = sendKey || storedKey();
+      // Typing one anywhere is the last time any screen asks for it.
+      if (sendKey.trim()) rememberKey(sendKey);
+      const key = sendKey.trim() || storedKey();
       const res = await fetch("/api/qb/bills", {
         method: "POST",
         headers: {
@@ -260,7 +254,6 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
       }
 
       try {
-        if (key) localStorage.setItem(KEY_STORE, key);
       } catch {
         /* private browsing just means it is asked for again */
       }
@@ -284,7 +277,9 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
     setError(null);
     setDone(null);
     try {
-      const key = sendKey || storedKey();
+      // Typing one anywhere is the last time any screen asks for it.
+      if (sendKey.trim()) rememberKey(sendKey);
+      const key = sendKey.trim() || storedKey();
       const res = await fetch("/api/qb/bills", {
         method: "POST",
         headers: {
@@ -324,7 +319,6 @@ export default function BillPoPanel({ region }: { region: RegionKey }) {
       }
 
       try {
-        if (key) localStorage.setItem(KEY_STORE, key);
       } catch {
         /* private browsing just means it is asked for again */
       }

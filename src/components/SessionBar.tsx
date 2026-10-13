@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { currentSession } from "@/lib/auth/current-user";
 import { AccessUnavailableError, regionAccess } from "@/lib/auth/access";
+import SendKeySetup from "./SendKeySetup";
 
 /**
  * Who is signed in, and the way out.
@@ -25,6 +26,8 @@ export default async function SessionBar() {
 
   return (
     <div className="flex items-center gap-3 text-xs text-navy-200">
+      {/* Set once here; every screen that writes reads it from the same place. */}
+      <SendKeySetup />
       {admin ? (
         <Link
           href="/admin"

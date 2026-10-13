@@ -35,6 +35,7 @@ export interface AdvanceContext {
     amount: number;
     paid: number;
     status: string;
+    statusFormula: string;
   };
 }
 
@@ -50,7 +51,16 @@ export async function advanceContext(billRecordId: number): Promise<AdvanceConte
   const b = QB_AWARD.billLines;
   const bills = (await queryAll({
     from: QB_AWARD.tables.billLines,
-    select: [b.recordId, b.title, b.billAmount, b.billPct, b.status, b.relatedItem, 143],
+    select: [
+      b.recordId,
+      b.title,
+      b.billAmount,
+      b.billPct,
+      b.status,
+      b.statusFormula,
+      b.amountPaid,
+      b.relatedItem,
+    ],
     where: `{${b.recordId}.EX.${billRecordId}}`,
   })) as Raw[];
   const bill = bills[0];
@@ -94,8 +104,9 @@ export async function advanceContext(billRecordId: number): Promise<AdvanceConte
       recordId: num(bill, b.recordId),
       title: str(bill, b.title),
       amount: num(bill, b.billAmount),
-      paid: num(bill, 143),
+      paid: num(bill, b.amountPaid),
       status: str(bill, b.status),
+      statusFormula: str(bill, b.statusFormula),
     },
   };
 }

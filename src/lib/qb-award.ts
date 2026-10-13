@@ -133,6 +133,13 @@ export const QB_AWARD = {
     unit: 46,
     builderCost: 47,
     status: 14,
+    /*
+     * "Status Formula" — computed from the Mark as Paid checkbox (97), which
+     * is the other way a bill is marked paid. It and Status (14) disagree on
+     * 269 of 2,159 live bills, so both have to be read. See bill-status.ts.
+     */
+    statusFormula: 186,
+    amountPaid: 143,
     relatedJob: 99,
     qbLineItem: 41,
     costType: 50,

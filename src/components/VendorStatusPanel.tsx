@@ -30,6 +30,8 @@ interface Milestone {
   amount: number;
   paid: number;
   status: string;
+  /** Resolved on the server from both of Quickbase's paid markers. */
+  settled: boolean;
   datePaid: string;
   /** What it was worth before the last recorded scope change, if any. */
   previousAmount: number | null;

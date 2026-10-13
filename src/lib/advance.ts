@@ -15,6 +15,8 @@
  * Pure, and knows nothing about Quickbase.
  */
 
+import { isSettled } from "./bill-status";
+
 const round = (n: number): number => Math.round(n * 100) / 100;
 
 /**
@@ -37,7 +39,10 @@ export interface AdvanceMilestone {
   amount: number;
   /** Amount Paid on the line. Anything above zero means money has moved. */
   paid: number;
+  /** Field 14, the stored Status. */
   status: string;
+  /** Field 186, computed from the Mark as Paid checkbox. Both are read. */
+  statusFormula?: string;
 }
 
 export interface AdvancePlan {
@@ -103,7 +108,14 @@ export function planAdvance(
    * advance anything — it would restate a bill somebody has been paid for,
    * and leave what was paid disagreeing with what the line says it is worth.
    */
-  if (milestone.paid > 0 || milestone.status.trim().toLowerCase() === "paid") {
+  if (
+    isSettled({
+      status: milestone.status,
+      statusFormula: milestone.statusFormula ?? "",
+      amount,
+      amountPaid: milestone.paid,
+    })
+  ) {
     return refuse(
       `${milestone.title} has already been paid, so there is nothing left on it to advance.`,
     );

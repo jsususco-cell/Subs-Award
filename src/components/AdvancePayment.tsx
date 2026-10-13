@@ -30,8 +30,8 @@ interface Milestone {
   recordId: number;
   title: string;
   amount: number;
-  paid: number;
-  status: string;
+  /** Already resolved from both of Quickbase's paid markers, on the server. */
+  settled: boolean;
 }
 
 interface Plan {
@@ -63,12 +63,12 @@ export default function AdvancePayment({
   const [keyNeeded, setKeyNeeded] = useState(false);
 
   /*
-   * A paid milestone has nothing left to advance, and a worthless one has
-   * nothing to take. The server refuses both as well; this only keeps the
-   * control off a row where it could never do anything.
+   * A settled milestone has nothing left to advance, and a worthless one has
+   * nothing to take. Quickbase records paid-ness two ways that disagree, so
+   * the reading is done once on the server and carried here rather than
+   * repeated — the button must not appear on a line the server would refuse.
    */
-  const settled = milestone.paid > 0 || milestone.status.trim().toLowerCase() === "paid";
-  if (settled || milestone.amount <= 0) return null;
+  if (milestone.settled || milestone.amount <= 0) return null;
 
   function reset() {
     setPlan(null);

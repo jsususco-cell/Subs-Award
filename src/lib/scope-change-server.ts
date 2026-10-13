@@ -3,6 +3,7 @@ import { QB_AWARD, type QbRecord } from "./qb-award";
 import { QB_CONFIG, queryAll } from "./quickbase";
 import { logAudit } from "./log";
 import { absorbScopeChange, type Absorption, type ScheduleLine } from "./scope-change";
+import { isSettled } from "./bill-status";
 
 /**
  * Reading a live award so a scope change can be planned against it.
@@ -103,7 +104,7 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
   const itemIds = items.map((i) => num(i, c.recordId)).filter(Boolean);
   const bills = (await queryAll({
     from: QB_AWARD.tables.billLines,
-    select: [b.recordId, b.title, b.billPct, b.billAmount, b.status, 143],
+    select: [b.recordId, b.title, b.billPct, b.billAmount, b.status, b.statusFormula, b.amountPaid],
     where: itemIds.map((id) => `{${b.relatedItem}.EX.${id}}`).join("OR"),
     sortBy: [{ fieldId: b.recordId, order: "ASC" }],
   })) as Raw[];
@@ -122,8 +123,9 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
         items.reduce((sum, i) => sum + num(i, c.unitCost) * (num(i, c.qty) || 1), 0) * 100,
       ) / 100,
     lines: bills.map((r) => {
-      const amountPaid = num(r, 143);
+      const amountPaid = num(r, b.amountPaid);
       const status = str(r, b.status);
+      const statusFormula = str(r, b.statusFormula);
       return {
         recordId: num(r, b.recordId),
         desc: str(r, b.title),
@@ -133,7 +135,12 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
         amount: num(r, b.billAmount),
         amountPaid,
         status,
-        locked: status.trim() === "Paid" || amountPaid > 0,
+        /*
+         * Both markers, because a line someone has ticked Mark as Paid must
+         * not be rewritten just because the stored Status happens to be
+         * blank — which on PO-15489 it is.
+         */
+        locked: isSettled({ status, statusFormula, amount: num(r, b.billAmount), amountPaid }),
       };
     }),
   };

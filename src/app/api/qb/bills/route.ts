@@ -18,6 +18,7 @@ import {
 import { isRegionKey, regionFor } from "@/lib/regions";
 import { refusePo, refuseRegion } from "@/lib/auth/guard";
 import { scopeChangesFor, summarise } from "@/lib/scope-history";
+import { isSettled, paymentLabel } from "@/lib/bill-status";
 import { sendKey, sendKeyMatches, sendKeyRequired } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -314,7 +315,17 @@ export async function GET(request: Request) {
       const rows = (await queryAll({
         from: QB_AWARD.tables.billLines,
         // 1 is Date Created on every Quickbase table.
-        select: [f.recordId, f.title, f.billPct, f.billAmount, f.status, 143, 12, 1],
+        select: [
+          f.recordId,
+          f.title,
+          f.billPct,
+          f.billAmount,
+          f.status,
+          f.statusFormula,
+          f.amountPaid,
+          12,
+          1,
+        ],
         where: items.map((i) => `{${f.relatedItem}.EX.${num(i, c.recordId)}}`).join("OR"),
         sortBy: [{ fieldId: f.recordId, order: "ASC" }],
       })) as Raw[];
@@ -360,14 +371,27 @@ export async function GET(request: Request) {
         milestones: rows.map((r) => {
           const recordId = num(r, f.recordId);
           const was = change?.lines[recordId];
+          /*
+           * Both markers, because Quickbase answers this twice and the two
+           * disagree. Resolved here rather than in the browser so that what
+           * is shown and what a scope change or an advance is allowed to
+           * move come from one reading.
+           */
+          const payment = {
+            status: str(r, f.status),
+            statusFormula: str(r, f.statusFormula),
+            amount: num(r, f.billAmount),
+            amountPaid: num(r, f.amountPaid),
+          };
           return {
             recordId,
             title: str(r, f.title),
             // Stored as the fraction; shown as a percentage.
             pct: Math.round(num(r, f.billPct) * 100 * 100) / 100,
             amount: num(r, f.billAmount),
-            paid: num(r, 143),
-            status: str(r, f.status),
+            paid: num(r, f.amountPaid),
+            status: paymentLabel(payment),
+            settled: isSettled(payment),
             datePaid: str(r, 12),
             previousAmount: was ? was.before : null,
             previousPct: was ? was.pctBefore : null,

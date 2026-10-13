@@ -255,6 +255,16 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                   {pos.map((p) => {
                     const contract = p.contractPrice || p.totalCost;
                     const paidPct = p.totalPaidPct * 100;
+                    /*
+                     * An advance moves money between milestones and leaves
+                     * the contract alone, so its entry has the same figure on
+                     * both sides. Showing it here would read as a change that
+                     * did not happen; the milestones underneath carry it.
+                     */
+                    const moved =
+                      p.change && p.change.contractBefore !== p.change.contractAfter
+                        ? p.change
+                        : null;
                     const shown = Boolean(open[p.recordId]);
                     const branch = branches[p.recordId];
                     const label = p.poNumber || `#${p.recordId}`;
@@ -306,22 +316,22 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                             <Pill status={p.billingStatus} />
                           </td>
                           <td className="tabular py-2 text-right whitespace-nowrap text-navy-600/80">
-                            {p.change ? money(p.change.contractBefore) : "—"}
+                            {moved ? money(moved.contractBefore) : "—"}
                           </td>
                           <td className="px-4 py-2 text-right whitespace-nowrap">
-                            {p.change ? (
+                            {moved ? (
                               <>
                                 <span className="tabular font-medium text-navy-800">
-                                  {money(p.change.contractAfter)}
+                                  {money(moved.contractAfter)}
                                 </span>
                                 <span
                                   className={`tabular block text-xs ${
-                                    p.change.delta < 0 ? "text-brand-red" : "text-navy-600/70"
+                                    moved.delta < 0 ? "text-brand-red" : "text-navy-600/70"
                                   }`}
-                                  title={`Changed by ${p.change.actor}`}
+                                  title={`Changed by ${moved.actor}`}
                                 >
-                                  {p.change.delta > 0 ? "+" : ""}
-                                  {money(p.change.delta)} · {shortDate(p.change.at)}
+                                  {moved.delta > 0 ? "+" : ""}
+                                  {money(moved.delta)} · {shortDate(moved.at)}
                                 </span>
                               </>
                             ) : (
@@ -417,11 +427,17 @@ function Schedule({
 
   return (
     <div className="border-l-2 border-navy-300 pl-3">
-      {branch.change ? (
+      {branch.change && branch.change.contractBefore !== branch.change.contractAfter ? (
         <p className="mb-1 text-xs text-navy-700">
           Scope changed {shortDate(branch.change.at)} by {branch.change.actor}:{" "}
           <span className="tabular">{money(branch.change.contractBefore)}</span> →{" "}
           <span className="tabular font-semibold">{money(branch.change.contractAfter)}</span>
+        </p>
+      ) : branch.change ? (
+        <p className="mb-1 text-xs text-navy-700">
+          Money moved between milestones {shortDate(branch.change.at)} by{" "}
+          {branch.change.actor}. The contract is unchanged at{" "}
+          <span className="tabular">{money(branch.change.contractAfter)}</span>.
         </p>
       ) : null}
       <table className="w-full text-xs">
@@ -503,10 +519,14 @@ function Schedule({
             </td>
             <td />
             <td className="tabular py-1 pl-3 text-right">
-              {branch.change ? money(branch.change.contractBefore) : ""}
+              {branch.milestones.some((m) => m.previousAmount != null)
+                ? money(
+                    branch.milestones.reduce((s, m) => s + (m.previousAmount ?? m.amount), 0),
+                  )
+                : ""}
             </td>
             <td className="tabular py-1 pl-3 text-right">
-              {branch.change ? money(branch.change.contractAfter) : ""}
+              {branch.milestones.some((m) => m.previousAmount != null) ? money(billed) : ""}
             </td>
             <td />
           </tr>

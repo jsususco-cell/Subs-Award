@@ -452,17 +452,19 @@ export interface AuditRecord {
  * list is the worst case.
  */
 export async function readAudit(opts: {
-  action: string;
+  /** One action, or several when more than one kind of entry answers the question. */
+  action: string | string[];
   targetTable?: string;
   targetIds: string[];
   limit?: number;
 }): Promise<AuditRecord[]> {
   const ids = [...new Set(opts.targetIds.filter(Boolean))];
-  if (!loggingEnabled || !ids.length) return [];
+  const actions = [...new Set((Array.isArray(opts.action) ? opts.action : [opts.action]).filter(Boolean))];
+  if (!loggingEnabled || !ids.length || !actions.length) return [];
 
   const esc = (v: string) => v.replace(/'/g, "");
   const where =
-    `{${QB.audit.action}.EX.'${esc(opts.action)}'}` +
+    `(${actions.map((a) => `{${QB.audit.action}.EX.'${esc(a)}'}`).join("OR")})` +
     (opts.targetTable ? `AND{${QB.audit.targetTable}.EX.'${esc(opts.targetTable)}'}` : "") +
     `AND(${ids.map((i) => `{${QB.audit.targetId}.EX.'${esc(i)}'}`).join("OR")})`;
 

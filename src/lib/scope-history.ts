@@ -18,7 +18,16 @@ import type { ScopeChange } from "./scope-change";
  * no previous value — correctly, because nothing recorded one.
  */
 
-const ACTION = "award.scope.changed";
+/*
+ * Both kinds of entry answer the same question.
+ *
+ * A scope change alters what the contract is worth; an advance moves money
+ * between two lines of the schedule and leaves the contract alone. Either way
+ * a milestone is worth something different afterwards from what it was worth
+ * before, and that is what this is read for. Querying only the scope change
+ * meant an advance wrote a perfectly good entry that nothing ever read.
+ */
+const ACTIONS = ["award.scope.changed", "award.advance.paid"];
 
 interface LoggedLine {
   recordId: number;
@@ -57,7 +66,7 @@ export async function scopeChangesFor(
   if (!ids.length) return out;
 
   const rows = await readAudit({
-    action: ACTION,
+    action: ACTIONS,
     targetTable: QB_AWARD.tables.pos,
     targetIds: ids.map(String),
   });

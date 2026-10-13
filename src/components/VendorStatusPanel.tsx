@@ -6,15 +6,21 @@ import { money, pct as fmtPct } from "@/lib/format";
 import { loadEverySub } from "@/lib/qb-client";
 import type { PoOption } from "@/lib/bills";
 import { regionFor, type RegionKey } from "@/lib/regions";
+import AdvancePayment from "./AdvancePayment";
 
 /**
  * What a subcontractor is owed and what they have been paid.
  *
- * Read-only, and deliberately so: every figure here is computed by Quickbase —
- * Total Amount Paid rolls up the bills, Total Paid Bill % divides it by the
- * builder cost, and the status is a formula over that. Writing any of them
- * from here would put a number on screen that Quickbase would disagree with
- * the moment a bill changed.
+ * Every figure here is computed by Quickbase — Total Amount Paid rolls up the
+ * bills, Total Paid Bill % divides it by the builder cost, and the status is a
+ * formula over that. None of them is written from here: putting a number on
+ * screen that Quickbase would disagree with the moment a bill changed is how
+ * this screen stops being worth reading.
+ *
+ * One action does write, and only one: an advance moves money out of an
+ * unpaid milestone onto a bill of its own. It is here rather than on the
+ * billing screen because this is where the schedule is, and it is marked as
+ * the exception it is.
  */
 /** One billing line under a purchase order, as the schedule route returns it. */
 interface Milestone {
@@ -64,7 +70,17 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
     const opening = !open[poRecordId];
     setOpen((o) => ({ ...o, [poRecordId]: opening }));
     if (!opening || branches[poRecordId]?.state === "ready") return;
+    await reload(poRecordId);
+  }
 
+  /**
+   * Read one purchase order's schedule again.
+   *
+   * Called on first open and after an advance, because an advance rewrites
+   * two of the lines on screen and the figures beside them are Quickbase's
+   * own — stale the moment a bill moves.
+   */
+  async function reload(poRecordId: number) {
     setBranches((b) => ({ ...b, [poRecordId]: { state: "loading" } }));
     try {
       const res = await fetch(
@@ -316,7 +332,11 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                         {shown && (
                           <tr className="border-b border-navy-50 last:border-0">
                             <td colSpan={8} className="bg-navy-50/50 px-4 pt-1 pb-3">
-                              <Schedule branch={branch} contract={contract} />
+                              <Schedule
+                                branch={branch}
+                                contract={contract}
+                                onChanged={() => void reload(p.recordId)}
+                              />
                             </td>
                           </tr>
                         )}
@@ -359,9 +379,12 @@ function shortDate(iso: string): string {
 function Schedule({
   branch,
   contract,
+  onChanged,
 }: {
   branch: Branch | undefined;
   contract: number;
+  /** Re-read this purchase order after an advance has moved money on it. */
+  onChanged: () => void;
 }) {
   if (!branch || branch.state === "loading") {
     return (
@@ -425,6 +448,9 @@ function Schedule({
             <th scope="col" className="py-1 pl-3 text-right font-semibold">
               Now
             </th>
+            <th scope="col" className="py-1 pl-3 text-right font-semibold">
+              <span className="sr-only">Advance</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -458,6 +484,9 @@ function Schedule({
                   money(m.amount)
                 )}
               </td>
+              <td className="py-1 pl-3 text-right">
+                <AdvancePayment milestone={m} onApplied={onChanged} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -479,6 +508,7 @@ function Schedule({
             <td className="tabular py-1 pl-3 text-right">
               {branch.change ? money(branch.change.contractAfter) : ""}
             </td>
+            <td />
           </tr>
         </tfoot>
       </table>

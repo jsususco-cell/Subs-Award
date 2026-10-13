@@ -204,43 +204,56 @@ export interface ScopeChange {
       pctBefore: number;
       pctAfter: number;
       /*
-       * When the "before" figure took effect: the previous change that
-       * touched this same line. Null when there was none, which is the usual
-       * case — the figure has stood since the line was created, and only the
-       * record itself knows that date.
+       * When the "before" figure took effect. Null because it is the figure
+       * the line was raised with — nothing recorded set it, so only the
+       * record itself knows the date.
        */
       atBefore?: string | null;
+      /** When the "after" figure took effect: the last change to touch it. */
+      atAfter?: string | null;
     }
   >;
 }
 
 /**
- * The oldest recorded contract and the newest, collapsed into one before and
- * after.
+ * Every recorded change collapsed into one before and one after.
  *
- * A purchase order can be revised more than once, and the question the screen
- * asks is what it started at and what it stands at now — not what each step
- * was. The per-milestone figures come from the most recent change, because
- * that is the one whose line-up still matches the milestones on screen.
+ * What the screen asks is what a purchase order started at and what it stands
+ * at now, so both ends come from the ends of the history: the oldest entry's
+ * before and the newest entry's after. The steps in between are kept in the
+ * list the caller already holds, for anyone who wants to open them.
+ *
+ * Each milestone is read the same way, and separately, because a scope change
+ * rewrites only the milestones still outstanding. A line revised twice and
+ * then paid is untouched by every change after that — reading only the newest
+ * entry made it disappear from the columns as though it had never moved, and
+ * it also made the milestones answer "what changed last time" while the
+ * purchase order above them answered "what changed in total".
  */
 export function summarise(changes: ScopeChange[]): ScopeChange | null {
   if (!changes.length) return null;
+  // Newest first, the way the log returns them.
   const newest = changes[0];
   const oldest = changes[changes.length - 1];
 
-  /*
-   * Each line's "before" is dated by the change that set it, which is the
-   * next older one that touched that same line. Looked up per line rather
-   * than taken from the entry as a whole: a change rewrites the milestones
-   * still outstanding, so two lines on one purchase order can have been last
-   * touched at different times.
-   */
-  const older = changes.slice(1);
+  const touched = new Set<number>();
+  for (const c of changes) for (const k of Object.keys(c.lines)) touched.add(Number(k));
+
+  const older = [...changes].reverse();
   const lines: ScopeChange["lines"] = {};
-  for (const [key, line] of Object.entries(newest.lines)) {
-    const recordId = Number(key);
-    const previous = older.find((c) => c.lines[recordId]);
-    lines[recordId] = { ...line, atBefore: previous ? previous.at : null };
+  for (const recordId of touched) {
+    const first = older.find((c) => c.lines[recordId]);
+    const last = changes.find((c) => c.lines[recordId]);
+    if (!first || !last) continue;
+    lines[recordId] = {
+      before: first.lines[recordId].before,
+      after: last.lines[recordId].after,
+      pctBefore: first.lines[recordId].pctBefore,
+      pctAfter: last.lines[recordId].pctAfter,
+      // The figure the line was raised with; only the record knows when.
+      atBefore: null,
+      atAfter: last.at,
+    };
   }
 
   return {

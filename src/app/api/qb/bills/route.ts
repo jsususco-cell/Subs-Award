@@ -265,6 +265,7 @@ export async function GET(request: Request) {
                 contractBefore: c.contractBefore,
                 contractAfter: c.contractAfter,
                 delta: c.delta,
+                revisions: (changes.get(i.recordId) ?? []).length,
                 /*
                  * The contract summarises from the oldest recorded change
                  * back, so what it was before that has stood since the
@@ -327,7 +328,8 @@ export async function GET(request: Request) {
        * no previous figure, which is the honest answer rather than a dash
        * standing in for "unchanged".
        */
-      const change = summarise((await scopeChangesFor([poRecordId])).get(poRecordId) ?? []);
+      const recorded = (await scopeChangesFor([poRecordId])).get(poRecordId) ?? [];
+      const change = summarise(recorded);
 
       return NextResponse.json({
         ok: true,
@@ -341,6 +343,19 @@ export async function GET(request: Request) {
               delta: change.delta,
             }
           : null,
+        /*
+         * Every step, newest first, so the summary above can be opened. The
+         * figures either side are already collapsed into `change`; this is
+         * what happened in between, which nothing else reports.
+         */
+        history: recorded.map((c) => ({
+          at: c.at,
+          actor: c.actor,
+          contractBefore: c.contractBefore,
+          contractAfter: c.contractAfter,
+          delta: c.delta,
+          lines: Object.keys(c.lines).length,
+        })),
         milestones: rows.map((r) => {
           const recordId = num(r, f.recordId);
           const was = change?.lines[recordId];
@@ -362,7 +377,9 @@ export async function GET(request: Request) {
              * was raised, which only the record knows.
              */
             previousAt: was ? (was.atBefore ?? str(r, 1)) : null,
-            currentAt: was && change ? change.at : null,
+            // Dated by the change that last touched THIS line, which on a
+            // milestone since paid is not the most recent change.
+            currentAt: was ? (was.atAfter ?? change?.at ?? null) : null,
           };
         }),
       });

@@ -24,6 +24,8 @@ export interface PoChange {
   delta: number;
   /** When the contract it was awarded at took effect: the PO's own creation. */
   atBefore: string;
+  /** How many recorded changes the pair collapses. */
+  revisions: number;
 }
 
 export interface PoOption {

@@ -46,12 +46,23 @@ interface Change {
   contractAfter: number;
   delta: number;
   atBefore?: string;
+  revisions?: number;
+}
+
+/** One recorded step, as the schedule route returns them, newest first. */
+interface Step {
+  at: string;
+  actor: string;
+  contractBefore: number;
+  contractAfter: number;
+  delta: number;
+  lines: number;
 }
 
 type Branch =
   | { state: "loading" }
   | { state: "error"; error: string }
-  | { state: "ready"; milestones: Milestone[]; change: Change | null };
+  | { state: "ready"; milestones: Milestone[]; change: Change | null; history: Step[] };
 
 export default function VendorStatusPanel({ region }: { region: RegionKey }) {
   const cfg = regionFor(region);
@@ -94,7 +105,12 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
       setBranches((b) => ({
         ...b,
         [poRecordId]: body.ok
-          ? { state: "ready", milestones: body.milestones ?? [], change: body.change ?? null }
+          ? {
+              state: "ready",
+              milestones: body.milestones ?? [],
+              change: body.change ?? null,
+              history: body.history ?? [],
+            }
           : { state: "error", error: body.error ?? "Could not load the schedule." },
       }));
     } catch {
@@ -342,6 +358,9 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
                               >
                                 {moved.delta > 0 ? "+" : ""}
                                 {money(moved.delta)}
+                                {moved.revisions && moved.revisions > 1
+                                  ? ` · ${moved.revisions}×`
+                                  : ""}
                               </span>
                             ) : null}
                           </td>
@@ -374,6 +393,124 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
           </p>
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * What happened to this purchase order, and when.
+ *
+ * The headline is the whole span — what it was raised at against what it
+ * stands at now — because that is the question being asked of the columns
+ * beside it. A purchase order revised more than once hides the steps behind
+ * a count rather than dropping them: they are the only record there is, and
+ * on a schedule revised three times the headline alone cannot say whether
+ * that happened over a year or in one afternoon.
+ */
+function Revisions({ change, history }: { change: Change; history: Step[] }) {
+  const [open, setOpen] = useState(false);
+  const moved = change.contractBefore !== change.contractAfter;
+  const steps = history.length;
+
+  const summary = moved ? (
+    <>
+      Scope changed: <span className="tabular">{money(change.contractBefore)}</span> →{" "}
+      <span className="tabular font-semibold">{money(change.contractAfter)}</span>
+    </>
+  ) : (
+    <>
+      Money moved between milestones. The contract is unchanged at{" "}
+      <span className="tabular">{money(change.contractAfter)}</span>
+    </>
+  );
+
+  if (steps <= 1) {
+    return (
+      <p className="mb-1 text-xs text-navy-700">
+        {summary}, {shortDate(change.at)} by {change.actor}.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mb-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="-ml-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs text-navy-700 transition hover:bg-navy-100/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/40"
+      >
+        <span
+          aria-hidden
+          className={`text-[0.55rem] leading-none text-navy-600/70 transition-transform ${
+            open ? "rotate-90" : ""
+          }`}
+        >
+          &#9654;
+        </span>
+        <span>
+          {summary}, over {steps} revisions.{" "}
+          <span className="text-navy-600/70 underline underline-offset-2">
+            {open ? "Hide them" : "Show them"}
+          </span>
+        </span>
+      </button>
+
+      {open ? (
+        <table className="mt-1 ml-3 w-full text-xs">
+          <thead>
+            <tr className="text-left tracking-wide text-navy-600/70 uppercase">
+              <th scope="col" className="py-1 pr-3 font-semibold">
+                When
+              </th>
+              <th scope="col" className="py-1 pr-3 font-semibold">
+                By
+              </th>
+              <th scope="col" className="py-1 pr-3 text-right font-semibold">
+                From
+              </th>
+              <th scope="col" className="py-1 pr-3 text-right font-semibold">
+                To
+              </th>
+              <th scope="col" className="py-1 text-right font-semibold">
+                Change
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Oldest first, so it reads as the order it happened in. */}
+            {[...history].reverse().map((h) => (
+              <tr key={`${h.at}-${h.contractAfter}`} className="border-t border-navy-100">
+                <td className="py-1 pr-3 whitespace-nowrap text-navy-800">
+                  {shortDate(h.at)}
+                </td>
+                <td className="max-w-[11rem] truncate py-1 pr-3 text-navy-600/80">
+                  {h.actor}
+                </td>
+                <td className="tabular py-1 pr-3 text-right text-navy-600/80">
+                  {money(h.contractBefore)}
+                </td>
+                <td className="tabular py-1 pr-3 text-right font-medium text-navy-800">
+                  {money(h.contractAfter)}
+                </td>
+                <td
+                  className={`tabular py-1 text-right ${
+                    h.delta < 0
+                      ? "text-brand-red"
+                      : h.delta > 0
+                        ? "text-navy-800"
+                        : "text-navy-600/60"
+                  }`}
+                >
+                  {h.delta === 0
+                    ? `${h.lines} milestone${h.lines === 1 ? "" : "s"}`
+                    : `${h.delta > 0 ? "+" : ""}${money(h.delta)}`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
     </div>
   );
 }
@@ -466,18 +603,8 @@ function Schedule({
 
   return (
     <div className="border-l-2 border-navy-300 pl-3">
-      {branch.change && branch.change.contractBefore !== branch.change.contractAfter ? (
-        <p className="mb-1 text-xs text-navy-700">
-          Scope changed {shortDate(branch.change.at)} by {branch.change.actor}:{" "}
-          <span className="tabular">{money(branch.change.contractBefore)}</span> →{" "}
-          <span className="tabular font-semibold">{money(branch.change.contractAfter)}</span>
-        </p>
-      ) : branch.change ? (
-        <p className="mb-1 text-xs text-navy-700">
-          Money moved between milestones {shortDate(branch.change.at)} by{" "}
-          {branch.change.actor}. The contract is unchanged at{" "}
-          <span className="tabular">{money(branch.change.contractAfter)}</span>.
-        </p>
+      {branch.change ? (
+        <Revisions change={branch.change} history={branch.history} />
       ) : null}
       <table className="w-full text-xs">
         <thead>

@@ -139,3 +139,44 @@ test("the change is measured against the contract, not against what is billed", 
   assert.equal(after, Math.round((billed + delta) * 100) / 100);
   assert.equal(Math.round((after + unbilled) * 100) / 100, revised);
 });
+
+test("a Bill % is a share of the contract, not of the milestones raised so far", () => {
+  /*
+   * PO-14094: a $79,825.00 contract with only $27,938.75 of it broken into
+   * milestones. Quickbase stores Bill Amount = Builder Cost x Bill %, and
+   * Builder Cost is the whole contract — so measuring the restated share
+   * against the schedule called a $13,746.79 draw 28.57%, which against the
+   * Builder Cost it is stored beside would be $28,570.
+   */
+  const lines: ScheduleLine[] = [
+    { desc: "Movilizacion", pct: 10, amount: 7982.5, locked: false },
+    { desc: "Demolicion", pct: 15, amount: 11973.75, locked: false },
+    { desc: "Fundacion", pct: 10, amount: 7982.5, locked: false },
+  ];
+  const contractAfter = 100000;
+  const r = absorbScopeChange(lines, 20175, contractAfter);
+  assert.equal(r.problem, null);
+
+  const m1 = r.lines.find((l) => l.desc === "Movilizacion");
+  assert.equal(m1?.amount, 13746.79);
+  assert.equal(m1?.restatedPct, 13.75, "a share of the contract");
+
+  /*
+   * The displayed percentage is rounded to two decimals, so it reproduces the
+   * money only to about a tenth of a percent of the contract — which is why
+   * the fraction actually written is derived from the amount instead. What
+   * matters here is that the share is of the contract: against the schedule
+   * these would read 28.57%, more than twice as much.
+   */
+  for (const l of r.lines) {
+    assert.ok(
+      Math.abs(contractAfter * (l.restatedPct / 100) - l.amount) < 11,
+      `${l.desc}: ${contractAfter} x ${l.restatedPct}% is nowhere near ${l.amount}`,
+    );
+  }
+});
+
+test("with no basis given the schedule is the basis, as before", () => {
+  const r = absorbScopeChange(sheet(), 200);
+  assert.equal(r.lines.find((l) => l.desc === "Milestone 3")?.restatedPct, 21.11);
+});

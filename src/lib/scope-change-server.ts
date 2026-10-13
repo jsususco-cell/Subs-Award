@@ -185,7 +185,14 @@ export async function planScopeChange(
   const contractBefore = schedule.contract;
   const delta = Math.round((revisedTotal - contractBefore) * 100) / 100;
   const unbilled = Math.round((contractBefore - billed) * 100) / 100;
-  const absorption = absorbScopeChange(schedule.lines, delta);
+  const contractAfter = Math.round((contractBefore + delta) * 100) / 100;
+  /*
+   * The revised contract is what a Bill % is a share of, because that is what
+   * Quickbase multiplies it by. Passing the schedule instead overstates every
+   * percentage on a purchase order whose milestones do not cover the whole
+   * contract.
+   */
+  const absorption = absorbScopeChange(schedule.lines, delta, contractAfter);
 
   const writes = absorption.problem
     ? []
@@ -196,15 +203,25 @@ export async function planScopeChange(
           recordId: src.recordId,
           desc: l.desc,
           amount: l.amount,
-          // Back to the fraction Quickbase stores.
-          billPct: Math.round((l.restatedPct / 100) * 1e6) / 1e6,
+          /*
+           * The fraction Quickbase stores, worked out from the amount and the
+           * contract rather than from the percentage on screen.
+           *
+           * restatedPct is rounded to two decimals because that is how a
+           * percentage reads; deriving the stored fraction from it throws the
+           * rounding into the money. 13.75% of a $100,000 contract is $13,750
+           * where the milestone is $13,746.79 — $3.21 adrift, because a
+           * hundredth of a percent is $10 at that size.
+           */
+          billPct:
+            contractAfter > 0 ? Math.round((l.amount / contractAfter) * 1e8) / 1e8 : 0,
         }));
 
   return {
     schedule,
     absorption,
     contractBefore,
-    contractAfter: Math.round((contractBefore + delta) * 100) / 100,
+    contractAfter,
     delta,
     unbilled,
     writes,
@@ -427,7 +444,19 @@ export async function applyScopeChange(
     },
   ]);
 
-  // 2. The milestones under it.
+  /*
+   * 2. The milestones under it, each kept internally consistent.
+   *
+   * Bill Amount, Bill % and Builder Cost are three separate stored fields on
+   * a billing line, and the convention across the table — 253 of 259 live
+   * lines — is that Bill Amount equals Builder Cost x Bill %. Writing the
+   * amount and the percentage while leaving the basis at the old contract
+   * would break that on every line touched, so the basis goes with them.
+   *
+   * Only the lines being rewritten. A paid milestone keeps its old amount,
+   * old percentage and old basis, which agree with each other; giving it the
+   * new basis alone is what would make it inconsistent.
+   */
   await write(
     QB_AWARD.tables.billLines,
     plan.writes.map((w) => ({
@@ -435,6 +464,7 @@ export async function applyScopeChange(
       [b.billAmount]: { value: w.amount },
       // The fraction, which is what a Quickbase percent field stores.
       [b.billPct]: { value: w.billPct },
+      [b.builderCost]: { value: plan.contractAfter },
     })),
   );
 
@@ -472,7 +502,7 @@ export async function applyScopeChange(
     actor,
     outcome: "ok",
     target: { table: QB_AWARD.tables.pos, recordId: poRecordId },
-    changedFields: ["Unit Cost", "Bill Amount", "Bill %"],
+    changedFields: ["Unit Cost", "Bill Amount", "Bill %", "Builder Cost"],
     /*
      * The milestones as well as the contract, line by line.
      *

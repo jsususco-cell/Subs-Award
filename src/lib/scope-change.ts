@@ -90,9 +90,25 @@ function money(n: number): string {
 export function absorbScopeChange(
   lines: ScheduleLine[],
   delta: number,
+  /*
+   * What a Bill % is a percentage OF, when that is not the schedule itself.
+   *
+   * Quickbase stores Bill Amount = Builder Cost x Bill %, where Builder Cost
+   * is the whole contract — so a milestone's percentage is its share of the
+   * contract, not its share of the milestones raised so far. The two are the
+   * same number on a schedule that covers the whole contract and nowhere near
+   * it on one that does not: PO-14094 carries $27,938.75 of milestones against
+   * a $79,825.00 contract, where measuring against the schedule called a
+   * $13,746.79 draw 28.57% when Quickbase means 13.75%, and 28.57% of the
+   * Builder Cost it would be stored against is $28,570.
+   *
+   * Defaults to the schedule, which is what it is when nothing says otherwise.
+   */
+  basis?: number,
 ): Absorption {
   const previousTotal = round(lines.reduce((sum, l) => sum + l.amount, 0));
   const newTotal = round(previousTotal + delta);
+  const share = basis && basis > 0 ? basis : newTotal;
   const lockedTotal = round(
     lines.filter((l) => l.locked).reduce((sum, l) => sum + l.amount, 0),
   );
@@ -147,7 +163,7 @@ export function absorbScopeChange(
         ...l,
         before: l.amount,
         took: 0,
-        restatedPct: newTotal > 0 ? round((l.amount / newTotal) * 100) : 0,
+        restatedPct: share > 0 ? round((l.amount / share) * 100) : 0,
       };
     }
     const took = taken[openIndex];
@@ -158,7 +174,7 @@ export function absorbScopeChange(
       amount,
       before: l.amount,
       took,
-      restatedPct: newTotal > 0 ? round((amount / newTotal) * 100) : 0,
+      restatedPct: share > 0 ? round((amount / share) * 100) : 0,
     };
   });
 

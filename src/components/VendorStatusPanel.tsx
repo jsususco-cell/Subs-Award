@@ -47,6 +47,8 @@ interface Change {
   delta: number;
   atBefore?: string;
   revisions?: number;
+  /** The schedule's total when it was first recorded, not a sum of the column. */
+  scheduleBefore?: number | null;
 }
 
 /** One recorded step, as the schedule route returns them, newest first. */
@@ -684,15 +686,19 @@ function Schedule({
               {money(branch.milestones.reduce((s, m) => s + m.paid, 0))}
             </td>
             <td />
+            {/*
+              * The schedule as it was, which is not the Was column added up:
+              * a bill raised by an advance was carved out of a milestone that
+              * is still counted at its pre-advance figure, so the column
+              * double-counts that money.
+              */}
             <td className="tabular py-1 pl-3 text-right">
-              {branch.milestones.some((m) => m.previousAmount != null)
-                ? money(
-                    branch.milestones.reduce((s, m) => s + (m.previousAmount ?? m.amount), 0),
-                  )
+              {branch.change?.scheduleBefore != null
+                ? money(branch.change.scheduleBefore)
                 : ""}
             </td>
             <td className="tabular py-1 pl-3 text-right">
-              {branch.milestones.some((m) => m.previousAmount != null) ? money(billed) : ""}
+              {branch.change?.scheduleBefore != null ? money(billed) : ""}
             </td>
             <td />
           </tr>

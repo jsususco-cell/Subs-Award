@@ -341,6 +341,7 @@ export async function GET(request: Request) {
               contractBefore: change.contractBefore,
               contractAfter: change.contractAfter,
               delta: change.delta,
+              scheduleBefore: change.scheduleBefore ?? null,
             }
           : null,
         /*

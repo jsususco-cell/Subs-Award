@@ -195,6 +195,19 @@ export interface ScopeChange {
   contractBefore: number;
   contractAfter: number;
   delta: number;
+  /*
+   * What the milestones came to at the earliest recorded moment.
+   *
+   * Not the sum of the lines' "before" figures. A line created partway
+   * through — an advance carves one out of a milestone — was never part of
+   * the schedule back then, and the milestone it came out of is still
+   * counted at its pre-advance figure, so adding them up double-counts the
+   * same money. On PO-15489 that read $200,000.00 against a contract that
+   * started at $150,000.00.
+   *
+   * Null when nothing is recorded.
+   */
+  scheduleBefore?: number | null;
   /** Keyed by the billing line item's record id. */
   lines: Record<
     number,
@@ -245,9 +258,19 @@ export function summarise(changes: ScopeChange[]): ScopeChange | null {
     const first = older.find((c) => c.lines[recordId]);
     const last = changes.find((c) => c.lines[recordId]);
     if (!first || !last) continue;
+    const before = first.lines[recordId].before;
+    const after = last.lines[recordId].after;
+    /*
+     * A line that ends where it started never moved, whatever it appeared in.
+     * A change records every line on the schedule, not only the ones it
+     * rewrites, so a paid milestone and a bill raised by an advance both show
+     * up in later entries unchanged. Reporting those as a before and an after
+     * puts the same figure in both columns and says a change happened.
+     */
+    if (Math.abs(after - before) < 0.005) continue;
     lines[recordId] = {
-      before: first.lines[recordId].before,
-      after: last.lines[recordId].after,
+      before,
+      after,
       pctBefore: first.lines[recordId].pctBefore,
       pctAfter: last.lines[recordId].pctAfter,
       // The figure the line was raised with; only the record knows when.
@@ -256,9 +279,20 @@ export function summarise(changes: ScopeChange[]): ScopeChange | null {
     };
   }
 
+  /*
+   * The schedule as it stood at the earliest recorded moment: the lines that
+   * existed then, at the figures they held then. Lines raised later are not
+   * part of it, which is what stops an advance being counted twice.
+   */
+  const scheduleBefore =
+    Math.round(
+      Object.values(oldest.lines).reduce((sum, l) => sum + l.before, 0) * 100,
+    ) / 100;
+
   return {
     ...newest,
     lines,
+    scheduleBefore,
     contractBefore: oldest.contractBefore,
     delta: Math.round((newest.contractAfter - oldest.contractBefore) * 100) / 100,
   };

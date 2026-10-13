@@ -402,12 +402,11 @@ export default function VendorStatusPanel({ region }: { region: RegionKey }) {
 /**
  * What happened to this purchase order, and when.
  *
- * The headline is the whole span — what it was raised at against what it
- * stands at now — because that is the question being asked of the columns
- * beside it. A purchase order revised more than once hides the steps behind
- * a count rather than dropping them: they are the only record there is, and
- * on a schedule revised three times the headline alone cannot say whether
- * that happened over a year or in one afternoon.
+ * The headline is the last step: what it was immediately before against what
+ * it is now, matching the columns beside it. Everything earlier sits behind a
+ * count rather than being dropped — those entries are the only record there
+ * is, and the headline alone cannot say whether a schedule reached its figure
+ * in one revision or five.
  */
 function Revisions({ change, history }: { change: Change; history: Step[] }) {
   const [open, setOpen] = useState(false);
@@ -451,9 +450,9 @@ function Revisions({ change, history }: { change: Change; history: Step[] }) {
           &#9654;
         </span>
         <span>
-          {summary}, over {steps} revisions.{" "}
+          {summary}, the last of {steps} revisions.{" "}
           <span className="text-navy-600/70 underline underline-offset-2">
-            {open ? "Hide them" : "Show them"}
+            {open ? "Hide them" : "Show them all"}
           </span>
         </span>
       </button>

@@ -267,11 +267,11 @@ export async function GET(request: Request) {
                 delta: c.delta,
                 revisions: (changes.get(i.recordId) ?? []).length,
                 /*
-                 * The contract summarises from the oldest recorded change
-                 * back, so what it was before that has stood since the
-                 * purchase order was raised.
+                 * Was is the step before Now, so its date is the revision
+                 * before this one — or, on a first revision, the day the
+                 * purchase order was raised at that figure.
                  */
-                atBefore: i.createdAt,
+                atBefore: c.atBefore ?? i.createdAt,
               },
             }
           : i;

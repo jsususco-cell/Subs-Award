@@ -208,6 +208,11 @@ export interface ScopeChange {
    * Null when nothing is recorded.
    */
   scheduleBefore?: number | null;
+  /**
+   * When the contract's Was figure took effect: the revision before this one.
+   * Null when this is the first, and the purchase order's creation stands in.
+   */
+  atBefore?: string | null;
   /** Keyed by the billing line item's record id. */
   lines: Record<
     number,
@@ -229,71 +234,60 @@ export interface ScopeChange {
 }
 
 /**
- * Every recorded change collapsed into one before and one after.
+ * The last recorded change: what it was immediately before, and what it is now.
  *
- * What the screen asks is what a purchase order started at and what it stands
- * at now, so both ends come from the ends of the history: the oldest entry's
- * before and the newest entry's after. The steps in between are kept in the
- * list the caller already holds, for anyone who wants to open them.
+ * Was is the step before Now, not where the purchase order started. A
+ * contract that went $150,000.00 -> $184,413.66 -> $170,010.51 reads
+ * $184,413.66 -> $170,010.51, and the next revision makes $170,010.51 the
+ * Was. Now becomes Was. Everything earlier is in the list the caller already
+ * holds, which the screen opens on demand — so nothing is lost by the
+ * headline showing one step rather than the whole span.
  *
- * Each milestone is read the same way, and separately, because a scope change
- * rewrites only the milestones still outstanding. A line revised twice and
- * then paid is untouched by every change after that — reading only the newest
- * entry made it disappear from the columns as though it had never moved, and
- * it also made the milestones answer "what changed last time" while the
- * purchase order above them answered "what changed in total".
+ * Each milestone is read the same way, from the same change, which is what
+ * keeps the lines and the purchase order above them describing one event.
  */
 export function summarise(changes: ScopeChange[]): ScopeChange | null {
   if (!changes.length) return null;
   // Newest first, the way the log returns them.
   const newest = changes[0];
-  const oldest = changes[changes.length - 1];
+  const older = changes.slice(1);
 
-  const touched = new Set<number>();
-  for (const c of changes) for (const k of Object.keys(c.lines)) touched.add(Number(k));
-
-  const older = [...changes].reverse();
   const lines: ScopeChange["lines"] = {};
-  for (const recordId of touched) {
-    const first = older.find((c) => c.lines[recordId]);
-    const last = changes.find((c) => c.lines[recordId]);
-    if (!first || !last) continue;
-    const before = first.lines[recordId].before;
-    const after = last.lines[recordId].after;
+  for (const [key, line] of Object.entries(newest.lines)) {
+    const recordId = Number(key);
     /*
-     * A line that ends where it started never moved, whatever it appeared in.
      * A change records every line on the schedule, not only the ones it
-     * rewrites, so a paid milestone and a bill raised by an advance both show
-     * up in later entries unchanged. Reporting those as a before and an after
-     * puts the same figure in both columns and says a change happened.
+     * rewrites, so a paid milestone and a bill raised by an advance appear
+     * here with the same figure on both sides. Reporting those puts one
+     * number in both columns and says a change happened.
      */
-    if (Math.abs(after - before) < 0.005) continue;
+    if (Math.abs(line.after - line.before) < 0.005) continue;
+    // Dated by the change that set the Was figure, per line: a revision
+    // rewrites only what is still outstanding, so two lines on one purchase
+    // order can have been last touched at different times.
+    const previous = older.find((c) => c.lines[recordId]);
     lines[recordId] = {
-      before,
-      after,
-      pctBefore: first.lines[recordId].pctBefore,
-      pctAfter: last.lines[recordId].pctAfter,
-      // The figure the line was raised with; only the record knows when.
-      atBefore: null,
-      atAfter: last.at,
+      ...line,
+      atBefore: previous ? previous.at : null,
+      atAfter: newest.at,
     };
   }
 
   /*
-   * The schedule as it stood at the earliest recorded moment: the lines that
-   * existed then, at the figures they held then. Lines raised later are not
-   * part of it, which is what stops an advance being counted twice.
+   * What the milestones came to immediately before this change — every line
+   * it recorded, at the figure it held then, including the ones it left
+   * alone. Not the Was column added up: that leaves out the untouched lines
+   * and so falls short of the schedule they are part of.
    */
   const scheduleBefore =
-    Math.round(
-      Object.values(oldest.lines).reduce((sum, l) => sum + l.before, 0) * 100,
-    ) / 100;
+    Math.round(Object.values(newest.lines).reduce((sum, l) => sum + l.before, 0) * 100) / 100;
 
   return {
     ...newest,
     lines,
     scheduleBefore,
-    contractBefore: oldest.contractBefore,
-    delta: Math.round((newest.contractAfter - oldest.contractBefore) * 100) / 100,
+    // When the Was figure took effect: the revision before this one. Null
+    // when there was none, and the record's own creation date stands in.
+    atBefore: older.length ? older[0].at : null,
   };
 }

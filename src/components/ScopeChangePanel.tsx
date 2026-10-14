@@ -30,6 +30,8 @@ interface Plan {
   contractBefore: number;
   contractAfter: number;
   delta: number;
+  rawDelta: number;
+  share: number;
   unbilled: number;
   absorption: {
     lines: Line[];
@@ -69,14 +71,28 @@ export default function ScopeChangePanel({
     contractBefore: number;
     contractAfter: number;
     delta: number;
+    rawDelta: number;
+    share: number;
     billsUpdated: number;
     changeOrderRecordId: number | null;
     changeOrderError: string | null;
   } | null>(null);
   const [sendKey, setSendKey] = useState("");
   const [keyNeeded, setKeyNeeded] = useState(false);
+  /*
+   * How much of the difference is awarded. A revised scope is an estimate,
+   * and what the subcontractor gets for it is a percentage of the movement
+   * rather than all of it — the same way a first award is a percentage of the
+   * scope behind it. Seventy to start with, and the person applying it says
+   * otherwise when it should be otherwise.
+   */
+  const [share, setShare] = useState("70");
 
-  const delta = Math.round((newTotal - previousTotal) * 100) / 100;
+  const rawDelta = Math.round((newTotal - previousTotal) * 100) / 100;
+  const sharePct = Number(share);
+  const shareValid = Number.isFinite(sharePct) && sharePct > 0 && sharePct <= 100;
+  // What actually lands on the milestones, which is what the buttons act on.
+  const delta = shareValid ? Math.round(rawDelta * (sharePct / 100) * 100) / 100 : 0;
 
   async function workOutChange() {
     setBusy(true);
@@ -86,7 +102,7 @@ export default function ScopeChangePanel({
       const res = await fetch("/api/qb/scope-change", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poRecordId, revisedTotal: newTotal }),
+        body: JSON.stringify({ poRecordId, revisedTotal: newTotal, share: sharePct }),
       });
       const body = await res.json();
       if (!body.ok) {
@@ -111,7 +127,7 @@ export default function ScopeChangePanel({
           "Content-Type": "application/json",
           ...(sendKey ? { "x-send-key": sendKey } : {}),
         },
-        body: JSON.stringify({ poRecordId, revisedTotal: newTotal }),
+        body: JSON.stringify({ poRecordId, revisedTotal: newTotal, share: sharePct }),
       });
       const body = await res.json();
       if (!body.ok) {
@@ -143,6 +159,10 @@ export default function ScopeChangePanel({
             <strong className="tabular">{money(applied.delta)}</strong> across{" "}
             {applied.billsUpdated} milestone
             {applied.billsUpdated === 1 ? "" : "s"}.
+          </p>
+          <p className="mt-1 text-xs text-navy-600/70">
+            The scope moved by {money(applied.rawDelta)}, of which {applied.share}%
+            was awarded.
           </p>
           <p className="mt-2 text-xs text-navy-600/70">
             The award&rsquo;s Unit Cost was updated first, then the billing lines
@@ -199,25 +219,69 @@ export default function ScopeChangePanel({
             <div className="text-xs text-navy-600/70">Difference</div>
             <div
               className={`tabular mt-0.5 text-lg font-semibold ${
-                delta > 0 ? "text-navy-800" : delta < 0 ? "text-brand-red" : "text-navy-600/60"
+                rawDelta > 0
+                  ? "text-navy-800"
+                  : rawDelta < 0
+                    ? "text-brand-red"
+                    : "text-navy-600/60"
               }`}
             >
-              {delta > 0 ? "+" : ""}
-              {money(delta)}
+              {rawDelta > 0 ? "+" : ""}
+              {money(rawDelta)}
             </div>
           </div>
         </div>
+
+        {/* How much of that difference is actually awarded. */}
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-lg border border-navy-200 bg-navy-50/60 px-3 py-2.5">
+          <label className="flex items-center gap-2">
+            <span className="text-xs font-medium text-navy-700">Awarded share</span>
+            <span className="relative">
+              <input
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value={share}
+                onChange={(e) => {
+                  setShare(e.target.value);
+                  // The figures below describe the old share until reworked.
+                  setPlan(null);
+                  setError(null);
+                }}
+                className="tabular w-24 rounded-md border border-navy-200 py-1 pr-6 pl-2 text-sm focus:border-navy-500 focus:outline-none"
+              />
+              <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-sm text-navy-600/70">
+                %
+              </span>
+            </span>
+          </label>
+          <span className="text-xs text-navy-600/70">of</span>
+          <span className="tabular text-sm text-navy-700">{money(rawDelta)}</span>
+          <span className="text-xs text-navy-600/70">=</span>
+          <span
+            className={`tabular text-base font-semibold ${
+              delta < 0 ? "text-brand-red" : "text-navy-800"
+            }`}
+          >
+            {delta > 0 ? "+" : ""}
+            {money(delta)}
+          </span>
+        </div>
+
         <p className="mt-2 text-center text-xs text-navy-600/80">
-          {delta === 0
-            ? "The revised scope is worth the same as the award. There is nothing to change."
-            : `The revised scope is ${money(Math.abs(delta))} ${delta > 0 ? "higher" : "lower"} than the award.`}
+          {!shareValid
+            ? "The awarded share has to be more than 0% and no more than 100%."
+            : rawDelta === 0
+              ? "The revised scope is worth the same as the award. There is nothing to change."
+              : `${money(Math.abs(delta))} ${delta > 0 ? "is added to" : "comes off"} the milestones still outstanding.`}
         </p>
 
         <div className="mt-3 flex justify-center">
           <button
             type="button"
             onClick={workOutChange}
-            disabled={busy || delta === 0}
+            disabled={busy || delta === 0 || !shareValid}
             className="rounded-md bg-navy-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-navy-800 disabled:cursor-not-allowed disabled:bg-navy-200 disabled:text-navy-600/60"
           >
             {busy ? "Working it out…" : "Scope change"}
@@ -298,8 +362,9 @@ export default function ScopeChangePanel({
           </div>
           <div className="mt-4 rounded-lg border border-navy-200 bg-navy-50/60 px-3 py-3">
             <p className="text-xs leading-relaxed text-navy-700">
-              Applying this updates the award&rsquo;s <strong>Unit Cost</strong> to{" "}
-              {money(plan.contractAfter)}, rewrites the{" "}
+              Applying this awards {plan.share}% of the {money(plan.rawDelta)} the
+              scope moved by, updating the award&rsquo;s <strong>Unit Cost</strong> to{" "}
+              {money(plan.contractAfter)}, rewriting the{" "}
               <strong>{plan.writes.length} billing line
               {plan.writes.length === 1 ? "" : "s"}</strong> above, and raises a
               change order against {poNumber}. Read the table first — this is the

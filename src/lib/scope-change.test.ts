@@ -180,3 +180,34 @@ test("with no basis given the schedule is the basis, as before", () => {
   const r = absorbScopeChange(sheet(), 200);
   assert.equal(r.lines.find((l) => l.desc === "Milestone 3")?.restatedPct, 21.11);
 });
+
+test("only a share of the difference reaches the milestones", () => {
+  /*
+   * PO-15489: a $179,612.61 award against a $187,144.30 revised scope is a
+   * $7,531.69 difference, of which 70% — $5,272.18 — is what the
+   * subcontractor is awarded and what the outstanding milestones absorb.
+   *
+   * The arithmetic below is the same absorption; what the share changes is
+   * the figure handed to it, so this guards the multiplication and the
+   * rounding that turns a percentage of money back into money.
+   */
+  const rawDelta = Math.round((187144.3 - 179612.61) * 100) / 100;
+  assert.equal(rawDelta, 7531.69);
+
+  const awarded = (share: number) => Math.round(rawDelta * (share / 100) * 100) / 100;
+  assert.equal(awarded(70), 5272.18);
+  assert.equal(awarded(100), 7531.69, "all of it when nothing is held back");
+  assert.equal(awarded(50), 3765.85);
+
+  // And the schedule still lands exactly on the awarded figure, not the raw one.
+  const lines: ScheduleLine[] = [
+    { desc: "Demolition", pct: 10, amount: 17405.78, locked: false },
+    { desc: "Advance — Demolition", pct: 10, amount: 20000, locked: false },
+    { desc: "Mobilization", pct: 10, amount: 42206.83, locked: true },
+  ];
+  const r = absorbScopeChange(lines, awarded(70));
+  assert.equal(r.problem, null);
+  const took = Math.round(r.lines.reduce((s, l) => s + l.took, 0) * 100) / 100;
+  assert.equal(took, 5272.18);
+  for (const l of r.lines.filter((x) => x.locked)) assert.equal(l.took, 0, "paid lines stay put");
+});

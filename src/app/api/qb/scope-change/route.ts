@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import { refuseJob, refusePo } from "@/lib/auth/guard";
 import {
+  DEFAULT_SCOPE_SHARE,
   applyScopeChange,
   awardSchedule,
   awardsForJob,
@@ -24,6 +25,23 @@ export const maxDuration = 60;
  * GET  ?po=14107       -> that award's schedule as it stands
  * POST { poRecordId, revisedTotal } -> what would change, line by line
  */
+/**
+ * The share of the scope movement being awarded, as a percentage.
+ *
+ * Absent means the default rather than nothing: a caller that does not know
+ * about the share should get the same answer the screen offers. Outside 0 to
+ * 100 it is a mistake worth refusing — a negative share would reverse the
+ * direction of the change, and more than all of it is not a share.
+ */
+function readShare(body: Record<string, unknown>): number | null {
+  if (body.share === undefined || body.share === null || body.share === "") {
+    return DEFAULT_SCOPE_SHARE;
+  }
+  const share = Number(body.share);
+  if (!Number.isFinite(share) || share <= 0 || share > 100) return null;
+  return share;
+}
+
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
 
@@ -115,7 +133,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Quickbase is not configured." }, { status: 503 });
   }
 
-  const plan = await planScopeChange(poRecordId, revisedTotal);
+  const share = readShare(body);
+  if (share === null) {
+    return NextResponse.json(
+      { ok: false, error: "The share of the difference must be more than 0% and no more than 100%." },
+      { status: 400 },
+    );
+  }
+
+  const plan = await planScopeChange(poRecordId, revisedTotal, share);
   if (!plan) {
     return NextResponse.json(
       { ok: false, error: "That purchase order has no cost item, so there is no schedule to change." },
@@ -176,12 +202,21 @@ export async function PUT(request: Request) {
     return NextResponse.json({ ok: false, error: "Quickbase is not configured." }, { status: 503 });
   }
 
+  const share = readShare(body);
+  if (share === null) {
+    return NextResponse.json(
+      { ok: false, error: "The share of the difference must be more than 0% and no more than 100%." },
+      { status: 400 },
+    );
+  }
+
   const session = await currentSession();
   try {
     const result = await applyScopeChange(
       poRecordId,
       revisedTotal,
       session?.email ?? "scope-change",
+      share,
     );
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });
   } catch (e) {

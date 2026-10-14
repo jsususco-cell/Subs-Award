@@ -146,13 +146,28 @@ export async function awardSchedule(poRecordId: number): Promise<AwardSchedule |
   };
 }
 
+/**
+ * The share of a scope difference that reaches the subcontractor.
+ *
+ * A revised scope is an estimate, and what is awarded against it is a
+ * percentage of the movement rather than all of it — the same way a first
+ * award is a percentage of the scope it is built from. Seventy is where it
+ * starts; the person applying the change can say otherwise.
+ */
+export const DEFAULT_SCOPE_SHARE = 70;
+
 export interface ScopeChangePlan {
   schedule: AwardSchedule;
   absorption: Absorption;
   /** The contract on the cost item before and after, and the difference. */
   contractBefore: number;
   contractAfter: number;
+  /** What actually lands on the schedule: the raw difference times the share. */
   delta: number;
+  /** The whole difference between the revised scope and the award. */
+  rawDelta: number;
+  /** The percentage of that difference being awarded, 70 unless told otherwise. */
+  share: number;
   /**
    * Contract not yet on the schedule. The change lands only on the milestones
    * that have been billed, so this carries straight across untouched.
@@ -173,6 +188,7 @@ export interface ScopeChangePlan {
 export async function planScopeChange(
   poRecordId: number,
   revisedTotal: number,
+  share: number = DEFAULT_SCOPE_SHARE,
 ): Promise<ScopeChangePlan | null> {
   const schedule = await awardSchedule(poRecordId);
   if (!schedule) return null;
@@ -190,7 +206,16 @@ export async function planScopeChange(
    */
   const billed = Math.round(schedule.lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const contractBefore = schedule.contract;
-  const delta = Math.round((revisedTotal - contractBefore) * 100) / 100;
+  const rawDelta = Math.round((revisedTotal - contractBefore) * 100) / 100;
+  /*
+   * Only a share of the difference is awarded. The revised scope says what
+   * the work is now estimated at; what the subcontractor is given for it is a
+   * percentage of the movement, so that percentage is what the contract rises
+   * by and what the milestones absorb. Both have to use the same figure or
+   * the schedule stops adding up to the contract.
+   */
+  const applied = Number.isFinite(share) ? share : DEFAULT_SCOPE_SHARE;
+  const delta = Math.round(rawDelta * (applied / 100) * 100) / 100;
   const unbilled = Math.round((contractBefore - billed) * 100) / 100;
   const contractAfter = Math.round((contractBefore + delta) * 100) / 100;
   /*
@@ -230,6 +255,8 @@ export async function planScopeChange(
     contractBefore,
     contractAfter,
     delta,
+    rawDelta,
+    share: applied,
     unbilled,
     writes,
   };
@@ -356,7 +383,10 @@ export interface AppliedScopeChange {
   costItemRecordId: number;
   contractBefore: number;
   contractAfter: number;
+  /** What was awarded: the scope movement times the share. */
   delta: number;
+  rawDelta: number;
+  share: number;
   billsUpdated: number;
   changeOrderRecordId: number | null;
   changeOrderError: string | null;
@@ -427,8 +457,9 @@ export async function applyScopeChange(
   poRecordId: number,
   revisedTotal: number,
   actor: string,
+  share: number = DEFAULT_SCOPE_SHARE,
 ): Promise<{ ok: true; applied: AppliedScopeChange } | { ok: false; error: string }> {
-  const plan = await planScopeChange(poRecordId, revisedTotal);
+  const plan = await planScopeChange(poRecordId, revisedTotal, share);
   if (!plan) return { ok: false, error: "That purchase order has no award line to change." };
   if (plan.absorption.problem) return { ok: false, error: plan.absorption.problem };
   if (!plan.writes.length) {
@@ -487,8 +518,9 @@ export async function applyScopeChange(
         [CO.description]: {
           value:
             `Revised scope for ${schedule.jobName} on ${schedule.poNumber}. ` +
-            `Contract ${plan.contractBefore.toFixed(2)} to ${plan.contractAfter.toFixed(2)}, ` +
-            `a change of ${plan.delta.toFixed(2)}, spread across ${plan.writes.length} ` +
+            `Contract ${plan.contractBefore.toFixed(2)} to ${plan.contractAfter.toFixed(2)}. ` +
+            `Scope moved by ${plan.rawDelta.toFixed(2)}, of which ${plan.share}% ` +
+            `(${plan.delta.toFixed(2)}) is awarded, spread across ${plan.writes.length} ` +
             `outstanding milestone${plan.writes.length === 1 ? "" : "s"}. ` +
             `Applied from the Subcontractor Award System by ${actor}.`,
         },
@@ -528,6 +560,8 @@ export async function applyScopeChange(
     after: {
       contract: plan.contractAfter,
       delta: plan.delta,
+      rawDelta: plan.rawDelta,
+      share: plan.share,
       lines: snapshot(plan, "after"),
     },
     details: {
@@ -545,6 +579,8 @@ export async function applyScopeChange(
       contractBefore: plan.contractBefore,
       contractAfter: plan.contractAfter,
       delta: plan.delta,
+      rawDelta: plan.rawDelta,
+      share: plan.share,
       billsUpdated: plan.writes.length,
       changeOrderRecordId,
       changeOrderError,

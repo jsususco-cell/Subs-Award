@@ -399,6 +399,7 @@ test("the award breakdown totals what Quickbase's formula will compute", () => {
       ada: 50,
       changeOrder: 25,
       revisedTotal: 10,
+      retainingWall: 0,
     }),
     1085,
   );
@@ -702,4 +703,29 @@ test("every award bill line carries the award as its basis", () => {
   // The draws still add up to the award, which the basis must not disturb.
   const billed = bills.reduce((sum, b) => sum + Number(b[f.billAmount].value), 0);
   assert.equal(Math.round(billed * 100) / 100, 79825);
+});
+
+test("the retaining wall is written and counted in the contract", () => {
+  /*
+   * Quickbase computes Total Amount (262) from the category fields, and its
+   * formula was extended to include Retaining Wall (325) when this was added.
+   * These two have to agree or the contract and the bills that divide it
+   * describe different money.
+   */
+  const categories = {
+    demolition: 32583.34,
+    site: 0,
+    septic: 0,
+    home: 132000,
+    ada: 0,
+    changeOrder: 0,
+    revisedTotal: 0,
+    retainingWall: 37109.63,
+  };
+  assert.equal(categoriesTotal(categories), 201692.97);
+  // Which is the figure on the sample letter for PR-R3-16464, to the cent.
+  assert.equal(
+    Math.round((32583.34 + 37109.63 + 132000) * 100) / 100,
+    201692.97,
+  );
 });

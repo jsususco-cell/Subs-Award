@@ -199,6 +199,7 @@ export const US_LABELS: LetterLabels = {
   awardHome: "Home",
   awardChangeOrder: "Change Order",
   awardRevisedTotal: "Revised Total Amount",
+  awardRetainingWall: "Retaining Wall",
   scheduleNumber: "#",
   scheduleStage: "Stage",
   schedulePct: "%",

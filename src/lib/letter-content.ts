@@ -200,6 +200,7 @@ export interface LetterLabels {
   awardHome: string;
   awardChangeOrder: string;
   awardRevisedTotal: string;
+  awardRetainingWall: string;
   scheduleNumber: string;
   scheduleStage: string;
   schedulePct: string;
@@ -257,6 +258,7 @@ export const PR_LABELS: LetterLabels = {
   awardHome: "Home",
   awardChangeOrder: "Cambio de Orden",
   awardRevisedTotal: "Monto Total Revisado",
+  awardRetainingWall: "Retaining Wall",
   scheduleNumber: "#",
   scheduleStage: "Etapa",
   schedulePct: "%",

@@ -214,6 +214,7 @@ test("a direct award itemises the PO categories, not a scope derivation", () => 
         ada: 3000,
         changeOrder: 0,
         revisedTotal: 0,
+        retainingWall: 0,
       },
     }),
   );
@@ -326,4 +327,54 @@ test("without a breakdown the fixed schedule still drives the letter", () => {
   assert.match(html, /Movilización/);
   assert.match(html, /Empañetado/);
   assert.match(html, /100\.00%/);
+});
+
+test("a retaining wall is itemised, and only when there is one", () => {
+  /*
+   * Added 2026-10-17 alongside the Quickbase field, because the sample
+   * letters carry the row and the contract has to account for it. It sits
+   * after the site work it belongs to and before the house it holds up.
+   */
+  const withWall = renderLetter(
+    input({
+      categories: {
+        demolition: 32583.34,
+        site: 0,
+        septic: 0,
+        home: 132000,
+        ada: 0,
+        changeOrder: 0,
+        revisedTotal: 0,
+        retainingWall: 37109.63,
+      },
+    }),
+  );
+  assert.match(withWall, /Retaining Wall/);
+  assert.match(withWall, /37,109\.63/);
+  /*
+   * Ahead of the home it supports, as the sample letters have it. Compared on
+   * the two amounts rather than on the word "Home", which the letter also
+   * uses elsewhere.
+   */
+  assert.ok(
+    withWall.indexOf("37,109.63") < withWall.indexOf("132,000.00"),
+    "the wall's row comes before the home's",
+  );
+
+  // Zero is a real answer for most cases, and a $0.00 row is not printed.
+  const without = renderLetter(
+    input({
+      categories: {
+        demolition: 12000,
+        site: 0,
+        septic: 0,
+        home: 60000,
+        ada: 0,
+        changeOrder: 0,
+        revisedTotal: 0,
+        retainingWall: 0,
+      },
+    }),
+  );
+  assert.ok(!/Retaining Wall/.test(without));
 });

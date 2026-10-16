@@ -158,6 +158,7 @@ function parseCategories(raw: unknown): PoCategories | null {
     ada: num(o.ada),
     changeOrder: num(o.changeOrder),
     revisedTotal: num(o.revisedTotal),
+    retainingWall: num(o.retainingWall),
   };
   if (Object.values(c).some((v) => v < 0)) return null;
   return c;

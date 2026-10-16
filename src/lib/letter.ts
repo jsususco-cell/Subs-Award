@@ -167,6 +167,9 @@ export function renderLetter(input: LetterInput): string {
               [L.awardDemolition, c.demolition],
               [L.awardSite, c.site],
               [L.awardSeptic, c.septic],
+              // Where the sample letters put it: after the site work it
+              // belongs to and before the house it holds up.
+              [L.awardRetainingWall, c.retainingWall],
               [L.awardHome, c.home],
               [L.awardAda, c.ada],
               [L.awardChangeOrder, c.changeOrder],

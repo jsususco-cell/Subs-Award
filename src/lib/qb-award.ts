@@ -99,6 +99,12 @@ export const QB_AWARD = {
     catAdaConversion: 258,
     catChangeOrder: 259,
     catRevisedTotal: 260,
+    /*
+     * Added 2026-10-17. Optional, and part of Total Amount (262) — the
+     * formula was extended at the same time, with an IsNull guard, so every
+     * purchase order raised before it reads exactly as it did.
+     */
+    catRetainingWall: 325,
     itemsNotIncluded: 261,
     totalAmount: 262,
   },
@@ -225,6 +231,10 @@ export const QB_AWARD = {
  * Every field is a category on the purchase order and they must total the
  * contract amount, because Quickbase computes Total Amount (262) from exactly
  * these and the cost item carries the same figure.
+ *
+ * Adding one means adding it to that Quickbase formula in the same breath, or
+ * the two stop agreeing about what the contract is — and the contract is what
+ * the bills divide.
  */
 export interface PoCategories {
   demolition: number;
@@ -234,6 +244,7 @@ export interface PoCategories {
   ada: number;
   changeOrder: number;
   revisedTotal: number;
+  retainingWall: number;
 }
 
 export const EMPTY_CATEGORIES: PoCategories = {
@@ -244,6 +255,7 @@ export const EMPTY_CATEGORIES: PoCategories = {
   ada: 0,
   changeOrder: 0,
   revisedTotal: 0,
+  retainingWall: 0,
 };
 
 /**
@@ -279,7 +291,7 @@ export function breakdownBalance(
   return round(contractPrice - breakdownTotal(rows));
 }
 
-/** The seven categories, in the order the award breakdown shows them. */
+/** The categories, in the order the award breakdown shows them. */
 export const CATEGORY_FIELDS: {
   key: keyof PoCategories;
   label: string;
@@ -297,6 +309,7 @@ export const CATEGORY_FIELDS: {
   { key: "ada", label: "ADA Conversion", optional: true },
   { key: "changeOrder", label: "Change Order Amount", optional: true },
   { key: "revisedTotal", label: "Revised Total Amount", optional: true },
+  { key: "retainingWall", label: "Retaining Wall", optional: true },
 ];
 
 /** What Quickbase's Total Amount formula will come to. */
@@ -308,7 +321,8 @@ export function categoriesTotal(c: PoCategories): number {
       c.home +
       c.ada +
       c.changeOrder +
-      c.revisedTotal,
+      c.revisedTotal +
+      c.retainingWall,
   );
 }
 
@@ -449,6 +463,7 @@ export function buildPoRecord(input: AwardWriteInput): QbRecord {
         [f.catAdaConversion, input.categories.ada],
         [f.catChangeOrder, input.categories.changeOrder],
         [f.catRevisedTotal, input.categories.revisedTotal],
+        [f.catRetainingWall, input.categories.retainingWall],
       ]
     : (() => {
         const split = splitAward(

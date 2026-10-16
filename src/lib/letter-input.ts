@@ -86,6 +86,7 @@ export function parseLetterInput(raw: unknown): LetterInput | null {
               ada: num(k.ada),
               changeOrder: num(k.changeOrder),
               revisedTotal: num(k.revisedTotal),
+              retainingWall: num(k.retainingWall),
             };
           })(),
         }

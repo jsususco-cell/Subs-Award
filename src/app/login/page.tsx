@@ -61,7 +61,7 @@ export default async function LoginPage({
           ) : null}
 
           {ready ? (
-            <SignInButton href={target} label="Continue with Google" />
+            <SignInButton href={target} label="Continue with Google" next={safeNext(next)} />
           ) : (
             <p className="mt-6 rounded-lg border border-navy-100 bg-navy-50 px-3 py-3 text-sm leading-relaxed text-navy-600/80">
               Sign-in is not configured on this deployment yet. It needs{" "}

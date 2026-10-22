@@ -22,6 +22,11 @@ function isPublic(pathname: string): boolean {
   // Signing in cannot itself require being signed in.
   if (pathname === "/login" || pathname.startsWith("/api/auth/")) return true;
 
+  // Where the small sign-in window opened from the Quickbase frame lands. It
+  // shows nothing about anyone and must render even if the cookie has not
+  // taken, so the window can still close itself.
+  if (pathname === "/signed-in") return true;
+
   // The subcontractor's Fondo form. They have no Workspace account; their
   // gate is the access key in the URL, checked by the page and the route.
   // /fondo/review is the internal queue and is deliberately not covered.

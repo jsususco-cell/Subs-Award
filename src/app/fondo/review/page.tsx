@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import FondoReview from "@/components/FondoReview";
+import FondoWorkspace from "@/components/FondoWorkspace";
 import { fondoConfigured, missingFondoFields } from "@/lib/fondo";
-import { reviewQueue } from "@/lib/fondo-server";
+import { reviewQueue, sendQueue } from "@/lib/fondo-server";
 import { requireSession } from "@/lib/auth/current-user";
 import { AccessUnavailableError, regionAccess } from "@/lib/auth/access";
 import { allows } from "@/lib/auth/roster";
@@ -9,7 +9,7 @@ import { allows } from "@/lib/auth/roster";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Fondo polizas to review",
+  title: "Fondo polizas",
   robots: { index: false, follow: false },
 };
 
@@ -66,6 +66,6 @@ export default async function ReviewPage() {
     );
   }
 
-  const items = await reviewQueue();
-  return <FondoReview items={items} />;
+  const [reviewItems, sendItems] = await Promise.all([reviewQueue(), sendQueue()]);
+  return <FondoWorkspace reviewItems={reviewItems} sendItems={sendItems} />;
 }

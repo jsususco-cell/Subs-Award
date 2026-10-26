@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { money } from "@/lib/format";
 import { coverageOf } from "@/lib/fondo";
 import type { ReviewItem } from "@/lib/fondo-server";
-import { rememberKey, storedKey, subscribeToKey } from "@/lib/send-key";
+import { rememberKey } from "@/lib/send-key";
 
 /**
  * Isaac's queue.
@@ -19,18 +19,17 @@ import { rememberKey, storedKey, subscribeToKey } from "@/lib/send-key";
  * are other companies' insurance certificates.
  */
 
-/*
- * The remembered send key, read through useSyncExternalStore rather than
- * mirrored into state by a mount effect. The server snapshot is empty, which
- * is what keeps the first paint identical on both sides; a string snapshot
- * needs no caching, since useSyncExternalStore compares with Object.is.
- */
-const emptyKey = () => "";
-
 type Outcome = { action: "approve" | "return"; notified: boolean; notifyError: string | null };
 type Preview = { url: string; kind: "pdf" | "image" } | { error: string };
 
-export default function FondoReview({ items }: { items: ReviewItem[] }) {
+export default function FondoReview({
+  items,
+  sendKey,
+}: {
+  items: ReviewItem[];
+  /** Owned by the page around this, which shares it with the send-link tab. */
+  sendKey: string;
+}) {
   const [done, setDone] = useState<Record<number, Outcome>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<number, string>>({});
@@ -38,12 +37,6 @@ export default function FondoReview({ items }: { items: ReviewItem[] }) {
   const [returning, setReturning] = useState<number | null>(null);
   const [reviewer, setReviewer] = useState("");
   const [previews, setPreviews] = useState<Record<number, Preview>>({});
-
-  // The typed value wins once there is one; until then the remembered key
-  // shows, so a returning reviewer does not have to enter it again.
-  const remembered = useSyncExternalStore(subscribeToKey, storedKey, emptyKey);
-  const [typedKey, setTypedKey] = useState<string | null>(null);
-  const sendKey = typedKey ?? remembered;
 
   useEffect(() => {
     if (!sendKey) return;
@@ -137,39 +130,18 @@ export default function FondoReview({ items }: { items: ReviewItem[] }) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="text-xl font-semibold text-navy-800">Fondo polizas to review</h1>
-      <p className="mt-1 mb-5 text-sm text-navy-600/80">
-        Approving copies the poliza onto the case, which is what makes it count as
-        covered on the insurance page.
-      </p>
-
-      <div className="mb-5 grid gap-3 sm:grid-cols-2">
-        <div>
-          <label htmlFor="reviewer" className="mb-1 block text-xs font-medium text-navy-700">
-            Your name
-          </label>
-          <input
-            id="reviewer"
-            value={reviewer}
-            onChange={(e) => setReviewer(e.target.value)}
-            placeholder="Recorded against the decision"
-            className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
-          />
-        </div>
-        <div>
-          <label htmlFor="review-key" className="mb-1 block text-xs font-medium text-navy-700">
-            Send key
-          </label>
-          <input
-            id="review-key"
-            type="password"
-            value={sendKey}
-            onChange={(e) => setTypedKey(e.target.value)}
-            placeholder="Needed to read documents and decide"
-            className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
-          />
-        </div>
+    <div>
+      <div className="mb-5 max-w-sm">
+        <label htmlFor="reviewer" className="mb-1 block text-xs font-medium text-navy-700">
+          Your name
+        </label>
+        <input
+          id="reviewer"
+          value={reviewer}
+          onChange={(e) => setReviewer(e.target.value)}
+          placeholder="Recorded against the decision"
+          className="w-full rounded-md border border-navy-200 px-2.5 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+        />
       </div>
 
       {!items.length && (

@@ -8,6 +8,7 @@ import {
   type FondoCase,
   type FondoStatus,
   fondoConfigured,
+  rejectManualSend,
 } from "./fondo";
 
 /**
@@ -291,6 +292,135 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
       };
     })
     .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+}
+
+/** One row of the "send the link" list. */
+export interface SendItem {
+  recordId: number;
+  caseNumber: string;
+  jobName: string;
+  subcontractor: string;
+  awardedAmount: number;
+  status: FondoStatus | "";
+  formSentAt: string;
+  reviewNotes: string;
+  /** Where the email goes. Blank means it cannot be sent until fixed. */
+  email: string;
+  /** Why it cannot be sent, when it cannot. Short: it sits in a table cell. */
+  blocked: string;
+}
+
+/**
+ * Cases a staff member might send the form link for by hand: everything still
+ * owed a poliza. The access key is resolved here and never leaves the server;
+ * the page only learns whether the case is reachable.
+ */
+export async function sendQueue(): Promise<SendItem[]> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      23,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.poliza,
+      ins.relatedSub,
+      FONDO_FIELDS.status,
+      FONDO_FIELDS.formSentAt,
+      FONDO_FIELDS.reviewNotes,
+    ],
+    where:
+      `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.awaiting}'}` +
+      `OR{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.returned}'}` +
+      `OR{${FONDO_FIELDS.status}.EX.''}`,
+  });
+
+  const open = rows.filter((r) => {
+    const status = str(val(r, FONDO_FIELDS.status)) as FondoStatus | "";
+    return !rejectManualSend(status, currentFile(val(r, ins.poliza)).name !== "");
+  });
+
+  // One vendor lookup for the lot, not one per row.
+  const vendorIds = [...new Set(open.map((r) => num(val(r, ins.relatedSub))).filter(Boolean))];
+  const vendors = new Map<number, { accessKey: string; email: string; company: string }>();
+  if (vendorIds.length) {
+    const vrows = await queryAll({
+      from: VENDOR_TABLE,
+      select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
+      where: vendorIds.map((id) => `{3.EX.${id}}`).join("OR"),
+    });
+    for (const v of vrows) {
+      vendors.set(num(val(v, 3)), {
+        accessKey: str(val(v, VENDOR_ACCESS_KEY)).trim(),
+        email: str(val(v, VENDOR_EMAIL)).trim(),
+        company: str(val(v, VENDOR_COMPANY)).trim(),
+      });
+    }
+  }
+
+  return open
+    .map((r) => {
+      const v = vendors.get(num(val(r, ins.relatedSub)));
+      const blocked = !v
+        ? "No subcontractor on the case"
+        : !v.accessKey
+          ? "Vendor has no access key"
+          : "";
+      return {
+        recordId: num(val(r, ins.recordId)),
+        caseNumber: str(val(r, ins.caseNumber)).trim(),
+        jobName: str(val(r, 23)).trim(),
+        subcontractor: str(val(r, ins.subcontractorName)).trim() || v?.company || "",
+        awardedAmount: num(val(r, ins.awardedAmount)),
+        status: str(val(r, FONDO_FIELDS.status)) as FondoStatus | "",
+        formSentAt: str(val(r, FONDO_FIELDS.formSentAt)),
+        reviewNotes: str(val(r, FONDO_FIELDS.reviewNotes)),
+        email: v?.email ?? "",
+        blocked,
+      };
+    })
+    .sort((a, b) => a.caseNumber.localeCompare(b.caseNumber));
+}
+
+/** What a manual send needs for one case, re-read at send time. */
+export async function caseForSend(recordId: number): Promise<{
+  caseNumber: string;
+  subcontractor: string;
+  awardedAmount: number;
+  status: FondoStatus | "";
+  hasPoliza: boolean;
+  reviewNotes: string;
+  vendor: { accessKey: string; email: string; company: string } | null;
+} | null> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.poliza,
+      ins.relatedSub,
+      FONDO_FIELDS.status,
+      FONDO_FIELDS.reviewNotes,
+    ],
+    where: `{${ins.recordId}.EX.${recordId}}`,
+  });
+  const r = rows[0];
+  if (!r) return null;
+  const vendor = await vendorById(num(val(r, ins.relatedSub)));
+  return {
+    caseNumber: str(val(r, ins.caseNumber)).trim(),
+    subcontractor: str(val(r, ins.subcontractorName)).trim() || vendor?.company || "",
+    awardedAmount: num(val(r, ins.awardedAmount)),
+    status: str(val(r, FONDO_FIELDS.status)) as FondoStatus | "",
+    hasPoliza: currentFile(val(r, ins.poliza)).name !== "",
+    reviewNotes: str(val(r, FONDO_FIELDS.reviewNotes)),
+    vendor,
+  };
 }
 
 /** The raw staged values, needed to copy a submission onto the record. */

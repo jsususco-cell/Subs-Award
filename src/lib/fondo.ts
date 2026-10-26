@@ -218,6 +218,31 @@ export function rejectReturn(notes: string): string | null {
   return null;
 }
 
+/**
+ * Can a staff member send this case's form link by hand, and why not if not.
+ *
+ * Open cases only: waiting for the poliza, sent back for correction, or one of
+ * the migrated cases that never had a status and has no poliza on record. A
+ * case already submitted is waiting on the reviewer, not the subcontractor, and
+ * an approved one is closed — mailing either would invite a second upload over
+ * a document someone is reading or has accepted.
+ */
+export function rejectManualSend(
+  status: FondoStatus | "",
+  hasPolizaOnRecord: boolean,
+): string | null {
+  if (status === FONDO_STATUS.approved) {
+    return "This poliza is already approved. There is nothing to ask for.";
+  }
+  if (status === FONDO_STATUS.submitted) {
+    return "The subcontractor already sent it. It is waiting for review, not for them.";
+  }
+  if (status === "" && hasPolizaOnRecord) {
+    return "This case already has a poliza on record.";
+  }
+  return null;
+}
+
 /** Does the submitted poliza cover the award? Advisory only, for the reviewer. */
 export function coverageOf(
   submitted: number,

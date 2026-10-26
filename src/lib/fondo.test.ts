@@ -10,6 +10,7 @@ import {
   currentFile,
   fondoConfigured,
   missingFondoFields,
+  rejectManualSend,
   rejectReturn,
   rejectSubmission,
   type FondoSubmission,
@@ -294,4 +295,15 @@ test("approval writes the document, not a reference to it", () => {
   // rather than approve into an empty Poliza field.
   const none = buildApprovalRecord(66, { amount: 1, file: null, submittedAt: "" }, "X");
   assert.equal(none[String(ins.poliza)], undefined);
+});
+
+test("a link can be sent by hand only while the case is open", () => {
+  assert.equal(rejectManualSend(FONDO_STATUS.awaiting, false), null);
+  assert.equal(rejectManualSend(FONDO_STATUS.returned, false), null);
+  // A migrated case with no status and no poliza is still owed one.
+  assert.equal(rejectManualSend("", false), null);
+
+  assert.match(rejectManualSend(FONDO_STATUS.approved, true) ?? "", /already approved/);
+  assert.match(rejectManualSend(FONDO_STATUS.submitted, false) ?? "", /waiting for review/);
+  assert.match(rejectManualSend("", true) ?? "", /already has a poliza/);
 });

@@ -45,7 +45,7 @@ export default function FondoWorkspace({
   const blocked = sendItems.filter((i) => i.blocked || !i.email).length;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
       <h1 className="text-xl font-semibold text-navy-800">Fondo polizas</h1>
       <p className="mt-1 max-w-2xl text-sm text-navy-600/80">
         Puerto Rico subcontractor workers&rsquo; compensation (CFSE). Review what
@@ -91,7 +91,7 @@ export default function FondoWorkspace({
       </div>
 
       {tab === "review" ? (
-        <div className="max-w-3xl">
+        <div>
           <FondoReview items={reviewItems} sendKey={sendKey} />
         </div>
       ) : (
@@ -159,6 +159,76 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
     setBusy(null);
   }
 
+  function sentLabel(item: SendItem) {
+    const sentAt = sent[item.recordId]?.sentAt || item.formSentAt;
+    return sentAt ? formatWhen(sentAt) : <span className="text-navy-600/60">never</span>;
+  }
+
+  function emailCell(item: SendItem) {
+    const override = overrides[item.recordId] ?? "";
+    return (
+      <>
+        {editing === item.recordId ? (
+          <input
+            type="email"
+            autoFocus
+            value={override}
+            onChange={(e) => setOverrides((o) => ({ ...o, [item.recordId]: e.target.value }))}
+            placeholder={item.email || "name@company.com"}
+            aria-label={`Email for ${item.caseNumber}`}
+            className="w-full min-w-0 rounded-md border border-navy-200 px-2 py-1 text-xs outline-none focus:border-navy-600"
+          />
+        ) : (
+          <span className={item.email || override ? "text-navy-800" : "text-brand-red-dark"}>
+            {override || item.email || "no email on file"}
+          </span>
+        )}
+        {!item.blocked && editing !== item.recordId && (
+          <button
+            type="button"
+            onClick={() => setEditing(item.recordId)}
+            className="ml-2 text-navy-600/70 underline"
+          >
+            change
+          </button>
+        )}
+      </>
+    );
+  }
+
+  function actionCell(item: SendItem) {
+    const done = sent[item.recordId];
+    const sentAt = done?.sentAt || item.formSentAt;
+    const noEmail = !item.email && !(overrides[item.recordId] ?? "").trim();
+    return (
+      <>
+        {item.blocked ? (
+          <span className="text-xs text-brand-red-dark">{item.blocked}</span>
+        ) : (
+          <button
+            type="button"
+            disabled={busy === item.recordId || noEmail}
+            onClick={() => send(item)}
+            className="rounded-md bg-navy-700 px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-white hover:bg-navy-800 disabled:bg-navy-300"
+          >
+            {busy === item.recordId ? "Sending…" : sentAt ? "Send again" : "Send link"}
+          </button>
+        )}
+        {done && (
+          <p className="mt-1 text-xs text-emerald-700">
+            Sent to {done.to}.
+            {done.stampError && <span className="block text-brand-red-dark">{done.stampError}</span>}
+          </p>
+        )}
+        {errors[item.recordId] && (
+          <p role="alert" className="mt-1 ml-auto max-w-[16rem] text-xs text-brand-red-dark">
+            {errors[item.recordId]}
+          </p>
+        )}
+      </>
+    );
+  }
+
   const filters: [Filter, string][] = [
     ["all", "All open"],
     ["awaiting", "Waiting on the sub"],
@@ -184,111 +254,88 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
         />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-navy-200 bg-white shadow-sm">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead>
-            <tr className="border-b border-navy-100 text-left text-[11px] font-semibold tracking-wide text-navy-600 uppercase">
-              <th className="px-4 py-2.5">Case</th>
-              <th className="px-4 py-2.5">Subcontractor</th>
-              <th className="px-4 py-2.5 text-right">Awarded</th>
-              <th className="px-4 py-2.5">State</th>
-              <th className="px-4 py-2.5">Link sent</th>
-              <th className="px-4 py-2.5">Goes to</th>
-              <th className="px-4 py-2.5 text-right" aria-label="Action" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-navy-50">
-            {!shown.length && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-navy-600/70">
-                  Nothing here.
-                </td>
+      {!shown.length && (
+        <div className="rounded-xl border border-navy-200 bg-white px-4 py-6 text-center text-sm text-navy-600/70 shadow-sm">
+          Nothing here.
+        </div>
+      )}
+
+      {/* Wide screens: a table that fits the width, no sideways scrolling. */}
+      {shown.length > 0 && (
+        <div className="hidden rounded-xl border border-navy-200 bg-white shadow-sm md:block">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-navy-100 text-left text-[11px] font-semibold tracking-wide text-navy-600 uppercase">
+                <th className="px-3 py-2.5">Case</th>
+                <th className="px-3 py-2.5">Subcontractor</th>
+                <th className="px-3 py-2.5 text-right">Awarded</th>
+                <th className="px-3 py-2.5">State</th>
+                <th className="px-3 py-2.5">Link sent</th>
+                <th className="px-3 py-2.5">Goes to</th>
+                <th className="px-3 py-2.5 text-right" aria-label="Action" />
               </tr>
-            )}
-            {shown.map((item) => {
-              const done = sent[item.recordId];
-              const sentAt = done?.sentAt || item.formSentAt;
-              const override = overrides[item.recordId] ?? "";
-              const noEmail = !item.email && !override.trim();
-              return (
+            </thead>
+            <tbody className="divide-y divide-navy-50">
+              {shown.map((item) => (
                 <tr key={item.recordId} className="align-top">
-                  <td className="px-4 py-3">
-                    <div className="font-semibold whitespace-nowrap text-navy-800">{item.caseNumber || "—"}</div>
-                    {item.jobName && (
-                      <div className="text-xs text-navy-600/70">{item.jobName}</div>
-                    )}
+                  <td className="px-3 py-3">
+                    <div className="font-semibold whitespace-nowrap text-navy-800">
+                      {item.caseNumber || "—"}
+                    </div>
+                    {item.jobName && <div className="text-xs text-navy-600/70">{item.jobName}</div>}
                   </td>
-                  <td className="px-4 py-3 text-navy-800">{item.subcontractor || "—"}</td>
-                  <td className="tabular px-4 py-3 text-right whitespace-nowrap text-navy-800">
+                  <td className="px-3 py-3 text-navy-800">{item.subcontractor || "—"}</td>
+                  <td className="tabular px-3 py-3 text-right whitespace-nowrap text-navy-800">
                     {item.awardedAmount ? money(item.awardedAmount) : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     <StatePill status={item.status} />
                   </td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap text-navy-700">
-                    {sentAt ? formatWhen(sentAt) : <span className="text-navy-600/60">never</span>}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {editing === item.recordId ? (
-                      <input
-                        type="email"
-                        autoFocus
-                        value={override}
-                        onChange={(e) =>
-                          setOverrides((o) => ({ ...o, [item.recordId]: e.target.value }))
-                        }
-                        placeholder={item.email || "name@company.com"}
-                        aria-label={`Email for ${item.caseNumber}`}
-                        className="w-48 rounded-md border border-navy-200 px-2 py-1 text-xs outline-none focus:border-navy-600"
-                      />
-                    ) : (
-                      <span className={item.email || override ? "text-navy-800" : "text-brand-red-dark"}>
-                        {override || item.email || "no email on file"}
-                      </span>
-                    )}
-                    {!item.blocked && editing !== item.recordId && (
-                      <button
-                        type="button"
-                        onClick={() => setEditing(item.recordId)}
-                        className="ml-2 text-navy-600/70 underline"
-                      >
-                        change
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {item.blocked ? (
-                      <span className="text-xs whitespace-nowrap text-brand-red-dark">{item.blocked}</span>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={busy === item.recordId || noEmail}
-                        onClick={() => send(item)}
-                        className="rounded-md bg-navy-700 px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-white hover:bg-navy-800 disabled:bg-navy-300"
-                      >
-                        {busy === item.recordId ? "Sending…" : sentAt ? "Send again" : "Send link"}
-                      </button>
-                    )}
-                    {done && (
-                      <p className="mt-1 text-xs text-emerald-700">
-                        Sent to {done.to}.
-                        {done.stampError && (
-                          <span className="block text-brand-red-dark">{done.stampError}</span>
-                        )}
-                      </p>
-                    )}
-                    {errors[item.recordId] && (
-                      <p role="alert" className="mt-1 max-w-[16rem] text-xs text-brand-red-dark">
-                        {errors[item.recordId]}
-                      </p>
-                    )}
-                  </td>
+                  <td className="px-3 py-3 text-xs text-navy-700">{sentLabel(item)}</td>
+                  <td className="px-3 py-3 text-xs break-all">{emailCell(item)}</td>
+                  <td className="px-3 py-3 text-right">{actionCell(item)}</td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Phones and narrow frames: one card per case. */}
+      <div className="space-y-3 md:hidden">
+        {shown.map((item) => (
+          <div
+            key={item.recordId}
+            className="rounded-xl border border-navy-200 bg-white p-4 text-sm shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-semibold whitespace-nowrap text-navy-800">{item.caseNumber || "—"}</div>
+                <div className="text-xs text-navy-600/80">{item.subcontractor || "—"}</div>
+              </div>
+              <StatePill status={item.status} />
+            </div>
+            <dl className="mt-3 space-y-1.5 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-navy-600">Awarded</dt>
+                <dd className="tabular font-semibold text-navy-800">
+                  {item.awardedAmount ? money(item.awardedAmount) : "—"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-navy-600">Link sent</dt>
+                <dd className="text-navy-800">{sentLabel(item)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="shrink-0 text-navy-600">Goes to</dt>
+                <dd className="min-w-0 text-right break-all">{emailCell(item)}</dd>
+              </div>
+            </dl>
+            <div className="mt-3 text-right">{actionCell(item)}</div>
+          </div>
+        ))}
       </div>
+
       <p className="mt-2 text-xs text-navy-600/70">
         Sending stamps &ldquo;Form Sent&rdquo; on the case, so the automatic sender will not
         mail it again. A returned case gets the correction notice with the reason.
@@ -331,14 +378,14 @@ function Tile({
   warn?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-navy-200 bg-white px-4 py-3 shadow-sm">
+    <div className="rounded-xl border border-navy-200 bg-white px-3 py-2.5 shadow-sm sm:px-4 sm:py-3">
       <div className="text-[11px] font-semibold tracking-wide text-navy-600 uppercase">{label}</div>
       <div
-        className={`tabular mt-1 text-2xl font-semibold ${warn ? "text-brand-red-dark" : "text-navy-800"}`}
+        className={`tabular mt-0.5 text-xl font-semibold sm:mt-1 sm:text-2xl ${warn ? "text-brand-red-dark" : "text-navy-800"}`}
       >
         {value}
       </div>
-      <div className="text-xs text-navy-600/70">{note}</div>
+      <div className="hidden text-xs text-navy-600/70 sm:block">{note}</div>
     </div>
   );
 }

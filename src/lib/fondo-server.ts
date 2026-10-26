@@ -9,6 +9,10 @@ import {
   type FondoStatus,
   fondoConfigured,
   rejectManualSend,
+  fondoGap,
+  isOpenAward,
+  normName,
+  fondoNoEmailReason,
 } from "./fondo";
 
 /**
@@ -33,7 +37,9 @@ export interface Vendor {
   email: string;
 }
 
-function val(rec: Record<string, { value: unknown }>, fid: number): unknown {
+type QbRow = Record<string, { value: unknown }>;
+
+function val(rec: QbRow, fid: number): unknown {
   return rec[String(fid)]?.value;
 }
 function str(v: unknown): string {
@@ -296,11 +302,26 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
 
 /** One row of the "send the link" list. */
 export interface SendItem {
+  /** Stable row key: `c<case id>`, or `p<PO id>` for an award with no case yet. */
+  key: string;
+  /** The Fondo case, or 0 when sending would have to create it. */
   recordId: number;
+  /** The open award behind the row, when there is one. */
+  poRecordId: number;
+  poNumber: string;
+  /**
+   * case: still owed a poliza (awaiting, returned, never had one).
+   * new: an open award with no Fondo case at all.
+   * short: a poliza is on file but is less than the award needs.
+   */
+  kind: "case" | "new" | "short";
   caseNumber: string;
   jobName: string;
   subcontractor: string;
+  /** What the poliza has to cover: the award plus approved change orders. */
   awardedAmount: number;
+  onFile: number;
+  gap: number;
   status: FondoStatus | "";
   formSentAt: string;
   reviewNotes: string;
@@ -310,46 +331,176 @@ export interface SendItem {
   blocked: string;
 }
 
+/** An open award, read the way the Fondo Coverage page (code page 206) reads it. */
+export interface OpenAward {
+  poRecordId: number;
+  poNumber: string;
+  caseNumber: string;
+  jobRecordId: number;
+  subRecordId: number;
+  subcontractor: string;
+  required: number;
+  onFile: number;
+  gap: number;
+  /** Fondo cases already on this job for this subcontractor, newest first. */
+  caseRecordIds: number[];
+}
+
+const PO = {
+  recordId: 3,
+  title: 6,
+  job: 13,
+  number: 17,
+  sub: 21,
+  cancelled: 122,
+  state: 129,
+  stampedOnFile: 282,
+  required: 294,
+};
+const JOB = { recordId: 3, status: 35, caseId: 919 };
+
 /**
- * Cases a staff member might send the form link for by hand: everything still
- * owed a poliza. The access key is resolved here and never leaves the server;
- * the page only learns whether the case is reachable.
+ * Every open award, with the Fondo cases that already exist for it.
+ *
+ * A case belongs to an award when it is on the same job for the same
+ * subcontractor, or (how page 206 matches) has the same case number and
+ * subcontractor name. Either is enough, so a case is never opened twice.
+ */
+export async function openAwards(): Promise<OpenAward[]> {
+  const ins = QB_AWARD.insurance;
+  const [pos, jobs, subs, cases] = await Promise.all([
+    queryAll({
+      from: QB_AWARD.tables.pos,
+      select: Object.values(PO),
+      where: `{${PO.state}.EX.'Puerto Rico'}AND{${PO.required}.GT.0}`,
+    }),
+    queryAll({
+      from: QB_CONFIG.tables.jobs,
+      select: Object.values(JOB),
+      where: `{${JOB.caseId}.XEX.''}`,
+    }),
+    queryAll({ from: VENDOR_TABLE, select: [3, VENDOR_COMPANY] }),
+    queryAll({
+      from: QB_AWARD.tables.insurance,
+      select: [
+        ins.recordId,
+        ins.caseNumber,
+        ins.subcontractorName,
+        ins.insuranceAmount,
+        ins.relatedJob,
+        ins.relatedSub,
+        31, // Related Subcontractor - Company (lookup)
+      ],
+    }),
+  ]);
+
+  const jobBy = new Map(jobs.map((j) => [num(val(j, JOB.recordId)), j]));
+  const subName = new Map(subs.map((s) => [num(val(s, 3)), str(val(s, VENDOR_COMPANY)).trim()]));
+
+  const byIds = new Map<string, QbRow[]>();
+  const byName = new Map<string, QbRow[]>();
+  for (const c of cases) {
+    const a = `${num(val(c, ins.relatedJob))}|${num(val(c, ins.relatedSub))}`;
+    const b = `${str(val(c, ins.caseNumber)).trim()}|${normName(
+      str(val(c, 31)) || str(val(c, ins.subcontractorName)),
+    )}`;
+    byIds.set(a, [...(byIds.get(a) ?? []), c]);
+    byName.set(b, [...(byName.get(b) ?? []), c]);
+  }
+
+  const out: OpenAward[] = [];
+  for (const p of pos) {
+    const job = jobBy.get(num(val(p, PO.job)));
+    const caseNumber = job ? str(val(job, JOB.caseId)).trim() : "";
+    const subRecordId = num(val(p, PO.sub));
+    const name = subName.get(subRecordId) ?? "";
+    const required = num(val(p, PO.required));
+    if (
+      !isOpenAward({
+        region: str(val(p, PO.state)),
+        cancelled: val(p, PO.cancelled) === true,
+        title: str(val(p, PO.title)),
+        jobStatus: job ? str(val(job, JOB.status)) : "",
+        caseNumber,
+        required,
+        subName: name,
+      })
+    ) {
+      continue;
+    }
+    const mine = new Map<number, QbRow>();
+    for (const c of [
+      ...(byIds.get(`${num(val(p, PO.job))}|${subRecordId}`) ?? []),
+      ...(byName.get(`${caseNumber}|${normName(name)}`) ?? []),
+    ]) {
+      mine.set(num(val(c, ins.recordId)), c);
+    }
+    const onFile = [...mine.values()].reduce((s, c) => s + num(val(c, ins.insuranceAmount)), 0);
+    const stamped = num(val(p, PO.stampedOnFile));
+    out.push({
+      poRecordId: num(val(p, PO.recordId)),
+      poNumber: str(val(p, PO.number)),
+      caseNumber,
+      jobRecordId: num(val(p, PO.job)),
+      subRecordId,
+      subcontractor: name,
+      required: Math.round(required * 100) / 100,
+      onFile: Math.round(Math.max(onFile, stamped) * 100) / 100,
+      gap: fondoGap(required, stamped, onFile),
+      caseRecordIds: [...mine.keys()].sort((a, b) => b - a),
+    });
+  }
+  return out;
+}
+
+/**
+ * Everything a staff member might send the form link for by hand:
+ *
+ *  - cases still owed a poliza (awaiting, returned, migrated without one);
+ *  - open awards with no Fondo case at all, where sending opens the case first;
+ *  - open awards whose poliza on file is short of what the award needs.
+ *
+ * The access key is resolved here and never leaves the server; the page only
+ * learns whether the row is reachable.
  */
 export async function sendQueue(): Promise<SendItem[]> {
   const ins = QB_AWARD.insurance;
-  const rows = await queryAll({
-    from: QB_AWARD.tables.insurance,
-    select: [
-      ins.recordId,
-      ins.caseNumber,
-      23,
-      ins.subcontractorName,
-      ins.awardedAmount,
-      ins.poliza,
-      ins.relatedSub,
-      FONDO_FIELDS.status,
-      FONDO_FIELDS.formSentAt,
-      FONDO_FIELDS.reviewNotes,
-    ],
-    where:
-      `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.awaiting}'}` +
-      `OR{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.returned}'}` +
-      `OR{${FONDO_FIELDS.status}.EX.''}`,
-  });
+  const [rows, awards] = await Promise.all([
+    queryAll({
+      from: QB_AWARD.tables.insurance,
+      select: [
+        ins.recordId,
+        ins.caseNumber,
+        23,
+        ins.subcontractorName,
+        ins.awardedAmount,
+        ins.insuranceAmount,
+        ins.poliza,
+        ins.relatedSub,
+        FONDO_FIELDS.status,
+        FONDO_FIELDS.formSentAt,
+        FONDO_FIELDS.reviewNotes,
+      ],
+    }),
+    openAwards(),
+  ]);
+  const caseBy = new Map(rows.map((r) => [num(val(r, ins.recordId)), r]));
 
-  const open = rows.filter((r) => {
-    const status = str(val(r, FONDO_FIELDS.status)) as FondoStatus | "";
-    return !rejectManualSend(status, currentFile(val(r, ins.poliza)).name !== "");
-  });
-
-  // One vendor lookup for the lot, not one per row.
-  const vendorIds = [...new Set(open.map((r) => num(val(r, ins.relatedSub))).filter(Boolean))];
+  // A few vendor lookups for the lot, not one per row.
+  const vendorIds = new Set<number>();
+  rows.forEach((r) => vendorIds.add(num(val(r, ins.relatedSub))));
+  awards.forEach((a) => vendorIds.add(a.subRecordId));
+  vendorIds.delete(0);
   const vendors = new Map<number, { accessKey: string; email: string; company: string }>();
-  if (vendorIds.length) {
+  const ids = [...vendorIds];
+  for (let i = 0; i < ids.length; i += 100) {
     const vrows = await queryAll({
       from: VENDOR_TABLE,
       select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
-      where: vendorIds.map((id) => `{3.EX.${id}}`).join("OR"),
+      where: ids
+        .slice(i, i + 100)
+        .map((id) => `{3.EX.${id}}`)
+        .join("OR"),
     });
     for (const v of vrows) {
       vendors.set(num(val(v, 3)), {
@@ -359,29 +510,143 @@ export async function sendQueue(): Promise<SendItem[]> {
       });
     }
   }
-
-  return open
-    .map((r) => {
-      const v = vendors.get(num(val(r, ins.relatedSub)));
-      const blocked = !v
+  const reach = (vendorId: number) => {
+    const v = vendors.get(vendorId);
+    return {
+      email: v?.email ?? "",
+      company: v?.company ?? "",
+      blocked: !v
         ? "No subcontractor on the case"
-        : !v.accessKey
-          ? "Vendor has no access key"
-          : "";
-      return {
-        recordId: num(val(r, ins.recordId)),
-        caseNumber: str(val(r, ins.caseNumber)).trim(),
-        jobName: str(val(r, 23)).trim(),
-        subcontractor: str(val(r, ins.subcontractorName)).trim() || v?.company || "",
-        awardedAmount: num(val(r, ins.awardedAmount)),
-        status: str(val(r, FONDO_FIELDS.status)) as FondoStatus | "",
-        formSentAt: str(val(r, FONDO_FIELDS.formSentAt)),
-        reviewNotes: str(val(r, FONDO_FIELDS.reviewNotes)),
-        email: v?.email ?? "",
-        blocked,
-      };
-    })
-    .sort((a, b) => a.caseNumber.localeCompare(b.caseNumber));
+        : fondoNoEmailReason(v.company) || (!v.accessKey ? "Vendor has no access key" : ""),
+    };
+  };
+
+  const items = new Map<string, SendItem>();
+  const fromCase = (r: QbRow, kind: SendItem["kind"], award?: OpenAward): SendItem => {
+    const v = reach(num(val(r, ins.relatedSub)));
+    const recordId = num(val(r, ins.recordId));
+    return {
+      key: `c${recordId}`,
+      recordId,
+      poRecordId: award?.poRecordId ?? 0,
+      poNumber: award?.poNumber ?? "",
+      kind,
+      caseNumber: str(val(r, ins.caseNumber)).trim(),
+      jobName: str(val(r, 23)).trim(),
+      subcontractor: str(val(r, ins.subcontractorName)).trim() || v.company,
+      awardedAmount: award?.required ?? num(val(r, ins.awardedAmount)),
+      onFile: award?.onFile ?? num(val(r, ins.insuranceAmount)),
+      gap: award?.gap ?? 0,
+      status: str(val(r, FONDO_FIELDS.status)) as FondoStatus | "",
+      formSentAt: str(val(r, FONDO_FIELDS.formSentAt)),
+      reviewNotes: str(val(r, FONDO_FIELDS.reviewNotes)),
+      email: v.email,
+      blocked: v.blocked,
+    };
+  };
+
+  // Cases still owed a poliza, whatever their award looks like.
+  for (const r of rows) {
+    const status = str(val(r, FONDO_FIELDS.status)) as FondoStatus | "";
+    if (status !== FONDO_STATUS.awaiting && status !== FONDO_STATUS.returned && status !== "") {
+      continue;
+    }
+    if (rejectManualSend(status, currentFile(val(r, ins.poliza)).name !== "")) continue;
+    const item = fromCase(r, "case");
+    items.set(item.key, item);
+  }
+
+  // Open awards: no case yet, or a poliza short of what the award needs.
+  for (const a of awards) {
+    if (!a.caseRecordIds.length) {
+      const v = reach(a.subRecordId);
+      items.set(`p${a.poRecordId}`, {
+        key: `p${a.poRecordId}`,
+        recordId: 0,
+        poRecordId: a.poRecordId,
+        poNumber: a.poNumber,
+        kind: "new",
+        caseNumber: a.caseNumber,
+        jobName: "",
+        subcontractor: a.subcontractor || v.company,
+        awardedAmount: a.required,
+        onFile: a.onFile,
+        gap: a.gap,
+        status: "",
+        formSentAt: "",
+        reviewNotes: "",
+        email: v.email,
+        blocked: v.blocked,
+      });
+      continue;
+    }
+    const newest = caseBy.get(a.caseRecordIds[0]);
+    if (!newest) continue;
+    const key = `c${a.caseRecordIds[0]}`;
+    const listed = items.get(key);
+    if (listed) {
+      // Already listed as owed a poliza: carry the award's figures.
+      items.set(key, {
+        ...listed,
+        poRecordId: a.poRecordId,
+        poNumber: a.poNumber,
+        awardedAmount: a.required,
+        onFile: a.onFile,
+        gap: a.gap,
+      });
+      continue;
+    }
+    if (a.gap <= 0) continue;
+    const status = str(val(newest, FONDO_FIELDS.status)) as FondoStatus | "";
+    if (status === FONDO_STATUS.submitted) continue; // the review queue has it
+    items.set(key, fromCase(newest, "short", a));
+  }
+
+  return [...items.values()].sort((a, b) => a.caseNumber.localeCompare(b.caseNumber));
+}
+
+/** Open a Fondo case, the same record an award made in this app creates. */
+export async function createSubmittal(award: OpenAward, openedBy: string): Promise<number> {
+  const f = QB_AWARD.insurance;
+  const res = await fetch("https://api.quickbase.com/v1/records", {
+    method: "POST",
+    headers: {
+      "QB-Realm-Hostname": QB_CONFIG.realm,
+      Authorization: `QB-USER-TOKEN ${QB_CONFIG.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: QB_AWARD.tables.insurance,
+      data: [
+        {
+          [f.caseNumber]: { value: award.caseNumber },
+          [f.subcontractorName]: { value: award.subcontractor },
+          [f.awardedAmount]: { value: award.required },
+          [f.relatedJob]: { value: award.jobRecordId },
+          [f.relatedSub]: { value: award.subRecordId },
+          [f.source]: { value: QB_AWARD.insuranceSource },
+          [FONDO_FIELDS.status]: { value: FONDO_STATUS.awaiting },
+          [f.comments]: {
+            value: `Opened from the Fondo page (Send link) by ${openedBy || "staff"}. Purchase order ${award.poNumber}. Awarded = required Fondo coverage (award + approved change orders).`,
+          },
+        },
+      ],
+      fieldsToReturn: [f.recordId],
+    }),
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Quickbase ${res.status}: ${text.slice(0, 300)}`);
+  const body = JSON.parse(text) as {
+    metadata?: { lineErrors?: unknown; createdRecordIds?: number[] };
+  };
+  const errors = body.metadata?.lineErrors;
+  if (errors && Object.keys(errors).length) {
+    throw new Error(`Quickbase rejected the new case: ${JSON.stringify(errors).slice(0, 300)}`);
+  }
+  const id = body.metadata?.createdRecordIds?.[0];
+  if (!id) throw new Error("Quickbase did not return the new case's id.");
+  return id;
 }
 
 /** What a manual send needs for one case, re-read at send time. */

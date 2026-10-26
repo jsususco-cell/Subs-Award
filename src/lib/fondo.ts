@@ -230,17 +230,80 @@ export function rejectReturn(notes: string): string | null {
 export function rejectManualSend(
   status: FondoStatus | "",
   hasPolizaOnRecord: boolean,
+  /** The poliza on file is less than the open award needs: ask for a bigger one. */
+  short = false,
 ): string | null {
-  if (status === FONDO_STATUS.approved) {
-    return "This poliza is already approved. There is nothing to ask for.";
-  }
   if (status === FONDO_STATUS.submitted) {
     return "The subcontractor already sent it. It is waiting for review, not for them.";
+  }
+  if (short) return null;
+  if (status === FONDO_STATUS.approved) {
+    return "This poliza is already approved. There is nothing to ask for.";
   }
   if (status === "" && hasPolizaOnRecord) {
     return "This case already has a poliza on record.";
   }
   return null;
+}
+
+/*
+ * Which purchase orders are open awards that need Fondo coverage.
+ *
+ * Copied from the Fondo Coverage & Audit page (CM v2 code page 206) so the two
+ * pages count the same 113 awards. If the rule changes there, change it here.
+ */
+export const AWARD_TITLE = /^\s*(award|reconstr|relocat|relocaci|demol|repair|rehab)/i;
+const EXEMPT = ["kimberlycruz", "towerwindows", "tileinternational"];
+export const OPEN_JOB_STATUSES = ["OPEN", "ON-HOLD"];
+
+/** Lowercase letters and digits only: how page 206 compares names. */
+export function normName(s: string): string {
+  return String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Suppliers and scoping vendors that need no Fondo coverage. */
+export function exemptFromFondo(subName: string): boolean {
+  const n = normName(subName);
+  return EXEMPT.some((x) => n.startsWith(x));
+}
+
+/**
+ * Subcontractors page 206 never emails about Fondo, and why. Shown in place of
+ * the Send button so nobody mails them by accident.
+ */
+export function fondoNoEmailReason(subName: string): string {
+  const n = normName(subName);
+  if (n.startsWith("angconstruction")) return "ANG: own policy under contract, not emailed";
+  if (["rofconstruction", "toprojectmanagement"].some((x) => n.startsWith(x))) {
+    return "No longer with us, not emailed";
+  }
+  return "";
+}
+
+/** Does this PO count as an open award? Every input is what the PO and its job say. */
+export function isOpenAward(po: {
+  region: string;
+  cancelled: boolean;
+  title: string;
+  jobStatus: string;
+  caseNumber: string;
+  required: number;
+  subName: string;
+}): boolean {
+  return (
+    po.region === "Puerto Rico" &&
+    !po.cancelled &&
+    AWARD_TITLE.test(po.title) &&
+    Boolean(po.caseNumber) &&
+    OPEN_JOB_STATUSES.includes(po.jobStatus) &&
+    po.required > 0 &&
+    !exemptFromFondo(po.subName)
+  );
+}
+
+/** The gap, using the larger of the PO's stamp and the policies actually on file. */
+export function fondoGap(required: number, stamped: number, onFile: number): number {
+  return Math.max(0, round(required - Math.max(stamped, onFile)));
 }
 
 /** Does the submitted poliza cover the award? Advisory only, for the reviewer. */

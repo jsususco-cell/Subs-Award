@@ -24,8 +24,8 @@ import FondoReview from "./FondoReview";
 const emptyKey = () => "";
 
 type Tab = "review" | "send";
-type Filter = "all" | "awaiting" | "returned" | "never";
-type Sent = { to: string; sentAt: string; stampError: string | null };
+type Filter = "all" | "new" | "short" | "awaiting" | "returned" | "never";
+type Sent = { to: string; sentAt: string; stampError: string | null; created: boolean };
 
 export default function FondoWorkspace({
   reviewItems,
@@ -39,9 +39,12 @@ export default function FondoWorkspace({
   const [typedKey, setTypedKey] = useState<string | null>(null);
   const sendKey = typedKey ?? remembered;
 
-  const awaiting = sendItems.filter((i) => i.status !== FONDO_STATUS.returned).length;
+  const noCase = sendItems.filter((i) => i.kind === "new").length;
+  const short = sendItems.filter((i) => i.kind === "short").length;
+  const awaiting = sendItems.filter(
+    (i) => i.kind === "case" && i.status !== FONDO_STATUS.returned,
+  ).length;
   const returned = sendItems.filter((i) => i.status === FONDO_STATUS.returned).length;
-  const never = sendItems.filter((i) => !i.formSentAt).length;
   const blocked = sendItems.filter((i) => i.blocked || !i.email).length;
 
   return (
@@ -52,17 +55,13 @@ export default function FondoWorkspace({
         subcontractors send in, and send the form link to the ones still owed a poliza.
       </p>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Tile label="To review" value={reviewItems.length} note="sent in, waiting for a decision" />
-        <Tile label="Waiting on the sub" value={awaiting} note="no poliza sent yet" />
+        <Tile label="No case yet" value={noCase} note="open award, nobody asked" warn={noCase > 0} />
+        <Tile label="Short" value={short} note="poliza below what the award needs" />
+        <Tile label="Waiting on the sub" value={awaiting} note="asked, no poliza sent yet" />
         <Tile label="Returned" value={returned} note="sent back for correction" />
-        <Tile label="Link never sent" value={never} note="nobody has asked yet" />
-        <Tile
-          label="Can't be sent"
-          value={blocked}
-          note="no email or no access key"
-          warn={blocked > 0}
-        />
+        <Tile label="Can't be sent" value={blocked} note="no email, no key, or not emailed" />
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -104,18 +103,22 @@ export default function FondoWorkspace({
 function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState<number | null>(null);
-  const [sent, setSent] = useState<Record<number, Sent>>({});
-  const [errors, setErrors] = useState<Record<number, string>>({});
-  const [overrides, setOverrides] = useState<Record<number, string>>({});
-  const [editing, setEditing] = useState<number | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [sent, setSent] = useState<Record<string, Sent>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<string | null>(null);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((i) => {
-      if (filter === "awaiting" && i.status === FONDO_STATUS.returned) return false;
+      if (filter === "new" && i.kind !== "new") return false;
+      if (filter === "short" && i.kind !== "short") return false;
+      if (filter === "awaiting" && (i.kind !== "case" || i.status === FONDO_STATUS.returned)) {
+        return false;
+      }
       if (filter === "returned" && i.status !== FONDO_STATUS.returned) return false;
-      if (filter === "never" && (i.formSentAt || sent[i.recordId])) return false;
+      if (filter === "never" && (i.formSentAt || sent[i.key])) return false;
       if (!q) return true;
       return [i.caseNumber, i.subcontractor, i.jobName, i.email].some((s) =>
         s.toLowerCase().includes(q),
@@ -124,12 +127,22 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
   }, [items, filter, query, sent]);
 
   async function send(item: SendItem) {
-    const to = (overrides[item.recordId] ?? "").trim();
+    const to = (overrides[item.key] ?? "").trim();
     const where = to || item.email;
-    if (!window.confirm(`Email the Fondo form link for ${item.caseNumber} to ${where}?`)) return;
+    const ask =
+      item.kind === "new"
+        ? `${item.caseNumber} (${item.subcontractor}) has no Fondo case yet.
 
-    setBusy(item.recordId);
-    setErrors((e) => ({ ...e, [item.recordId]: "" }));
+This opens the case in Quickbase (required ${money(item.awardedAmount)}) and emails the form link to ${where}.`
+        : item.kind === "short"
+          ? `${item.caseNumber} (${item.subcontractor}) has a poliza for ${money(item.onFile)}, short ${money(item.gap)} of the ${money(item.awardedAmount)} required.
+
+Email ${where} the form link to send one that covers it?`
+          : `Email the Fondo form link for ${item.caseNumber} to ${where}?`;
+    if (!window.confirm(ask)) return;
+
+    setBusy(item.key);
+    setErrors((e) => ({ ...e, [item.key]: "" }));
     try {
       const res = await fetch("/api/fondo/send-link", {
         method: "POST",
@@ -137,43 +150,51 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
           "Content-Type": "application/json",
           ...(sendKey ? { "x-send-key": sendKey } : {}),
         },
-        body: JSON.stringify({ recordId: item.recordId, ...(to ? { to } : {}) }),
+        body: JSON.stringify({
+          ...(item.kind === "case" ? { recordId: item.recordId } : { poRecordId: item.poRecordId }),
+          ...(to ? { to } : {}),
+        }),
       });
       const body = await res.json();
       if (!body.ok) {
-        setErrors((e) => ({ ...e, [item.recordId]: body.error ?? "Could not send." }));
+        setErrors((e) => ({ ...e, [item.key]: body.error ?? "Could not send." }));
       } else {
         rememberKey(sendKey);
         setSent((s) => ({
           ...s,
-          [item.recordId]: { to: body.to, sentAt: body.sentAt, stampError: body.stampError },
+          [item.key]: {
+            to: body.to,
+            sentAt: body.sentAt,
+            stampError: body.stampError,
+            created: Boolean(body.created),
+          },
         }));
         setEditing(null);
       }
     } catch {
       setErrors((e) => ({
         ...e,
-        [item.recordId]: "Could not reach the server. Nothing was sent.",
+        [item.key]: "Could not reach the server. Nothing was sent.",
       }));
     }
     setBusy(null);
   }
 
   function sentLabel(item: SendItem) {
-    const sentAt = sent[item.recordId]?.sentAt || item.formSentAt;
+    const sentAt = sent[item.key]?.sentAt || item.formSentAt;
     return sentAt ? formatWhen(sentAt) : <span className="text-navy-600/60">never</span>;
   }
 
   function emailCell(item: SendItem) {
-    const override = overrides[item.recordId] ?? "";
+    const override = overrides[item.key] ?? "";
     return (
       <>
-        {editing === item.recordId ? (
+        {editing === item.key ? (
           <input
             type="email"
             autoFocus
             value={override}
-            onChange={(e) => setOverrides((o) => ({ ...o, [item.recordId]: e.target.value }))}
+            onChange={(e) => setOverrides((o) => ({ ...o, [item.key]: e.target.value }))}
             placeholder={item.email || "name@company.com"}
             aria-label={`Email for ${item.caseNumber}`}
             className="w-full min-w-0 rounded-md border border-navy-200 px-2 py-1 text-xs outline-none focus:border-navy-600"
@@ -183,10 +204,10 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
             {override || item.email || "no email on file"}
           </span>
         )}
-        {!item.blocked && editing !== item.recordId && (
+        {!item.blocked && editing !== item.key && (
           <button
             type="button"
-            onClick={() => setEditing(item.recordId)}
+            onClick={() => setEditing(item.key)}
             className="ml-2 text-navy-600/70 underline"
           >
             change
@@ -197,9 +218,9 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
   }
 
   function actionCell(item: SendItem) {
-    const done = sent[item.recordId];
+    const done = sent[item.key];
     const sentAt = done?.sentAt || item.formSentAt;
-    const noEmail = !item.email && !(overrides[item.recordId] ?? "").trim();
+    const noEmail = !item.email && !(overrides[item.key] ?? "").trim();
     return (
       <>
         {item.blocked ? (
@@ -207,22 +228,22 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
         ) : (
           <button
             type="button"
-            disabled={busy === item.recordId || noEmail}
+            disabled={busy === item.key || noEmail}
             onClick={() => send(item)}
             className="rounded-md bg-navy-700 px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-white hover:bg-navy-800 disabled:bg-navy-300"
           >
-            {busy === item.recordId ? "Sending…" : sentAt ? "Send again" : "Send link"}
+            {busy === item.key ? "Sending…" : sentAt ? "Send again" : "Send link"}
           </button>
         )}
         {done && (
           <p className="mt-1 text-xs text-emerald-700">
-            Sent to {done.to}.
+            {done.created ? "Case opened. " : ""}Sent to {done.to}.
             {done.stampError && <span className="block text-brand-red-dark">{done.stampError}</span>}
           </p>
         )}
-        {errors[item.recordId] && (
+        {errors[item.key] && (
           <p role="alert" className="mt-1 ml-auto max-w-[16rem] text-xs text-brand-red-dark">
-            {errors[item.recordId]}
+            {errors[item.key]}
           </p>
         )}
       </>
@@ -231,6 +252,8 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
 
   const filters: [Filter, string][] = [
     ["all", "All open"],
+    ["new", "No case yet"],
+    ["short", "Short"],
     ["awaiting", "Waiting on the sub"],
     ["returned", "Returned"],
     ["never", "Link never sent"],
@@ -268,7 +291,7 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
               <tr className="border-b border-navy-100 text-left text-[11px] font-semibold tracking-wide text-navy-600 uppercase">
                 <th className="px-3 py-2.5">Case</th>
                 <th className="px-3 py-2.5">Subcontractor</th>
-                <th className="px-3 py-2.5 text-right">Awarded</th>
+                <th className="px-3 py-2.5 text-right">Required</th>
                 <th className="px-3 py-2.5">State</th>
                 <th className="px-3 py-2.5">Link sent</th>
                 <th className="px-3 py-2.5">Goes to</th>
@@ -277,7 +300,7 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
             </thead>
             <tbody className="divide-y divide-navy-50">
               {shown.map((item) => (
-                <tr key={item.recordId} className="align-top">
+                <tr key={item.key} className="align-top">
                   <td className="px-3 py-3">
                     <div className="font-semibold whitespace-nowrap text-navy-800">
                       {item.caseNumber || "—"}
@@ -289,7 +312,7 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
                     {item.awardedAmount ? money(item.awardedAmount) : "—"}
                   </td>
                   <td className="px-3 py-3">
-                    <StatePill status={item.status} />
+                    <StatePill item={item} />
                   </td>
                   <td className="px-3 py-3 text-xs text-navy-700">{sentLabel(item)}</td>
                   <td className="px-3 py-3 text-xs break-all">{emailCell(item)}</td>
@@ -305,7 +328,7 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
       <div className="space-y-3 md:hidden">
         {shown.map((item) => (
           <div
-            key={item.recordId}
+            key={item.key}
             className="rounded-xl border border-navy-200 bg-white p-4 text-sm shadow-sm"
           >
             <div className="flex items-start justify-between gap-2">
@@ -313,11 +336,11 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
                 <div className="font-semibold whitespace-nowrap text-navy-800">{item.caseNumber || "—"}</div>
                 <div className="text-xs text-navy-600/80">{item.subcontractor || "—"}</div>
               </div>
-              <StatePill status={item.status} />
+              <StatePill item={item} />
             </div>
             <dl className="mt-3 space-y-1.5 text-xs">
               <div className="flex justify-between gap-3">
-                <dt className="text-navy-600">Awarded</dt>
+                <dt className="text-navy-600">Required</dt>
                 <dd className="tabular font-semibold text-navy-800">
                   {item.awardedAmount ? money(item.awardedAmount) : "—"}
                 </dd>
@@ -337,33 +360,28 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
       </div>
 
       <p className="mt-2 text-xs text-navy-600/70">
-        Sending stamps &ldquo;Form Sent&rdquo; on the case, so the automatic sender will not
-        mail it again. A returned case gets the correction notice with the reason.
+        Open awards follow the Fondo Coverage page&rsquo;s rule (Puerto Rico, award PO, job open
+        or on hold, required coverage above zero). &ldquo;No case yet&rdquo; opens the Fondo
+        case first, then emails. Sending stamps &ldquo;Form Sent&rdquo;, so the automatic sender
+        will not mail it again.
       </p>
     </div>
   );
 }
 
-function StatePill({ status }: { status: SendItem["status"] }) {
-  if (status === FONDO_STATUS.returned) {
-    return (
-      <span className="rounded-full bg-brand-red-50 px-2.5 py-1 text-xs font-semibold whitespace-nowrap text-brand-red-dark">
-        Returned
-      </span>
-    );
-  }
-  if (status === FONDO_STATUS.awaiting) {
-    return (
-      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold whitespace-nowrap text-amber-800">
-        Waiting on the sub
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-navy-50 px-2.5 py-1 text-xs font-semibold whitespace-nowrap text-navy-700">
-      No poliza on file
+function StatePill({ item }: { item: SendItem }) {
+  const pill = (text: string, cls: string) => (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${cls}`}>
+      {text}
     </span>
   );
+  if (item.kind === "new") return pill("No case yet", "bg-brand-red-50 text-brand-red-dark");
+  if (item.kind === "short") return pill(`Short ${money(item.gap)}`, "bg-amber-50 text-amber-800");
+  if (item.status === FONDO_STATUS.returned) {
+    return pill("Returned", "bg-brand-red-50 text-brand-red-dark");
+  }
+  if (item.status === FONDO_STATUS.awaiting) return pill("Waiting on the sub", "bg-amber-50 text-amber-800");
+  return pill("No poliza on file", "bg-navy-50 text-navy-700");
 }
 
 function Tile({

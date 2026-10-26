@@ -11,6 +11,10 @@ import {
   fondoConfigured,
   missingFondoFields,
   rejectManualSend,
+  isOpenAward,
+  exemptFromFondo,
+  fondoGap,
+  fondoNoEmailReason,
   rejectReturn,
   rejectSubmission,
   type FondoSubmission,
@@ -306,4 +310,46 @@ test("a link can be sent by hand only while the case is open", () => {
   assert.match(rejectManualSend(FONDO_STATUS.approved, true) ?? "", /already approved/);
   assert.match(rejectManualSend(FONDO_STATUS.submitted, false) ?? "", /waiting for review/);
   assert.match(rejectManualSend("", true) ?? "", /already has a poliza/);
+});
+
+test("a short poliza can be chased even when approved or migrated", () => {
+  assert.equal(rejectManualSend(FONDO_STATUS.approved, true, true), null);
+  assert.equal(rejectManualSend("", true, true), null);
+  // Never while the subcontractor's upload is waiting for a reviewer.
+  assert.match(rejectManualSend(FONDO_STATUS.submitted, true, true) ?? "", /waiting for review/);
+});
+
+test("open awards follow the Fondo Coverage page's rule", () => {
+  const base = {
+    region: "Puerto Rico",
+    cancelled: false,
+    title: "Award - Reconstruction",
+    jobStatus: "OPEN",
+    caseNumber: "PR-R3-00001",
+    required: 1000,
+    subName: "FSD CONTRACTORS INC",
+  };
+  assert.equal(isOpenAward(base), true);
+  assert.equal(isOpenAward({ ...base, jobStatus: "ON-HOLD" }), true);
+  assert.equal(isOpenAward({ ...base, region: "Florida" }), false);
+  assert.equal(isOpenAward({ ...base, cancelled: true }), false);
+  assert.equal(isOpenAward({ ...base, title: "Lead Abatement" }), false);
+  assert.equal(isOpenAward({ ...base, jobStatus: "CLOSED" }), false);
+  assert.equal(isOpenAward({ ...base, required: 0 }), false);
+  assert.equal(isOpenAward({ ...base, caseNumber: "" }), false);
+  assert.equal(isOpenAward({ ...base, subName: "Tower Windows, LLC" }), false);
+  assert.equal(exemptFromFondo("Kimberly Cruz Rodriguez"), true);
+});
+
+test("the gap uses whichever coverage figure is larger", () => {
+  assert.equal(fondoGap(1000, 0, 400), 600);
+  assert.equal(fondoGap(1000, 700, 400), 300);
+  assert.equal(fondoGap(1000, 0, 1200), 0);
+});
+
+test("page 206's do-not-email subs are kept out of the send button", () => {
+  assert.match(fondoNoEmailReason("ANG Construction, Inc."), /ANG/);
+  assert.match(fondoNoEmailReason("Rof Construction, Corp."), /No longer/);
+  assert.match(fondoNoEmailReason("TO Project Management"), /No longer/);
+  assert.equal(fondoNoEmailReason("FSD CONTRACTORS INC"), "");
 });

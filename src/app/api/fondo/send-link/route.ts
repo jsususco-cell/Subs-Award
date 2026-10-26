@@ -6,9 +6,16 @@ import {
   FONDO_STATUS,
   fondoConfigured,
   missingFondoFields,
+  fondoNoEmailReason,
   rejectManualSend,
 } from "@/lib/fondo";
-import { caseForSend, updateSubmittal } from "@/lib/fondo-server";
+import {
+  caseForSend,
+  createSubmittal,
+  openAwards,
+  updateSubmittal,
+  type OpenAward,
+} from "@/lib/fondo-server";
 import { fondoFormUrl, formRequestMail, returnedMail } from "@/lib/fondo-mail";
 import {
   checkRecipients,
@@ -20,6 +27,7 @@ import {
   sendMail,
 } from "@/lib/mail";
 import { refuseRegion } from "@/lib/auth/guard";
+import { currentSession } from "@/lib/auth/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,6 +39,10 @@ export const maxDuration = 60;
  * for everything after that: a subcontractor who lost the email, a case whose
  * vendor email was fixed, a returned poliza that needs chasing, or one of the
  * migrated cases that never had a link at all.
+ *
+ * It also covers open awards (the Fondo Coverage page's rule) that have no
+ * Fondo case at all: sending opens the case first, then mails the link. And
+ * awards whose poliza on file is short: the link asks for one that covers it.
  *
  * It stamps Form Sent like the notifier does, so the two never double up: a
  * case sent here is skipped by the next scheduled run.
@@ -76,23 +88,61 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
   }
-  const recordId = Number(body.recordId) || 0;
+  let recordId = Number(body.recordId) || 0;
+  // An open award (new or short rows) is sent by its PO: the case may not exist yet.
+  const poRecordId = Number(body.poRecordId) || 0;
   // Optional: send to someone other than the address on the vendor record,
   // for when that address is missing or wrong.
   const override = typeof body.to === "string" ? body.to.trim().slice(0, 200) : "";
 
-  if (!recordId) {
+  if (!recordId && !poRecordId) {
     return NextResponse.json({ ok: false, error: "No case given." }, { status: 400 });
   }
 
-  // Re-read now rather than trusting the page: the case may have moved on
-  // since the list was loaded.
+  // Re-read the award now rather than trusting the page: it may have been
+  // covered, closed or given a case since the list was loaded.
+  let award: OpenAward | null = null;
+  if (poRecordId) {
+    award = (await openAwards()).find((a) => a.poRecordId === poRecordId) ?? null;
+    if (!award) {
+      return NextResponse.json(
+        { ok: false, error: "That award is no longer open or no longer needs Fondo coverage." },
+        { status: 409 },
+      );
+    }
+    const noEmail = fondoNoEmailReason(award.subcontractor);
+    if (noEmail) return NextResponse.json({ ok: false, error: noEmail }, { status: 409 });
+    recordId = award.caseRecordIds[0] ?? 0;
+  }
+
+  // No case for this award yet: open it, as an award made in this app would.
+  let created = false;
+  if (!recordId && award) {
+    try {
+      recordId = await createSubmittal(award, (await currentSession())?.email ?? "");
+      created = true;
+    } catch (e) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Could not open the Fondo case, so nothing was sent: ${
+            e instanceof Error ? e.message : "create failed"
+          }`,
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   const found = await caseForSend(recordId);
   if (!found) {
     return NextResponse.json({ ok: false, error: "That case no longer exists." }, { status: 404 });
   }
-  const refused = rejectManualSend(found.status, found.hasPoliza);
+  const short = Boolean(award && award.gap > 0);
+  const refused = rejectManualSend(found.status, found.hasPoliza, short);
   if (refused) return NextResponse.json({ ok: false, error: refused }, { status: 409 });
+  const noEmail = fondoNoEmailReason(found.vendor?.company ?? found.subcontractor);
+  if (noEmail) return NextResponse.json({ ok: false, error: noEmail }, { status: 409 });
 
   if (!found.vendor) {
     return NextResponse.json(
@@ -142,7 +192,8 @@ export async function POST(request: Request) {
   const shape = {
     caseNumber: found.caseNumber,
     subcontractor: found.subcontractor,
-    awardedAmount: found.awardedAmount,
+    // What the poliza has to cover now: the award plus approved change orders.
+    awardedAmount: award?.required ?? found.awardedAmount,
     formUrl,
   };
   // A returned case gets the correction notice again, so the reason travels
@@ -173,8 +224,13 @@ export async function POST(request: Request) {
     [QB_AWARD.insurance.recordId]: { value: recordId },
     [FONDO_FIELDS.formSentAt]: { value: sentAt },
   };
-  // A migrated case had no status; once it has been asked, it is awaiting.
-  if (found.status === "") stamp[FONDO_FIELDS.status] = { value: FONDO_STATUS.awaiting };
+  // Once asked, the case is awaiting the subcontractor: a migrated case had no
+  // status, and an approved-but-short one has to reopen or the form refuses it.
+  if (found.status === "" || found.status === FONDO_STATUS.approved) {
+    stamp[FONDO_FIELDS.status] = { value: FONDO_STATUS.awaiting };
+  }
+  // Compare future uploads against what the award needs today.
+  if (award) stamp[QB_AWARD.insurance.awardedAmount] = { value: award.required };
 
   let stampError: string | null = null;
   try {
@@ -185,5 +241,5 @@ export async function POST(request: Request) {
     }`;
   }
 
-  return NextResponse.json({ ok: true, recordId, to, sentAt, stampError });
+  return NextResponse.json({ ok: true, recordId, created, to, sentAt, stampError });
 }

@@ -166,7 +166,12 @@ export default function FondoReview({
                 </h2>
                 <p className="text-xs text-navy-600/70">{item.subcontractor}</p>
               </div>
-              {cover.covers ? (
+              {!(item.awardedAmount > 0) ? (
+                // Nothing to compare against, so "covers" would be a false pass.
+                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                  no award recorded
+                </span>
+              ) : cover.covers ? (
                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                   covers the award
                 </span>
@@ -178,7 +183,7 @@ export default function FondoReview({
             </header>
 
             <dl className="divide-y divide-navy-50 text-sm">
-              <Row k="Awarded" v={money(item.awardedAmount)} />
+              <Row k="Awarded" v={item.awardedAmount > 0 ? money(item.awardedAmount) : "not recorded"} />
               <Row k="Poliza is for" v={money(item.submittedAmount)} />
               {item.submittedPolicyNumber && (
                 <Row k="Policy number" v={item.submittedPolicyNumber} />

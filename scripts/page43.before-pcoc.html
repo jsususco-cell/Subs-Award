@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Byrdson — Puerto Rico Command Center</title>
+<!-- ============================================================
+     BYRDSON SERVICES / EXCELLO HOMES
+     MASTER DASHBOARD  ·  Quickbase Code Page
+     ------------------------------------------------------------
+     HOW IT WORKS
+       • Shows a grid of panels (one per dashboard).
+       • Click a panel  -> that dashboard opens IN THE SAME PAGE
+         inside a frame, with a "Back to menu" button.
+       • No page reload, no leaving the dashboard.
+     >>> THE ONLY THING YOU NEED TO EDIT IS THE  DASHBOARDS  ARRAY
+         BELOW (in the SCRIPT section near the bottom).  Paste each
+         existing dashboard's Code Page URL into the "url" field.
+     ============================================================ -->
+<style>
+  :root{
+    --navy:#0f2438;
+    --navy-2:#16344f;
+    --blue:#2f6fb0;
+    --blue-light:#4f93d8;
+    --gold:#d8a23a;
+    --bg:#eef2f6;
+    --card:#ffffff;
+    --ink:#1d2b39;
+    --muted:#6a7b8c;
+    --line:#dde5ed;
+    --radius:14px;
+    --shadow:0 6px 22px rgba(15,36,56,.10);
+    --shadow-hover:0 14px 34px rgba(15,36,56,.20);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- Top bar ---------- */
+  .topbar{
+    background:linear-gradient(135deg,var(--navy) 0%,var(--navy-2) 100%);
+    color:#fff;
+    padding:18px 26px;
+    display:flex;align-items:center;gap:16px;
+    box-shadow:0 2px 10px rgba(0,0,0,.18);
+    position:sticky;top:0;z-index:50;
+  }
+  .brand-logo{
+    height:40px;width:auto;flex:none;display:block;
+    background:#fff;border-radius:8px;padding:6px 10px;
+    box-shadow:0 3px 8px rgba(0,0,0,.22);
+  }
+  .brand-text h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.3px}
+  .brand-text p{margin:0;font-size:12px;color:#a9c0d6;letter-spacing:1px;text-transform:uppercase;font-weight:600}
+  .topbar .spacer{flex:1}
+  .back-btn{
+    display:none;align-items:center;gap:8px;
+    background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+    color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+    padding:9px 16px;border-radius:9px;transition:.18s;
+  }
+  .back-btn:hover{background:rgba(255,255,255,.22)}
+  a.back-btn{text-decoration:none}
+  .back-btn svg{width:15px;height:15px}
+  .crumb{display:none;font-size:13px;color:#bcd2e6}
+  .crumb b{color:#fff}
+  /* ---------- Live KTO strip ---------- */
+  .kto-strip{
+    display:none;align-items:center;gap:22px;flex-wrap:wrap;
+    background:linear-gradient(135deg,#12283e 0%,#1d3f5e 100%);
+    color:#fff;border-radius:var(--radius);padding:16px 22px;margin:0 2px 26px;
+    box-shadow:var(--shadow);text-decoration:none;transition:transform .18s,box-shadow .18s;
+  }
+  .kto-strip:hover{transform:translateY(-2px);box-shadow:var(--shadow-hover)}
+  .kto-strip.ready{display:flex}
+  .kto-lead{display:flex;flex-direction:column;gap:2px;min-width:190px}
+  .kto-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--gold)}
+  .kto-sub{font-size:13px;color:#bcd2e6}
+  .kto-stats{display:flex;gap:26px;flex-wrap:wrap;flex:1}
+  .kto-stat{display:flex;flex-direction:column;gap:1px}
+  .kto-num{font-size:24px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+  .kto-num.warn{color:#f6c453}
+  .kto-num.crit{color:#ff8f7a}
+  .kto-lbl{font-size:11px;color:#a9c0d6;letter-spacing:.4px;text-transform:uppercase;font-weight:600}
+  .kto-go{font-size:13px;font-weight:600;color:#cfe0f0;white-space:nowrap}
+  .stage-strip{background:linear-gradient(135deg,#3d2a0b 0%,#7a4c0e 100%)}
+  .stage-strip .kto-sub{color:#efd9b3}
+  .stage-strip .kto-lbl{color:#e4c995}
+  .stage-strip .kto-go{color:#f5e6c8}
+  @media (max-width:760px){.kto-stats{gap:18px}.kto-num{font-size:20px}}
+  /* ---------- Menu (grid) view ---------- */
+  #menuView{padding:30px 26px 50px;max-width:1180px;margin:0 auto}
+  .hero{margin:6px 2px 26px}
+  .hero h2{margin:0;font-size:24px;font-weight:700;color:var(--navy)}
+  .hero p{margin:6px 0 0;font-size:14px;color:var(--muted);max-width:640px}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+    gap:20px;
+  }
+  .panel{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 22px 20px;
+    cursor:pointer;text-align:left;width:100%;
+    box-shadow:var(--shadow);transition:transform .18s,box-shadow .18s,border-color .18s;
+    position:relative;overflow:hidden;
+    display:flex;flex-direction:column;min-height:182px;
+  }
+  .panel:before{
+    content:"";position:absolute;left:0;top:0;height:100%;width:5px;
+    /* optional DASHBOARDS stripe: a tile whose spine differs from its accent (house navy + red) */
+    background:var(--stripe,var(--accent,var(--blue)));
+  }
+  .panel:hover{transform:translateY(-4px);box-shadow:var(--shadow-hover);border-color:var(--accent,var(--blue))}
+  .panel:focus-visible{outline:3px solid var(--blue-light);outline-offset:2px}
+  a.panel{text-decoration:none;color:inherit}
+  .p-icon{
+    width:48px;height:48px;border-radius:12px;flex:none;
+    background:var(--accent-soft,#eaf2fb);color:var(--accent,var(--blue));
+    display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+  }
+  .p-icon svg{width:26px;height:26px}
+  .panel h3{margin:0 0 6px;font-size:17px;font-weight:700;color:var(--navy)}
+  .panel p{margin:0;font-size:13px;line-height:1.5;color:var(--muted);flex:1}
+  .p-open{
+    margin-top:14px;font-size:12.5px;font-weight:700;color:var(--accent,var(--blue));
+    display:flex;align-items:center;gap:6px;letter-spacing:.3px;
+  }
+  .p-open svg{width:14px;height:14px;transition:transform .18s}
+  .panel:hover .p-open svg{transform:translateX(4px)}
+  .footer-note{margin:30px 2px 0;font-size:12px;color:var(--muted)}
+  .section-title{
+    margin:30px 2px 14px;font-size:13px;font-weight:800;letter-spacing:1.2px;
+    text-transform:uppercase;color:var(--navy);display:flex;align-items:center;gap:12px;
+  }
+  #sections > .section-title:first-child{margin-top:4px}
+  .section-title:after{content:"";flex:1;height:1px;background:var(--line)}
+  /* ---------- Frame (report) view ---------- */
+  #frameView{display:none;flex-direction:column;position:fixed;inset:0;top:78px;background:#fff}
+  .frame-wrap{position:relative;flex:1;min-height:0}
+  #frameView iframe{width:100%;height:100%;border:0;display:block}
+  .frame-loading{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:14px;color:var(--muted);font-size:14px;background:#fff;
+  }
+  .spinner{
+    width:34px;height:34px;border-radius:50%;
+    border:3px solid var(--line);border-top-color:var(--blue);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (max-width:560px){
+    .topbar{padding:14px 16px}
+    #menuView{padding:22px 16px 40px}
+    .crumb{display:none !important}
+  }
+
+  /* ---------- Role picker (2026-09-10 consolidation) ---------- */
+  .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0 2px 22px}
+  .role{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);transition:.15s}
+  .role b{display:block;font-size:14.5px;color:var(--navy)}
+  .role span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+  .role:hover{border-color:var(--blue-light)}
+  .role.on{border-color:var(--blue);background:#eaf2fb;box-shadow:inset 0 0 0 1px var(--blue)}
+  .start-lbl,.also-lbl{margin:4px 2px 10px;font-size:13px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--navy)}
+  .also-lbl{margin-top:26px}
+  .panel.start{min-height:0;padding:26px 28px;border-width:2px;border-color:var(--accent,var(--blue))}
+  .panel.start h3{font-size:22px}
+  .panel.start p{font-size:14.5px;max-width:760px}
+  .panel.start .p-open{font-size:14px}
+  .pick-first{background:var(--card);border:1px dashed var(--line);border-radius:var(--radius);padding:22px;color:var(--muted);font-size:14px;margin-bottom:10px}
+  .grid.small .panel{min-height:150px;padding:18px}
+  .grid.small .panel h3{font-size:15.5px}
+  .grid.small .panel p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  #liveStrips{margin-top:26px}
+  .alltools{margin:12px 2px 0;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .alltools summary{cursor:pointer;padding:16px 20px;font-weight:700;color:var(--navy);display:flex;gap:14px;align-items:baseline;list-style:none}
+  .alltools summary::-webkit-details-marker{display:none}
+  .alltools summary:before{content:"\25B8";color:var(--blue);transition:transform .15s}
+  .alltools[open] summary:before{transform:rotate(90deg)}
+  .muted-s{font-weight:500;font-size:12.5px;color:var(--muted)}
+  .findbar{margin:34px 2px 0}
+  #toolSearch{width:100%;padding:13px 16px;border:1px solid var(--line);border-radius:12px;font:15px inherit;box-shadow:var(--shadow);background:#fff}
+  #sections{padding:0 20px 18px}
+  #sections .section-title{margin:18px 0 6px;font-size:11.5px}
+  .tool-row{display:flex;gap:12px;align-items:flex-start;width:100%;background:none;border:0;border-bottom:1px solid var(--line);padding:9px 4px;text-align:left;cursor:pointer;font:inherit;color:inherit;text-decoration:none}
+  .tool-row:hover{background:#f4f8fc}
+  .tool-row .dot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:none;background:var(--accent,var(--blue))}
+  .tool-row b{display:block;font-size:14px;color:var(--navy)}
+  .tool-row span{display:block;font-size:12.5px;color:var(--muted);line-height:1.45}
+  .tool-row em{font-style:normal;font-size:11px;color:var(--blue);margin-left:6px;font-weight:600}
+</style>
+</head>
+<body>
+  <!-- ============ TOP BAR ============ -->
+  <div class="topbar">
+    <img class="brand-logo"
+         src="https://byrdsonservices.com/wp-content/uploads/2013/10/cropped-cropped-cropped-cropped-ByrdsonServicesLogoHort2.png"
+         alt="Byrdson Services">
+    <div class="brand-text">
+      <p>Puerto Rico Command Center</p>
+    </div>
+    <div class="spacer"></div>
+    <span class="crumb" id="crumb"></span>
+    <a class="back-btn" id="newTabBtn" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>
+      Open in a new tab
+    </a>
+    <button class="back-btn" id="backBtn" onclick="showMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      Back to menu
+    </button>
+  </div>
+  <!-- ============ MENU (GRID) VIEW ============ -->
+  <div id="menuView">
+<section aria-label="Puerto Rico field management" style="margin:0 0 24px"><a href="https://byrdsonservices.quickbase.com/db/buskqh26r?a=showpage&amp;pageIdV2=9b0a3fbe-203d-461d-b3c7-4837e828212e" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;padding:24px;background:#fff;border:2px solid #2f6fb0;border-radius:14px;text-decoration:none;color:#0f2438;box-shadow:0 6px 22px rgba(15,36,56,.10)"><div style="flex:1;min-width:220px"><span style="display:block;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#2f6fb0;margin-bottom:7px">Field activity &amp; employee performance</span><h2 style="margin:0;font-size:23px;color:#0f2438">Puerto Rico Manager Dashboard</h2><p style="margin:8px 0 0;font-size:14px;line-height:1.5;color:#526577">KPIs, employee notes, weekly site visits, and entry dates — by project and employee.</p></div><span style="display:inline-block;background:#2f6fb0;color:#fff;padding:13px 19px;border-radius:9px;font-size:14px;font-weight:700;white-space:nowrap">Open Manager Dashboard &rarr;</span></a></section>
+
+    <div class="hero">
+      <h2 id="heroTitle">What is your job?</h2>
+      <p id="heroSub">Pick it once and this page remembers. You get the one page to start on, plus the few others your job uses. Every other page is in the list at the bottom.</p>
+    </div>
+    <div class="roles" id="roles"></div>
+    <div id="roleView"></div>
+    <div id="liveStrips" style="display:none">
+    <!-- Live KTO closeout status. Reads KTO Readiness with the signed-in QB session
+         (same legacy-API pattern as pages 89/91/102) - no user token prompt. -->
+    <a class="kto-strip" id="ktoStrip" href="https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pageID=105">
+      <div class="kto-lead">
+        <span class="kto-eyebrow">Key Turnover &mdash; live</span>
+        <span class="kto-sub" id="ktoSub">Loading closeout queue&hellip;</span>
+      </div>
+      <div class="kto-stats" id="ktoStats"></div>
+      <span class="kto-go">Open KTO Queue &rsaquo;</span>
+    </a>
+
+    <!-- Live PR stage funnel. Reads Jobs PR Stage (fid 1474) with the signed-in session. Hidden unless the read succeeds. -->
+    <a class="kto-strip stage-strip" id="stageStrip" href="https://byrdsonservices.quickbase.com/db/buskqh27b?a=q&query={35.EX.'OPEN'}AND{11.EX.'Puerto Rico'}AND{1474.XEX.''}&clist=6.490.34.880.1474.1476.1477.1295.1116.1136&slist=1475.1477&options=sortorder-D">
+      <div class="kto-lead">
+        <span class="kto-eyebrow">Open PR jobs by stage &mdash; live</span>
+        <span class="kto-sub" id="stageSub">Loading stages&hellip;</span>
+      </div>
+      <div class="kto-stats" id="stageStats"></div>
+      <span class="kto-go">Open the list &rsaquo;</span>
+    </a>
+    </div>
+    <div class="findbar"><input type="search" id="toolSearch" placeholder="Looking for another page? Type here, e.g. invoice, permit, binder, insurance" autocomplete="off"></div>
+    <details class="alltools" id="allTools">
+      <summary><span id="allCount">Task and management pages</span><span class="muted-s">Browse every page, grouped by area</span></summary>
+      <label style="display:block;margin:12px 4px"><input type="checkbox" id="showReference"> Include reference dashboards used for migration and comparison</label>
+<div id="sections"><!-- sections injected by JS --></div>
+    </details>
+    <div class="footer-note" id="footNote"></div>
+  </div>
+  <!-- ============ FRAME (REPORT) VIEW ============ -->
+  <div id="frameView">
+    <div class="frame-wrap">
+      <div class="frame-loading" id="frameLoading"><div class="spinner"></div><span>Loading dashboard…</span></div>
+      <iframe id="dashFrame" title="Dashboard" referrerpolicy="same-origin"></iframe>
+    </div>
+  </div>
+<script>
+/* ================================================================
+   ▼▼▼  EDIT ONLY THIS LIST  ▼▼▼
+   For each dashboard, paste its Quickbase Code Page URL into "url".
+   A code-page URL usually looks like:
+     https://YOURREALM.quickbase.com/db/APP_DBID?a=dbpage&pageID=12
+   (You can also use a relative URL like  /db/APP_DBID?a=dbpage&pageID=12 )
+   Add or remove items freely — the grid rebuilds automatically.
+   ================================================================ */
+const QB = "https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pageID=";
+/* Lanes, one per role. Order inside a lane = the order people use them on a normal day.
+   Rebuilt 2026-08-22: orphaned pages 41 and 75 linked, 57/58 merged into 118, permits put on one lane. */
+const DASHBOARDS = [
+    { key:"prtransition", section:"Coordinators — every case, every day",
+          title:"PR EXISTING PROJECT WORK QUEUE",
+    desc:"Bring existing Puerto Rico projects up to date, confirm Canopy stage and route, attach evidence, and send the transition for review.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r/ad506c1a-ac25-4967-b1e0-5f1d7f38d591?a=showpage&pageIdV2=52d055d1-9a0a-4a62-98cf-29eceb37c42c", color:"#b4235a", soft:"#fde7f0",
+    icon:'<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8"/>' },
+/* ---------------- Coordinators ---------------- */
+  { key:"mywork", section:"Coordinators — every case, every day",
+    title:"My Work — KPIs and due items",
+    desc:"Opens straight onto your own list from your Quickbase sign-in. Every open item you own across every case, most overdue first.",
+    url:QB+"114", color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"prdohforms", section:"Coordinators — every case, every day",
+    title:"PRDOH Forms — official requests and certifications",
+    desc:"Search by milestone, download the issued Word form, or make a Google Docs working copy. Source dates and verification details are visible for every form.",
+    url:"/db/buskqh26r?a=dbpage&pagename=prdoh_forms.html", color:"#0f6e5c", soft:"#e3f3ef",
+    icon:'<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8"/>' },
+  { key:"milestonepkg", section:"Coordinators — every case, every day",
+    title:"Milestone Package Desk — pre & post inspection",
+    desc:"Every open pre- and post-inspection package and who owes the next document. Tracks the two cycle times that matter: pre-inspection submitted to inspection passed, and inspection passed to post-inspection package submitted. Upload certifications and contractor test reports you already have, which files them and stops any reminders.",
+    url:QB+"162", color:"#0f6e5c", soft:"#e3f3ef",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M4 7h6M4 12h4M4 17h8"/>' },
+  { key:"readyinspection", section:"Coordinators — every case, every day",
+    title:"Ready for Inspection — start a pre-inspection package",
+    desc:"Milestone work is done on a case? Type the case number, confirm the milestone, and press Start. It creates the pre-inspection package and its document checklist, assigns the owner, and opens the builder so you can upload the photos. Superintendents and coordinators.",
+    url:QB+"170", color:"#b45309", soft:"#fdf0dc",
+    icon:'<path d="M3 7h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="3.5"/>' },
+  { key:"precontasks", section:"Coordinators — every case, every day",
+    title:"My Precon Tasks — what is on your plate",
+    desc:"Your open pre-construction tasks across every case, most urgent first, with the internal target date worked out from the Task Order. Coordinators, permits and PM seats are assigned; pick a person to see theirs.",
+    url:QB+"119", color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"grantsigning", section:"Coordinators — every case, every day",
+    title:"Grant Signing Day Sheet",
+    desc:"Every home still waiting on the Grant Agreement signature: schedule the visit, check off the no-price scope and plans, mark it signed.",
+    url:QB+"122", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>' },
+  { key:"directives", section:"Coordinators — every case, every day",
+    title:"Field Directives — site notes the sub must act on",
+    desc:"Every open directive on every PR case: drafts pulled from daily logs to review and send, subs that owe an answer, work reported done that needs a site check, escalations. Raise new ones from the Case Cockpit.",
+    url:QB+"137", color:"#a93226", soft:"#f7e2df",
+    icon:'<path d="M4 4h16v12H8l-4 4z"/><path d="M8 8h8M8 12h5"/>' },
+  { key:"raindelayupload", section:"Coordinators — every case, every day",
+    title:"Rain Delay Upload Desk — upload the change orders",
+    desc:"The working list: every case that still owes Canopy a rain delay time extension this month. Open the PDF, file it in Canopy, then press Mark uploaded. A case stays on the list until somebody marks it off.",
+    url:QB+"157", color:"#b54708", soft:"#f7ebd5",
+    icon:'<path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' },
+  { key:"raindelaysubs", section:"Coordinators — every case, every day",
+    title:"Rain Delay Time Extensions — submitted to Canopy?",
+    desc:"Management check: every month's rain delay change orders, how many are in Canopy with a CO #, how many the Program approved, and exactly which ones are still open and who owns them. Sign a month off when it shows ALL SUBMITTED.",
+    url:QB+"145", color:"#1f5f8b", soft:"#e0edf6",
+    icon:'<path d="M20 16.6A5 5 0 0 0 18 7h-1.3A8 8 0 1 0 4 15.3"/><path d="M8 19v2M12 17v4M16 19v2"/>' },
+  { key:"sitewalks", section:"Coordinators — every case, every day",
+    title:"Site Walk Scheduler — get the walk on the calendar",
+    desc:"Every reconstruction and repair case still waiting for its initial site walk: homeowner phone, log each call, set the date. Estimator and superintendent get calendar invites; the shared PR site-visit calendar updates by itself; unanswered homeowners get flagged.",
+    url:QB+"138", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M9 16l2 2 4-4"/>' },
+  { key:"playbook", section:"Coordinators — every case, every day",
+    title:"How This System Works",
+    desc:"The playbook: awards, draws, the construction clock, weather delays, change orders, and every automatic email — in plain language.",
+    url:QB+"121", color:"#1f6feb", soft:"#e3edfb",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+  { key:"cockpit", section:"Coordinators — every case, every day",
+    title:"Case Cockpit — one project",
+    desc:"One page per case: milestone ladder with dates, what is next and who owns it, binder and documents, roof and bond chain, what is blocking.",
+    url:QB+"113", color:"#0f766e", soft:"#e0f2f0",
+    icon:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>' },
+  { key:"casedocs", section:"Coordinators — every case, every day",
+    title:"Case Documents — everything one house needs",
+    desc:"Every document a case will ever need, in one list, with what is already on file and what is missing. Says what is not set up rather than pretending nothing is needed.",
+    url:QB+"117", color:"#1b7f5a", soft:"#dff0e8",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>' },
+  { key:"srirequest", section:"Coordinators — every case, every day",
+    title:"SRI Request Queue",
+    desc:"The Reconstruction cases with no SRI anywhere in Drive, so the report still has to be pulled from the OGPe portal by a person. Assign an owner, start the clock, ten business days to deliver and an escalation at twenty.",
+    url:QB+"155", color:"#20447e", soft:"#e6eefa",
+    icon:'<path d="M12 3v10"/><path d="M8 7l4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>' },
+  { key:"canopylog", section:"Tools & Utilities",
+    title:"Canopy Export Log",
+    desc:"Whether the Canopy data set actually landed each weekday, who owns it, the monthly compliance rate and the reason for every miss. Everything on this command centre that reads a Canopy stage, a hold flag or a days-in-stage number is only as current as this.",
+    url:QB+"152", color:"#8a5300", soft:"#fdf0dd",
+    icon:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>' },
+  { key:"howitworks", section:"Coordinators — every case, every day",
+    title:"How It Works — assignment to NTP",
+    desc:"Every step a Puerto Rico house goes through from the day it is assigned until we hold a written NTP. Eighteen stages, in plain language. Pick your job title and it shows only your steps, what the system already does for you, and where it still cannot be trusted. Start here if you are new.",
+    url:QB+"156", color:"#146b45", soft:"#e2f4ec",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/>' },
+  { key:"sridesk", section:"Coordinators — every case, every day",
+    title:"SRI Disposition",
+    desc:"Every PR Reconstruction case needs an OGPe SRI report before the Design to NTP gate can open; Relocation and Repair do not. Mark each case SRI complete, or not required with a written basis. Longest-waiting first.",
+    url:QB+"153", color:"#7a3ea8", soft:"#f0e8f8",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>' },
+  { key:"permithelper", section:"Permits",
+    title:"Permitting Helper — build the package and get it sealed",
+    desc:"Drop a case's approved Canopy scope and it builds the eight documents the OGPe package needs, emails the six Harold Vidal has to sign and seal, and files the sealed copies back into the case's Drive folder. The grid says what every case still owes and who it is with.",
+    url:"https://cost-estimate-pr.vercel.app/", color:"#be123c", soft:"#fde7ec",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="12" cy="15" r="3"/>' },
+  { key:"sriconfirm", section:"Coordinators — every case, every day",
+    title:"SRI Documents — confirm",
+    desc:"SRI reports already sitting in the shared Drive, found by reading the text inside every PDF rather than trusting its file name. Open the document, confirm it belongs to the case, and the job\'s SRI Done ticks with your name and the time on it.",
+    url:QB+"154", color:"#146b45", soft:"#e2f4ec",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>' },
+  { key:"holdreview", section:"Coordinators — every case, every day",
+    title:"Jobs On Hold — monthly PM status",
+    desc:"Every PR job the system says is on hold, with the reason, the stage and how long it has sat there. Once a job is on hold it is the PM who moves it, so each PM answers once a month: still on hold, blocked by whom, expected release date, next action.",
+    url:QB+"151", color:"#c0392b", soft:"#fdecea",
+    icon:'<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>' },
+  { key:"precon", section:"Coordinators — every case, every day",
+    title:"Precon Command",
+    desc:"Every PR case in pre-construction: stage, task progress, permits, kickback SLAs. Filter by PM firm, employee, stage.",
+    url:QB+"55", color:"#e4573d", soft:"#fdeeea",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>' },
+  { key:"prschedule", section:"Coordinators — every case, every day",
+    title:"PR Schedule Spine",
+    desc:"Per-job schedule items, phase gates and task actions for Puerto Rico templates.",
+    url:QB+"41", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+  { key:"prscoping", section:"Coordinators — every case, every day",
+    title:"Scoping",
+    desc:"Feasibility, Xactimate scopes, takeoffs and pre-construction scope reviews, from the Canopy scoping export.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pagename=PR_Scoping_Dashboard.html",
+    color:"#2aa6a0", soft:"#e3f4f3",
+    icon:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>' },
+  { key:"canopystatus", section:"Coordinators — every case, every day",
+    title:"Canopy Case Status (NTP clocks)",
+    desc:"Construction clocks, permit deadlines and milestone ages over the Canopy all-cases export. Check the export date before quoting a number.",
+    url:QB+"28", color:"#3d7ea6", soft:"#e7f1f8",
+    icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>' },
+
+  /* ---------------- Permits ---------------- */
+  { key:"drnadesk", section:"Permits",
+    title:"DRNA Plans \u2014 Luis's desk",
+    desc:"Every recycling plan waiting on Luis, with the two-day clock on it. A case lands here on its own as soon as a subcontractor is awarded to a demolition case with no NTP, pre-filled with everything the system already knows. Nobody has to request it.",
+    url:QB+"150", color:"#166534", soft:"#dcf0e2",
+    icon:'<path d="M9 11l3 3L22 4"/><path d="M12 6H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-6"/>' },
+  { key:"envtracker", section:"Permits",
+    title:"Environmental Tracker — asbestos, lead and site risks",
+    desc:"Every job's environmental work in one place: inspection, asbestos and lead reports, abatement, karst / coastal / landslide, and approval. Add, edit or delete entries, drag a card to change its status, and upload several report files at once. Files are saved to the Environmental Google Drive folder, one subfolder per job.",
+    url:QB+"212", color:"#166534", soft:"#dcf0e2",
+    icon:'<path d="M12 2l7 4v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"recyclingplans", section:"Permits",
+    title:"Recycling Plans (DRNA)",
+    desc:"The Plan de Reduccion, Reutilizacion y Reciclaje filed per case with DRNA at construccion@drna.pr.gov. Open a case's plan and press Generar Formulario DRNA to print the completed application and the carta de compromiso. A plan is one of the five documents an OGPe permit package needs.",
+    url:"https://byrdsonservices.quickbase.com/db/bwa4yn4gi?a=q&query={3.GT.0}&clist=31.16.29.17.28.23&slist=29&opts=nos.", color:"#166534", soft:"#dcf0e2",
+    icon:'<path d="M7 19a4 4 0 0 1-3.4-6.1L7 7"/><path d="M17 5a4 4 0 0 1 3.4 6.1L17 17"/><path d="M9 21l-2-2 2-2"/><path d="M15 3l2 2-2 2"/>' },
+  { key:"wastehaulers", section:"Permits",
+    title:"Waste haulers & disposal sites",
+    desc:"DRNA-permitted collection companies and the landfills and markets they deliver to. Pick from here on a recycling plan so the permit number is never retyped.",
+    url:"https://byrdsonservices.quickbase.com/db/bwa4ynmxi?a=q&query={3.GT.0}&clist=6.7.8.9.10.14&slist=6&opts=nos.", color:"#6b7280", soft:"#eceef1",
+    icon:'<path d="M3 7h13v8H3z"/><path d="M16 10h4l1 3v2h-5z"/><circle cx="7" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>' },
+  { key:"pmnotes", section:"Field Ops",
+    title:"Job Notes — what the PMs can see",
+    desc:"Smartsheet stays as the window ICF, IEM and Tetra Tech read our job notes through. This shows whether what they can see is current: the newest site note a person wrote in Quickbase against the last one published to them. System-generated log entries are excluded so it compares real site narrative with real site narrative.",
+    url:QB+"129", color:"#7c2d12", soft:"#f3e3d8",
+    icon:'<path d="M4 4h13l3 3v13H4z"/><path d="M8 10h8M8 14h6"/>' },
+  { key:"permittracker", section:"Permits",
+    title:"Permit Tracker (Puerto Rico Tracker)",
+    desc:"The permitting team's main grid: every case with its permit documents, the upload buttons, checklist progress and Levante status. Opens in a new tab so the document buttons and Drive links work.",
+    url:"https://byrdsonservices.quickbase.com/db/bvxy7h8h4?a=q&qid=7", external:true, color:"#7a3e9d", soft:"#efe3f6",
+    icon:'<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"permitcompliance", section:"Permits",
+    title:"Permits & Compliance — the daily worklist",
+    desc:"Every permit package and what it is still missing, plus which subcontractor Fondo policies do not cover their award. Click a red document chip and the PDF uploads straight onto the case. This replaces the Smartsheet permit and insurance trackers.",
+    url:QB+"124", color:"#0f766e", soft:"#dcf1ee",
+    icon:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"permitpipeline", section:"Permits",
+    title:"Permit Pipeline — start here for permits",
+    desc:"Two views. FOLLOW-UPS is the permitting team's daily list: every permit at OGPe, oldest follow-up first, with the pending documents read straight from the checklist and a one-click Logged a follow-up that sets the next one. PIPELINE is one row per case on the road to a permit and NTP, phase by phase, saying what has to happen next and whose name is on it.",
+    url:QB+"169", color:"#1d4ed8", soft:"#e0e9fb",
+    icon:'<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
+  { key:"taskrouting", section:"Permits",
+    title:"Precon Task Routing — who does which task",
+    desc:"Pick the seat that owns each preconstruction task, see who is carrying how much, move work between people, and re-point everything when someone joins or leaves. What you set here decides whose list a task lands on.",
+    url:QB+"168", color:"#6d28d9", soft:"#ede9fe",
+    icon:'<circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/><path d="M11 8h6M8 11v2a3 3 0 0 0 3 3h2"/>' },
+  { key:"teamscorecard", section:"Closeout & Warranty (KTO)",
+    title:"Team Scorecard — open, overdue, completed, on time",
+    desc:"One row per person from the names written on the records: open items, overdue, due this week, no deadline, completed and on-time rate. Second tab: role KPIs for preconstruction, permitting and KTO with weekly targets.",
+    url:QB+"167", color:"#0f766e", soft:"#dcf1ee",
+    icon:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>' },
+  { key:"permitchecklist", section:"Permits",
+    title:"Permit Checklist — every document, every case",
+    desc:"Leah and Jona's permitting checklist, now in Quickbase. One row per document, one column per case, green when the file is linked. Files stay in the PERMITTING Drive folder; nothing was re-uploaded. Click a cell to open the file, change its status, or upload.",
+    url:QB+"143", color:"#1d4ed8", soft:"#e0e9fb",
+    icon:'<path d="M3 3h18v18H3z"/><path d="M3 9h18M9 3v18"/><path d="M12 14l2 2 4-4"/>' },
+  { key:"chaseboard", section:"Permits",
+    title:"Who has what — documents out with the PA, Harold or a vendor",
+    desc:"Every permit document currently out with someone, how long it has been there, and who on our side sent it. Set a date when you send something and this page answers \"how long has it been with the PA\" without anyone checking their sent mail. Undated items are listed first so they can be dated in one pass.",
+    url:QB+"165", color:"#9a3412", soft:"#fbe8dd",
+    icon:'<path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/>' },
+  { key:"permitdesk", section:"Permits",
+    title:"My Permit Desk — tasks and KPIs",
+    desc:"Every permit task the coordinator owns, grouped by case and sorted oldest first, with how long each has been sitting. The Team tab is the management view: workload, overdue counts, days to clear a document and which documents run slowest. A snapshot is written every morning and the roll-up emails Monday.",
+    url:QB+"148", color:"#b45309", soft:"#fbeedb",
+    icon:'<path d="M3 3v18h18"/><path d="M7 15l3-4 3 3 5-7"/>' },
+  { key:"permitrunner", section:"Permits",
+    title:"In-House Permit Runner",
+    desc:"File permits ourselves, no PA: the 13 steps in order with due dates, what is next on every case, correction notices on the 48-hour clock, and a one-click switch to take any PA case in-house. Our engineer seals the plans either way.",
+    url:QB+"123", color:"#6d28d9", soft:"#ece6f8",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"permitclock", section:"Permits",
+    title:"Permit Clock — days per step against the goal",
+    desc:"How long each step is taking from the Task Order to NTP, per case and against a goal you set: survey, geotech, environmental, drawings, design approval, package, filing, issue, NTP. Click a step to enter the date it landed.",
+    url:QB+"171", color:"#0f766e", soft:"#dcf1ee",
+    icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+  { key:"permitcases", section:"Permits",
+    title:"Permit Cases — system of record",
+    desc:"The permits-in-process grid itself: stage, status, priority, PA, permit number, days pending and the next follow-up, oldest first. The same rows the Permit Pipeline Follow-ups view works from, for anyone who prefers a grid.",
+    url:"https://byrdsonservices.quickbase.com/db/bv68ybxt4?a=q&query={130.XEX.''}&clist=20.130.131.132.24.7.137.31.133&slist=31&opts=sortorder-A.nos.",
+    color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M9 12l2 2 4-4"/><path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6z"/>' },
+  { key:"directory", section:"Finance — awards, draws, invoices",
+    title:"Directory & Documents",
+    desc:"Byrdson's contact book and the controlled-document register, searchable in one place instead of two Smartsheets. Contacts are cross-checked against the purchase-order vendor records, so where the phone book and the vendor file disagree about who to write to, it says so rather than leaving it to be found by an email that goes nowhere.",
+    url:QB+"132", color:"#3f6212", soft:"#e7efdc",
+    icon:'<path d="M4 4h13l3 3v13H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>' },
+
+  /* ---------------- Finance ---------------- */
+  { key:"scopechange", section:"Finance — awards, draws, invoices",
+    title:"Scope Changes",
+    desc:"Every scope change in flight, oldest first, next to what its job is worth and what we have already committed to spend on it — the one thing the Smartsheet can never show. Assign it, price it, note it and send it to QC without leaving Quickbase. Eight have never been assigned, the oldest waiting eighteen days.",
+    url:QB+"131", color:"#7a5c1c", soft:"#f3ebd8",
+    icon:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>' },
+  { key:"changeorders", section:"Finance — awards, draws, invoices",
+    title:"Change Orders — subcontractors",
+    desc:"Where sub change orders are done. Each one names what the work is for, the Canopy scope change that pays for it and the change order PO. Only the Deputy PM or President can approve one, the PO is held until they do, both get an email, and the sub is asked for an updated Fondo policy automatically.",
+    url:QB+"160", color:"#7a5c1c", soft:"#f3ebd8",
+    icon:'<path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/><path d="M8 15h8"/><path d="M12 11v8"/>' },
+  { key:"integrity", section:"Finance — awards, draws, invoices",
+    title:"Data Integrity",
+    desc:"Eleven checks, run live against the app every time you open it: template purchase orders that were never filled in, duplicates still counting as money, vendors nobody can write to, task orders the program cut after we committed. It exists because a number reached a screen before anyone looked at the records behind it — three jobs read as underwater by $218,845 that had never been paid a cent.",
+    url:QB+"133", color:"#155e75", soft:"#daecf2",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M9.5 12.5l2 2 3.5-4"/>' },
+  { key:"jobpnl", section:"Finance — awards, draws, invoices",
+    title:"Job Profitability",
+    desc:"What each job is worth against everything we have committed to spend on it. Contract value comes from the program task order — a number that only exists in Quickbase because we migrated All Cases Export. Sorted worst first, so the jobs already committed past their contract are at the top. Click a job for the purchase orders and card spend behind the figure. Margin is before Byrdson\'s own labour.",
+    url:QB+"130", color:"#b42318", soft:"#f7e2e0",
+    icon:'<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>' },
+  { key:"ccreceipts", section:"Finance — awards, draws, invoices",
+    title:"Credit Card Receipts — submit & review",
+    desc:"Replaces the Smartsheet receipt form. Submit a company-card receipt with the file attached, and — unlike the old form — tie it to the job it belongs to instead of typing the case number into the note. All 92 historic receipts and 106 files were migrated on 24 Aug 2026 and reconcile to the cent.",
+    url:QB+"128", color:"#7c3aed", soft:"#eae4fb",
+    icon:'<path d="M2 7h20v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><path d="M2 11h20"/><path d="M6 16h4"/>' },
+  { key:"purchaseentry", section:"Finance — awards, draws, invoices",
+    title:"Credit Card Purchase Entry",
+    desc:"Log a credit card purchase: pick the card, enter the vendor and amount, attach the receipt. One charge can be split across several jobs, and Puerto Rico material bought for a sub can be back-charged to their next unpaid draw — it is filed for approval, nothing is deducted on the spot.",
+    url:QB+"70", color:"#1F3864", soft:"#e9edf5",
+    icon:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>' },
+  { key:"invoicetracker", section:"Finance — awards, draws, invoices",
+    title:"Puerto Rico Invoice Tracker",
+    desc:"Pick a PR job and see its owner invoices, with a prefilled add-invoice link.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pagename=Puerto_Rico_Invoice_Tracker.html",
+    color:"#0f766e", soft:"#e0f2f0",
+    icon:'<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/>' },
+  { key:"oikanban", section:"Finance — awards, draws, invoices",
+    title:"Owner Invoices Kanban",
+    desc:"Drag owner invoices between Submitted, Program Approved and Paid; edit amounts inline. This page writes to Owner Invoices.",
+    url:QB+"75", color:"#a8322d", soft:"#f6e3e2",
+    icon:'<rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/>' },
+  { key:"kpis", section:"Finance — awards, draws, invoices",
+    title:"Management KPIs",
+    desc:"Every area of the PR program on one screen: case pipeline, construction pace against the 180-day target, schedule, inspections, permits, sub payments, back-charges, change orders and Fondo, billing PRDOH and retainage, closeout, staff work and data health. Each number links to where the work is done.",
+    url:QB+"197", color:"#12355b", soft:"#e1e9f2",
+    icon:'<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>' },
+  { key:"ora", section:"Finance — awards, draws, invoices",
+    title:"ORA Monthly Payments",
+    desc:"Rent assistance (ORA) for the homeowners Byrdson pays. Make the month's payments for every active case in one step, a second person approves them, then check numbers, receipt letters (one per page) and signed receipts in one list. Flags overdue checks and cases running out of Canopy funds, and tracks the change orders for ORA paid beyond what Canopy approved.",
+    url:QB+"198", color:"#1F3864", soft:"#e3e8f2", stripe:"#C8102E",
+    icon:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>' },
+  { key:"paycontrol", section:"Finance — awards, draws, invoices",
+    title:"Payment Control",
+    desc:"Before paying any sub bill in QuickBooks: OK TO PAY or DO NOT PAY for every open QuickBooks bill, with the reason (not earned yet, amounts differ, already paid). Also where QuickBooks and Quickbase disagree, possible duplicate payments, over-billed POs, and every payment out of the bank.",
+    url:QB+"200", color:"#8a1c1c", soft:"#fbe9e9",
+    icon:'<path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"copricing", section:"Finance — awards, draws, invoices",
+    title:"Change Order Pricing",
+    desc:"Sub change orders at 75% of the Xactimate line cost before overhead and profit, line by line from the scope change. Draft the sub notice (their prices only), and after management approval create the change order PO with 50% up front and 50% with the next milestone payment.",
+    url:QB+"199", color:"#7a4b00", soft:"#f7ecd9",
+    icon:'<path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/><path d="M3 12h4"/>' },
+  { key:"requestpayment", section:"Finance — awards, draws, invoices",
+    title:"Request for Fund",
+    desc:"Submit and track payment requests, so finance can review and release them.",
+    url:QB+"208", color:"#0f5132", soft:"#dff0e8",
+    icon:'<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
+  { key:"decisions", section:"Finance — awards, draws, invoices",
+    title:"Jim's Decisions",
+    desc:"Everything waiting on Jim or Ramon in one place: first and final sub payments to release, back-charge money that slipped, change orders without approval, failed inspection charges, material on older award letters, cases with no builder, and retainage still held after Final.",
+    url:QB+"194", color:"#8a1c1c", soft:"#f7e1e1",
+    icon:'<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { key:"subpay", section:"Finance — awards, draws, invoices",
+    title:"Sub Payments and Back-Charges: Isaac's desk",
+    desc:"Every sub draw: ready to pay (Canopy shows the inspection passed and the award letter is on file), held by the payment gates, to check, or waiting. Back-charges for windows, cabinets, tile, paint and roof sealer come off the next draw automatically when you mark it ready. Also lists milestones to invoice in Canopy, Sherwin-Williams invoices by case, and the back-charge alerts (the backup check that every sub was charged for material we provided).",
+    url:QB+"192", color:"#0f5132", soft:"#dff0e8",
+    icon:'<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
+  { key:"casefile", section:"Finance — awards, draws, invoices",
+    title:"Case File and Program health",
+    desc:"One screen per case (papers, steps, sub draws, back-charges) and a Program health view with money held, sub draws and schedule.",
+    url:QB+"187#health", color:"#1f5fa8", soft:"#e2eaf4",
+    icon:'<path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/>' },
+  { key:"backcharge", section:"Finance — awards, draws, invoices",
+    title:"CM-Furnished & Back-Charges",
+    desc:"CM-furnished purchases and back-charge deductions against sub draws.",
+    url:QB+"110", color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M3 6h18"/><path d="M5 6l1 14h12l1-14"/><path d="M10 11v5M14 11v5"/>' },
+  { key:"subperf", section:"Finance — awards, draws, invoices",
+    title:"Sub Performance",
+    desc:"180-day clocks per sub, milestone pace, failed inspections and $500 charges.",
+    url:QB+"120", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>' },
+  { key:"pcocamend", section:"Permits",
+    title:"PCOC Amendments — change orders that need a permit amendment",
+    desc:"Every Canopy scope change that added money after the permit was filed or issued. Shows which cases still need the amendment, which are submitted to the municipality, and closed jobs to check. Update status and dates right on the page. New ones come in every night from Canopy.",
+    url:QB+"177", color:"#7c2d12", soft:"#fbe7dc",
+    icon:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 15h6M12 12v6"/>' },
+  { key:"toassign", section:"Permits",
+    title:"Task Order to NTP & Contractor Assignment",
+    desc:"Are we getting faster from Task Order to NTP, where the waiting cases are stuck, and a map of every waiting job over the houses each contractor is building now. Click a job to see who is close and who has room; set each contractor's capacity.",
+    url:QB+"176", color:"#b45309", soft:"#fbefdc",
+    icon:'<path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/>' },
+  { key:"contractorperf", section:"Finance — awards, draws, invoices",
+    title:"Contractor Performance — NTP to Substantial, by contractor",
+    desc:"Each general contractor's houses finished and under construction, days from NTP to Substantial against the program, time per stage split into their time and the Program's, every active house against its contract date, and a map. Share button gives each contractor a private link to their own numbers.",
+    url:QB+"175", color:"#004263", soft:"#e0edf3",
+    icon:'<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>' },
+  { key:"trackerdocs", section:"Coordinators — every case, every day",
+    title:"Tracker Documents (paypoints & engineering plans)",
+    desc:"Paypoint packages, engineering plans and form links from the Puerto Rico Tracker — the old Paypoints and Engineering pages both point here.",
+    url:QB+"118", color:"#0369a1", soft:"#e0f0fa",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>' },
+  { key:"finanalytics", section:"Analytics — money & progress",
+    title:"PR Financial (AP & Vendors)",
+    desc:"Committed vs invoiced vs paid, AP aging, top vendors and spend categories across the PR portfolio.",
+    url:QB+"31", color:"#16697a", soft:"#e0eff3",
+    icon:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
+  { key:"profitability", section:"Analytics — money & progress",
+    title:"PR Profitability",
+    desc:"Contract value, committed POs and gross profit per job, by program and job type.",
+    url:QB+"32", color:"#0f6b47", soft:"#dcefe6",
+    icon:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>' },
+  { key:"pmdash", section:"Analytics — money & progress",
+    title:"PM Dashboard (All Cases)",
+    desc:"Every Canopy case by status, team workload, cost variance and award mix.",
+    url:QB+"33", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' },
+  { key:"dailylogs", section:"Analytics — money & progress",
+    title:"Daily Logs",
+    desc:"Field logging coverage and freshness per case, with the most recent site notes.",
+    url:QB+"34", color:"#b45309", soft:"#f7ebd5",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M8 13h8M8 17h5"/>' },
+  { key:"prinventory", section:"Finance — awards, draws, invoices",
+    title:"Inventory Tracker",
+    desc:"PR warehouse: receive, issue, order, count, house material sets.",
+    url:QB+"109", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>' },
+  { key:"selections", section:"Finance — awards, draws, invoices",
+    title:"Homeowner Selections",
+    desc:"Selections per case with the material takeoff lines behind each one.",
+    url:QB+"112", color:"#2aa6a0", soft:"#e3f4f3",
+    icon:'<path d="M4 4h16v16H4z"/><path d="M9 9l2 2 4-4"/><path d="M9 15l2 2 4-4"/>' },
+
+  /* ---------------- Closeout ---------------- */
+  /* 22 Oct 2026: the KTO Closeouts app (Vercel). Opens in this page's viewer like the
+     others, inside Quickbase. Google sign-in cannot run in a frame, so the app opens a
+     small sign-in window and carries on here once the person has signed in. */
+  { key:"ktoapp", section:"Closeout & Warranty (KTO)",
+    title:"KTO Closeouts app",
+    desc:"Cases, PRDOH certificates and e-signing, the warranty binder, equipment and the history, in one place. Sign in with your Byrdson Google account.",
+    url:"https://kto-closeout.vercel.app/", color:"#1F3864", soft:"#e6ebf3", stripe:"#C8102E",
+    icon:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><circle cx="12" cy="14" r="2"/><path d="M12 16v3"/>' },
+  { key:"ktohome", section:"Closeout & Warranty (KTO)",
+    title:"KTO Home — start here",
+    desc:"Every open closeout case and what it still owes: certifications, binder sections, diligences.",
+    url:QB+"105", color:"#12283e", soft:"#e3e8ee",
+    icon:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>' },
+  { key:"handout", section:"Closeout & Warranty (KTO)",
+    title:"Hand Out Work — assign it and date it",
+    desc:"Give open work a named person and a real due date, one case or one seat at a time. The only page that assigns.",
+    url:QB+"116", color:"#9c6511", soft:"#f7ebd5",
+    icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>' },
+  { key:"ktoqueue", section:"Closeout & Warranty (KTO)",
+    title:"KTO Queue",
+    desc:"Post-substantial cases: fill the gaps that block certifications, case by case.",
+    url:QB+"102", color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>' },
+  { key:"ktoboard", section:"Closeout & Warranty (KTO)",
+    title:"KTO Closeout Board",
+    desc:"One case: readiness, the nine PRDOH documents, binder progress, signatures.",
+    url:QB+"89", color:"#0f766e", soft:"#e0f2f0",
+    icon:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>' },
+  { key:"fileevidence", section:"Closeout & Warranty (KTO)",
+    title:"File Evidence",
+    desc:"Upload a signed certification, a binder section or a diligence document to the case's KTO Closeout folder in Drive.",
+    url:QB+"104", color:"#1b7f5a", soft:"#dff0e8",
+    icon:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>' },
+  { key:"ktomgmt", section:"Closeout & Warranty (KTO)",
+    title:"KTO Management Dashboard",
+    desc:"Portfolio view: closeout pipeline, exceptions queue, generation log.",
+    url:QB+"91", color:"#3d7ea6", soft:"#e7f1f8",
+    icon:'<path d="M4 19h16"/><path d="M6 16V9M10 16V5M14 16v-6M18 16v-3"/>' },
+  { key:"warrantybinder", section:"Closeout & Warranty (KTO)",
+    title:"Warranty Binder Schedule",
+    desc:"Binder sections per case, what is filed, what inherits from the equipment library.",
+    url:QB+"93", color:"#6b6a2e", soft:"#efeedd",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+  { key:"ktoequipment", section:"Closeout & Warranty (KTO)",
+    title:"Equipment & Serials",
+    desc:"Installed equipment per case with model and serial, matched to the library.",
+    url:QB+"92", color:"#5b4fcf", soft:"#e9e7f8",
+    icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' },
+
+
+  /* ---------------- Insurance & Compliance ---------------- */
+  { key:"instracker", section:"Insurance & Compliance",
+    title:"Insurance Document Tracker (Mainland)",
+    desc:"What every mainland subcontractor with open work owes us in insurance and compliance documents, set against what we actually hold. Missing, expired and never-checked items in one list, worst first, with the chase on the record: who asked, when, how many reminders, what it is holding up. Shows the state each sub is working in. Puerto Rico and the Fondo poliza are not tracked here; those stay on Insurance Documents.",
+    url:QB+"147", color:"#0f766e", soft:"#d7eeeb",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"insurancedocs", section:"Insurance & Compliance",
+    title:"Insurance Documents",
+    desc:"Every insurance document Byrdson holds, with the file one click away. The Fondo (CFSE) poliza issued per case — all 64 submissions and 78 files from the Insurance Policy Submittal Smartsheet — alongside the subcontractors' own general liability, workers' comp and COI certificates, and the policies read out of them. Says plainly where each file is stored.",
+    url:QB+"134", color:"#0f766e", soft:"#d7eeeb",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M8 12h8M12 8v8"/>' },
+  { key:"fondoaudit", section:"Insurance & Compliance",
+    title:"Fondo Coverage & Audit",
+    desc:"The Fondo (CFSE) audit in one place: open awards and the policy each needs, what we have paid against what a policy covers, every change order and the top-up it needs, every certificate on file, and ANG's separate policy. Read live from Quickbase.",
+    url:QB+"206", color:"#0f766e", soft:"#d7eeeb",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M8 13l3 3 5-6"/>' },
+  { key:"subinsurance", section:"Insurance & Compliance",
+    title:"Subcontractor Insurance & Audit Credit",
+    desc:"Every subcontractor policy we hold, and how much of what we paid them was actually performed while a certificate was in force. What is not evidenced gets rated as Byrdson's own work at our GL and auto audit.",
+    url:QB+"125", color:"#155e75", soft:"#dbeef4",
+    icon:'<path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"coiintake", section:"Insurance & Compliance",
+    title:"COI Intake — file a certificate",
+    desc:"The inbound side of the insurance chase. Every subcontractor with live Puerto Rico work, what we actually hold for them, and what it is costing in held first payments. When a certificate comes back, file it here in one step — the PDF is stored on the vendor and the policy is marked verified by a person.",
+    url:QB+"127", color:"#0e7490", soft:"#d9eff4",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M12 8v6"/><path d="M9 11h6"/>' },
+  { key:"insreview", section:"Insurance & Compliance",
+    title:"Insurance Review — verify uploaded certificates",
+    desc:"Certificates subcontractors upload through the personal link in the insurance chase email land here. Verify one (Byrdson must be named as Additional Insured on the General Liability) and the vendor's payment gate updates by itself. Reject and the sub gets the reason plus a fresh upload link.",
+    url:QB+"141", color:"#087443", soft:"#dcf1e6",
+    icon:'<path d="M12 3l7 4v5c0 5-3 8.5-7 9.5C8 20.5 5 17 5 12V7z"/><path d="M9 12l2 2 4-4"/>' },
+  { key:"fondoreview", section:"Insurance & Compliance",
+    title:"Fondo Polizas to Review",
+    desc:"Polizas subcontractors have sent in: read the document, then approve it or send it back.",
+    url:"https://subs-award.vercel.app/fondo/review", color:"#0f766e", soft:"#e0f2f0",
+    icon:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>' },
+
+  /* ---------------- Subcontractor Award System ---------------- */
+  { key:"subsawardapp", section:"Subcontractor Award System",
+    title:"Subcontractor Award System",
+    desc:"Upload a scope export, work out the award, create the purchase order, cost item and bills, and send the award letter.",
+    url:"https://subs-award.vercel.app/", color:"#1F3864", soft:"#e3e8f2",
+    icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>' },
+
+  /* ---------------- Tools ---------------- */
+  { key:"vendoraccess", section:"Tools & Utilities",
+    title:"Vendor Access Manager",
+    desc:"Invite and manage sub/vendor access.",
+    url:"https://byrdsonservices.quickbase.com/db/buskqh26r?a=dbpage&pagename=Vendor%20Access%20Manager.html",
+    color:"#1d4e89", soft:"#e2eaf4",
+    icon:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/>' },
+  { key:"wikiPR", section:"Tools & Utilities",
+    title:"Byrdson WIKI",
+    desc:"Process notes and how-tos.",
+    url:QB+"77", color:"#6b6a2e", soft:"#efeedd",
+    icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' }
+];
+
+/* ▲▲▲  STOP EDITING  ▲▲▲ ============================================ */
+/* Navigation review: one primary destination per purpose, reference views remain searchable. */
+const REFERENCE_KEYS=new Set(['profitability','pmdash','dailylogs']);
+const NAV_COPY={
+precontasks:{title:'Preconstruction tasks — assignments and deadlines',desc:'All open preconstruction work, including missing assignments. Deadlines start after review and assignment; update an individual due date or duration from the task.'},
+mywork:{title:'My Work — KPIs and due items',desc:'Your preconstruction, milestone, field follow-up and closeout work, with deadline filters and assignment exceptions. Coverage is listed on the page.'},
+handout:{title:'Assign milestone / closeout work and deadlines',desc:'Review outstanding work, choose its employee and set or revise a due date. Turnaround rules are maintained in Work Ownership Rules; preconstruction deadlines are managed from Preconstruction tasks.'},
+ktohome:{title:'Closeout — start here',desc:'Start the closeout review here, then open a specific case or upload its signed evidence.'},
+ktoqueue:{title:'Closeout — certification preparation queue',desc:'Focused queue for preparing certifications on post-substantial cases; use Closeout — start here for the overall case review.'},
+ktoboard:{title:'Closeout — detailed case readiness',desc:'Detailed readiness, signatures and binder progress for one selected case.'},
+ktomgmt:{title:'Closeout — management exceptions',desc:'Management view of closeout exceptions and document-generation activity.'},
+jobpnl:{title:'Job profitability — primary view',desc:'Review job-level contract, committed cost and financial exceptions. Reconcile imported backcharges and source changes before relying on totals.'},
+profitability:{title:'Profitability — comparison view',desc:'Additional financial analysis. Start with Job profitability; differences in source, scope and cost definitions must be reconciled.'},
+pmdash:{title:'Smartsheet PM dashboard — reference',desc:'Reads Smartsheet. Kept for migration comparison; use Quickbase staff queues for daily work.'},
+dailylogs:{title:'Smartsheet daily logs — reference',desc:'Reads Smartsheet. Kept for migration comparison; this is not proof that current staff tracking has moved into Quickbase.'},
+ccreceipts:{title:'Credit card receipts — submit and review',desc:'Submit receipts in Quickbase and link them to the correct job. Newer Smartsheet submissions are being reconciled; historical migration counts are not a live completeness check.'},
+scopechange:{title:'Scope changes — assign, price and review',desc:'Work on scope changes in Quickbase. Reconciliation found newer Smartsheet rows that must be brought across before cutover is certified.'},
+insurancedocs:{title:'Insurance documents',desc:'Find policy documents and check current case/vendor coverage. Reconcile recent Smartsheet submissions before treating the register as complete.'}
+};
+DASHBOARDS.forEach(d=>{if(NAV_COPY[d.key])Object.assign(d,NAV_COPY[d.key]);if(REFERENCE_KEYS.has(d.key))d.section='Reference views — migration and comparison';});
+/* ---- ROLE VIEW (consolidated 2026-09-10: the team said 58 panels was too many to choose from) ----
+   Each job gets ONE start page and a short list. Every other page lives in the searchable list at the bottom.
+   To change what a job sees, edit ROLES below (keys come from DASHBOARDS). */
+const ROLES=[
+  {key:'coord',   name:'Project Coordinator', hint:'Every case, every day', start:'mywork',        also:['cockpit','milestonepkg','sitewalks','raindelayupload']},
+  {key:'permits', name:'Permits',             hint:'Packages, checklist, Levante', start:'permitpipeline', also:['permitchecklist','envtracker','chaseboard','toassign','pcocamend','sridesk','permithelper']},
+  {key:'pm',      name:'Project Manager & Field', hint:'Construction and subs', start:'cockpit',   also:['milestonepkg','directives','changeorders','holdreview']},
+{key:'finance', name:'Finance & Subcontractors', hint:'Sub payments, back-charges, invoices', start:'subpay', also:['purchaseentry','requestpayment','paycontrol','copricing','ora','oikanban','changeorders','casefile','fondoaudit','subsawardapp','fondoreview']},
+  {key:'closeout',name:'Closeout (KTO)',      hint:'Turnover and warranty', start:'ktohome',       also:['fileevidence','warrantybinder','ktoequipment']},
+  {key:'env',     name:'Environmental',       hint:'DRNA plans, asbestos and lead', start:'drnadesk',  also:['envtracker','recyclingplans','permitchecklist']},
+  {key:'mgmt',    name:'Management',          hint:'Status across the program', start:'kpis',   also:['paycontrol','decisions','copricing','teamscorecard','casefile','contractorperf','fondoaudit']}
+];
+ROLES.forEach(r=>{r.also=[...new Set(r.also)].filter(k=>k!==r.start&&!REFERENCE_KEYS.has(k));});
+/* Position Directory seat title -> job (used to open the right view for a signed-in person the first time) */
+const SEAT_ROLE={'Lead Project Coordinator':'coord','Design Lead':'coord','Permits Coordinator':'permits','Project Manager':'pm','Construction Lead':'pm','Field Superintendent':'pm','Closeout Coordinator':'closeout','Financial Coordinator':'finance','Estimator':'finance','Sub Management':'finance','Environmental Specialist':'env','Environmental Technician':'env'};
+const EMAIL_ROLE={'jgriffin@byrdsonservices.com':'mgmt'};
+const sectionsEl = document.getElementById('sections');
+const SVG = inner => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+inner+'</svg>';
+const arrow = SVG('<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>');
+const byKey=k=>DASHBOARDS.find(d=>d.key===k);
+function makePanel(d,cls){
+  const b=document.createElement(d.external?'a':'button');
+  b.className='panel'+(cls?' '+cls:'');
+  b.style.setProperty('--accent',d.color); b.style.setProperty('--accent-soft',d.soft); if(d.stripe) b.style.setProperty('--stripe',d.stripe);
+  if(d.external){ b.href=d.url; b.target='_blank'; b.rel='noopener noreferrer'; } else { b.onclick=()=>openDash(d.key); }
+  b.innerHTML='<div class="p-icon">'+SVG(d.icon)+'</div><h3>'+d.title+'</h3><p>'+d.desc+'</p><div class="p-open">'+(d.external?'Open in a new tab':'Open')+' '+arrow+'</div>';
+  return b;
+}
+/* The remembered job is keyed to the SIGNED-IN PERSON, not to the browser.
+   18 Sep 2026: Jim lost the Milestone Package Desk tile from his view. The page was
+   healthy and the tile was there - but a "Test as role" walk done in his browser the
+   day before had written a different job into the old shared localStorage key, and
+   that key silently outranks his own seat FOREVER (see the loader below: a saved role
+   returns early and the email mapping never runs). Keying the value by email means
+   testing as someone else, or another person using the same machine, can no longer
+   quietly replace what a person sees. The legacy unkeyed value is ignored on purpose,
+   so anyone already stuck on the wrong job is put back on their own seat by itself. */
+const LEGACY_ROLE_KEY='byrdson_pr_role';
+const store={
+  key(em){ return 'byrdson_pr_role:'+(em||'anon'); },
+  get(em){ try{ return localStorage.getItem(this.key(em))||''; }catch(e){ return ''; } },
+  set(em,v){ try{ localStorage.setItem(this.key(em),v); }catch(e){} }
+};
+let ROLE='', ME='';
+function renderRoles(){
+  const el=document.getElementById('roles'); el.innerHTML='';
+  ROLES.forEach(r=>{const b=document.createElement('button');b.className='role'+(r.key===ROLE?' on':'');b.innerHTML='<b>'+r.name+'</b><span>'+r.hint+'</span>';b.onclick=()=>{setRole(r.key,true);};el.appendChild(b);});
+}
+function setRole(k,save){
+  ROLE=k; if(save) store.set(ME,k); renderRoles();
+  const v=document.getElementById('roleView'); v.innerHTML='';
+  const r=ROLES.find(x=>x.key===k);
+  // The live KTO strip belongs to the closeout team too, not just management - the team lost it
+  // when the page went role-based (22 Sep 2026: "the one that said the queue ... it's now gone").
+  document.getElementById('liveStrips').style.display=(k==='mgmt'||k==='closeout')?'block':'none';
+  document.getElementById('stageStrip').style.display=(k==='mgmt')?'':'none';
+  if(!r){ v.innerHTML='<div class="pick-first">Choose your job above to see where to start. Not sure? Coordinators start with <b>My Work</b>.</div>'; document.getElementById('heroTitle').textContent='What is your job?'; document.getElementById('heroSub').textContent='Pick it once and this page remembers. You get the one page to start on, plus the few others your job uses. Every other page is in the list at the bottom.'; return; }
+  document.getElementById('heroTitle').textContent=r.name;
+  document.getElementById('heroSub').textContent='Open the start page below. The others are the ones this job uses most. Switch jobs any time.';
+  /* 22 Oct 2026: KTO Closeouts moved to its own app (kto-closeout.vercel.app, Google sign-in).
+     The team's way in is this job view, so the link sits above its start page. */
+  if(k==='closeout'){
+    const nl=document.createElement('div'); nl.className='start-lbl'; nl.textContent='The new KTO Closeouts app'; v.appendChild(nl);
+    v.appendChild(makePanel(byKey('ktoapp'),'start'));
+  }
+  const sl=document.createElement('div'); sl.className='start-lbl'; sl.textContent='Start here'; if(k==='closeout') sl.style.marginTop='26px'; v.appendChild(sl);
+  const st=byKey(r.start); if(st) v.appendChild(makePanel(st,'start'));
+  const al=document.createElement('div'); al.className='also-lbl'; al.textContent='Also for '+r.name; v.appendChild(al);
+  /* A page missing from this short list is not missing from the app. Say so, because
+     "it disappeared" is what it looks like from here. */
+  const hint=document.createElement('p'); hint.className='muted-s';
+  hint.style.cssText='margin:6px 4px 0;font-size:12.5px';
+  hint.textContent='Looking for a page that is not here? Every page is in the searchable '
+    +'list at the bottom, and you can switch jobs above at any time.';
+  v.appendChild(hint);
+  const g=document.createElement('div'); g.className='grid small'; v.appendChild(g);
+  r.also.map(byKey).filter(Boolean).forEach(d=>g.appendChild(makePanel(d)));
+}
+/* ---- the full list, compact and searchable ---- */
+function renderAll(filter){
+  const f=(filter||'').trim().toLowerCase(); sectionsEl.innerHTML='';
+  const order=[], groups={};
+  DASHBOARDS.forEach(d=>{ if(REFERENCE_KEYS.has(d.key)&&!f&&!document.getElementById('showReference').checked)return; if(f && (d.title+' '+d.desc+' '+(d.section||'')).toLowerCase().indexOf(f)<0) return; const sec=d.section||'Other'; if(!groups[sec]){groups[sec]=[];order.push(sec);} groups[sec].push(d); });
+  if(!order.length){ sectionsEl.innerHTML='<p class="muted-s" style="padding:10px 4px">Nothing matches that search.</p>'; return; }
+  order.forEach(sec=>{
+    const h=document.createElement('h3');h.className='section-title';h.textContent=sec.replace(/\s+—.*$/,'');sectionsEl.appendChild(h);
+    groups[sec].forEach(d=>{
+      const b=document.createElement(d.external?'a':'button'); b.className='tool-row'; b.style.setProperty('--accent',d.color);
+      if(d.external){ b.href=d.url; b.target='_blank'; b.rel='noopener noreferrer'; } else { b.onclick=()=>openDash(d.key); }
+      b.innerHTML='<i class="dot"></i><div><b>'+d.title+(d.external?'<em>new tab</em>':'')+'</b><span>'+d.desc+'</span></div>';
+      sectionsEl.appendChild(b);
+    });
+  });
+}
+document.getElementById('allCount').textContent='Browse Quickbase work pages';
+document.getElementById('showReference').onchange=()=>renderAll(document.getElementById('toolSearch').value);
+document.getElementById('toolSearch').addEventListener('input',e=>{renderAll(e.target.value); document.getElementById('allTools').open=!!e.target.value;});
+renderAll('');
+/* first visit: open the view for the signed-in person's seat (Position Directory), else ask */
+(function(){
+  /* Order matters: find out WHO this is, THEN what they should see. The old code read
+     a browser-wide saved role first and returned, so a stale value could never be
+     corrected by the person's own seat. */
+  setRole('',false);
+  fetch('/db/main?a=API_GetUserInfo',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/xml','QUICKBASE-ACTION':'API_GetUserInfo'},body:'<qdbapi></qdbapi>'})
+  .then(r=>r.text()).then(t=>{
+    const m=t.match(/<email>([^<]+)<\/email>/); const em=m?m[1].toLowerCase():''; if(!em) return;
+    ME=em;
+    try{ localStorage.removeItem(LEGACY_ROLE_KEY); }catch(e){}
+    const saved=store.get(em); if(saved && ROLES.some(r=>r.key===saved)){ setRole(saved,false); return; }
+    if(EMAIL_ROLE[em]){ setRole(EMAIL_ROLE[em],false); return; }
+    const xml='<qdbapi><apptoken>c3ehy5gdh85tybw592yedx9u9vw</apptoken><clist>6.8</clist><fmt>structured</fmt><query>{11.EX.1}</query></qdbapi>';
+    return fetch('/db/bwaukty9g',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/xml','QUICKBASE-ACTION':'API_DoQuery'},body:xml})
+      .then(r=>r.text()).then(x=>{ const d=new DOMParser().parseFromString(x,'text/xml');
+        Array.prototype.some.call(d.querySelectorAll('record'),rec=>{ const e=(rec.querySelector('f[id="8"]')||{}).textContent||''; const ti=(rec.querySelector('f[id="6"]')||{}).textContent||'';
+          if(e.toLowerCase()===em && SEAT_ROLE[ti] && !ROLE){ setRole(SEAT_ROLE[ti],false); return true; } return false; }); });
+  }).catch(()=>{});
+})();
+/* ---- navigation logic (same-page swap) ---- */
+const menuView=document.getElementById('menuView');
+const frameView=document.getElementById('frameView');
+const frame=document.getElementById('dashFrame');
+const loading=document.getElementById('frameLoading');
+const backBtn=document.getElementById('backBtn');
+const newTabBtn=document.getElementById('newTabBtn');
+const crumb=document.getElementById('crumb');
+function openDash(key){
+  const d=DASHBOARDS.find(x=>x.key===key);
+  if(!d) return;
+  if(!d.url || d.url.startsWith('PASTE_')){
+    /* Never alert() in a Quickbase code page - it blocks the frame and, inside the
+       embedded viewer, can leave the page unresponsive. Say it in the page instead. */
+    crumb.style.display='inline';
+    crumb.innerHTML='<b>'+d.title+'</b> has no page URL set yet. Open code page 43 and '
+      +'paste its Code Page URL into the DASHBOARDS list.';
+    return;
+  }
+  if(d.external){ window.open(d.url,'_blank','noopener'); return; }
+  loading.style.display='flex';
+  frame.src=d.url;
+  frame.onload=()=>{ loading.style.display='none'; };
+  menuView.style.display='none';
+  frameView.style.display='flex';
+  backBtn.style.display='flex';
+  /* This page is sandboxed without allow-downloads, so a download started
+     inside the embedded frame silently does nothing. Always offer the way out. */
+  newTabBtn.href=d.url; newTabBtn.style.display='flex';
+  crumb.style.display='inline';
+  crumb.innerHTML=(ROLE?(ROLES.find(r=>r.key===ROLE)||{}).name||'Dashboards':'Dashboards')+'&nbsp; / &nbsp;<b>'+d.title+'</b>';
+  if(location.hash!=='#'+key) history.replaceState(null,'','#'+key);
+  window.scrollTo(0,0);
+}
+function showMenu(){
+  frameView.style.display='none';
+  frame.src='about:blank';
+  menuView.style.display='block';
+  backBtn.style.display='none';
+  newTabBtn.style.display='none'; newTabBtn.removeAttribute('href');
+  crumb.style.display='none';
+  history.replaceState(null,'','#');
+}
+/* deep-link support: open with #operations etc. */
+window.addEventListener('DOMContentLoaded',()=>{
+  const h=location.hash.replace('#','');
+  if(h && DASHBOARDS.some(d=>d.key===h)) openDash(h);
+});
+/* footer hint shows which panels still need a URL */
+const missing=DASHBOARDS.filter(d=>!d.url||d.url.startsWith('PASTE_')).map(d=>d.title);
+document.getElementById('footNote').textContent =
+  missing.length ? '⚠ URLs still needed for: '+missing.join(', ')+'. Edit the DASHBOARDS list in this code page.' : '';
+/* ---- live KTO closeout numbers -------------------------------------------
+   Uses the signed-in Quickbase session (credentials:'same-origin'), the same
+   way pages 89/91/102 do, so nobody is asked to paste a user token here.
+   The strip stays hidden unless the read succeeds - a dead query must never
+   leave a wrong number on the command centre. -------------------------------*/
+(function(){
+  var APPTOKEN='c3ehy5gdh85tybw592yedx9u9vw', T_READINESS='bv9yseirg';
+  var F_COORD=128, F_BLOCKED=147, F_DAYS=149, F_INQUEUE=152;
+  function q(dbid,clist,query){
+    var xml='<qdbapi><apptoken>'+APPTOKEN+'</apptoken><clist>'+clist+'</clist><fmt>structured</fmt>'+
+            (query?'<query>'+query+'</query>':'')+'</qdbapi>';
+    return fetch('/db/'+dbid,{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/xml','QUICKBASE-ACTION':'API_DoQuery'},body:xml})
+      .then(function(r){return r.text();}).then(function(t){
+        var d=new DOMParser().parseFromString(t,'text/xml');
+        var ec=d.querySelector('errcode');
+        if(!ec||ec.textContent!=='0') throw new Error('Invalid or denied Quickbase response');
+        return Array.prototype.slice.call(d.querySelectorAll('record'));
+      });
+  }
+  function val(rec,fid){var e=rec.querySelector('f[id="'+fid+'"]');return e?e.textContent:'';}
+
+  q(T_READINESS,[F_COORD,F_BLOCKED,F_DAYS,F_INQUEUE].join('.'),'{'+F_INQUEUE+'.EX.1}')
+    .then(function(recs){
+      var waiting=recs.length, oldest=0, blocked=0, unassigned=0;
+      recs.forEach(function(r){
+        var d=parseFloat(val(r,F_DAYS))||0; if(d>oldest) oldest=d;
+        if((parseFloat(val(r,F_BLOCKED))||0)>0) blocked++;
+        if(!val(r,F_COORD).trim()) unassigned++;
+      });
+      var stats=[
+        {n:waiting,    l:'packages waiting'},
+        {n:oldest+'d', l:'oldest in queue', c:oldest>180?'crit':(oldest>90?'warn':'')},
+        {n:blocked,    l:'blocked on data', c:blocked>0?'warn':''},
+        {n:unassigned, l:'no coordinator',  c:unassigned>0?'crit':''}
+      ];
+      document.getElementById('ktoStats').innerHTML=stats.map(function(s){
+        return '<div class="kto-stat"><span class="kto-num '+(s.c||'')+'">'+s.n+
+               '</span><span class="kto-lbl">'+s.l+'</span></div>';
+      }).join('');
+      document.getElementById('ktoSub').textContent = waiting
+        ? 'Cases past substantial inspection awaiting turnover'
+        : 'Nothing waiting on closeout right now';
+      document.getElementById('ktoStrip').classList.add('ready');
+    })
+    .catch(function(e){document.getElementById('ktoSub').textContent='Closeout totals unavailable: '+e.message;document.getElementById('ktoStats').textContent='Read failed; totals withheld.';document.getElementById('ktoStrip').classList.add('ready');});
+})();
+/* One stage source, shared with the job and workflow guide. */
+(function(){var token="c3ehy5gdh85tybw592yedx9u9vw",all=[],skip=0;
+function read(){return fetch('/db/buskqh27b',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/xml','QUICKBASE-ACTION':'API_DoQuery'},body:'<qdbapi><apptoken>'+token+'</apptoken><clist>3.6.1631</clist><slist>3</slist><fmt>structured</fmt><options>num-500.skp-'+skip+'.sortorder-A</options><query>{35.EX.&apos;OPEN&apos;}AND{11.EX.&apos;Puerto Rico&apos;}</query></qdbapi>'}).then(function(r){if(!r.ok)throw Error('Source request failed');return r.text();}).then(function(t){var d=new DOMParser().parseFromString(t,'text/xml'),ec=d.querySelector('errcode');if(!ec||ec.textContent!=='0')throw Error('Source unavailable');var part=[].slice.call(d.querySelectorAll('record'));all=all.concat(part);if(part.length===500){skip+=500;return read();}return all;});}
+read().then(function(recs){var names={'1':'Assignment','2':'Scope / Task Order pending','3':'Task Order / technical services','4':'Design / permitting','5':'Award / pre-NTP','6':'NTP / construction','7':'Closeout','8':'Complete'},counts={},included=0,excluded=0;recs.forEach(function(r){var n=r.querySelector('f[id="6"]'),s=r.querySelector('f[id="1631"]');if(!n||!/^PR-(?:R3|SFM|BR)-[0-9]+(?: \(BR\))?$/.test(n.textContent.trim())){excluded++;return;}included++;var k=s?s.textContent.charAt(0):'';counts[names[k]?k:'unknown']=(counts[names[k]?k:'unknown']||0)+1;});document.getElementById('stageStats').innerHTML=Object.keys(names).map(function(k){return '<div class="kto-stat"><span class="kto-num">'+(counts[k]||0)+'</span><span class="kto-lbl">'+names[k]+'</span></div>';}).join('')+(counts.unknown?'<div class="kto-stat">'+counts.unknown+' stage unknown</div>':'');document.getElementById('stageSub').innerHTML=included+' recognized open Puerto Rico cases; '+excluded+' other records excluded. Canopy-derived stage is not release authorization. <a href="?a=dbpage&pageID=156">Review cases, teams and handoffs</a>';document.getElementById('stageStrip').classList.add('ready');}).catch(function(e){document.getElementById('stageSub').textContent='Stage totals unavailable: '+e.message;document.getElementById('stageStats').textContent='Read failed; totals withheld.';document.getElementById('stageStrip').classList.add('ready');});})();
+</script>
+</body>
+</html>

@@ -11,6 +11,8 @@ import {
 import { caseForVendor, updateSubmittal, vendorForKey } from "@/lib/fondo-server";
 import { fondoReviewUrl, reviewRequestMail, reviewerEmail } from "@/lib/fondo-mail";
 import { checkRecipients, isMailConfigured, sendMail } from "@/lib/mail";
+import { recordFondo } from "@/lib/fondo-history";
+import { money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -109,6 +111,15 @@ export async function POST(request: Request) {
       { status: 502 },
     );
   }
+
+  await recordFondo(
+    "submitted",
+    found.recordId,
+    submission.submittedBy || vendor.email || vendor.company,
+    `Poliza submitted by the subcontractor for ${money(submission.insuranceAmount)}${
+      submission.policyNumber ? `, policy ${submission.policyNumber}` : ""
+    }.`,
+  );
 
   // The submission is recorded. Telling the reviewer is a courtesy on top of
   // that, never a condition of it: it is already in the queue at /fondo/review,

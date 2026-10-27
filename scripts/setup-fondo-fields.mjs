@@ -47,6 +47,10 @@ export const FONDO_FIELDS = [
   // Stamped when the form link goes out, so the scheduled sender never mails
   // the same subcontractor twice for one case.
   { label: "Fondo Form Sent At", fieldType: "timestamp", fallback: "date" },
+  // Daily reminders after the link, up to 7, until the subcontractor submits
+  // (added 2026-10-28).
+  { label: "Fondo Reminder Count", fieldType: "numeric" },
+  { label: "Fondo Last Reminder At", fieldType: "timestamp", fallback: "date" },
 ];
 
 async function create(def) {

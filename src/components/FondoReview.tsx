@@ -5,6 +5,7 @@ import { money } from "@/lib/format";
 import { coverageOf } from "@/lib/fondo";
 import type { ReviewItem } from "@/lib/fondo-server";
 import { rememberKey } from "@/lib/send-key";
+import { HistoryButton } from "./FondoHistory";
 
 /**
  * Isaac's queue.
@@ -165,6 +166,7 @@ export default function FondoReview({
                   {item.caseNumber || "—"}
                 </h2>
                 <p className="text-xs text-navy-600/70">{item.subcontractor}</p>
+                <HistoryButton recordId={item.recordId} caseNumber={item.caseNumber} />
               </div>
               {!(item.awardedAmount > 0) ? (
                 // Nothing to compare against, so "covers" would be a false pass.

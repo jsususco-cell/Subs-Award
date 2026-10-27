@@ -19,6 +19,9 @@ import {
   sendMail,
 } from "@/lib/mail";
 import { refuseRegion } from "@/lib/auth/guard";
+import { recordFondo } from "@/lib/fondo-history";
+import { currentSession } from "@/lib/auth/current-user";
+import { money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -146,6 +149,18 @@ export async function POST(request: Request) {
         error: "Quickbase would not accept the change, so nothing was recorded.",
       },
       { status: 502 },
+    );
+  }
+
+  {
+    const who = (await currentSession())?.email ?? "";
+    await recordFondo(
+      action === "approve" ? "approved" : "returned",
+      recordId,
+      who || reviewer,
+      action === "approve"
+        ? `Approved${reviewer ? ` (${reviewer})` : ""}: ${money(staged.amount)} poliza copied onto the case.`
+        : `Sent back for correction${reviewer ? ` (${reviewer})` : ""}: ${notes.trim().slice(0, 300)}`,
     );
   }
 

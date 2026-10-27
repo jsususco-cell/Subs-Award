@@ -15,6 +15,8 @@ import {
   exemptFromFondo,
   fondoGap,
   fondoNoEmailReason,
+  reminderDue,
+  REMINDER_MAX,
   rejectReturn,
   rejectSubmission,
   type FondoSubmission,
@@ -101,7 +103,8 @@ test("returning a submission requires a reason the subcontractor can act on", ()
 
 test("every staging field is mapped to a real Quickbase field", () => {
   const names = Object.keys(FONDO_FIELDS);
-  assert.equal(names.length, 9);
+  // 9 staging fields, plus Reminder Count and Last Reminder At (2026-10-28).
+  assert.equal(names.length, 11);
   // Field 0 does not exist; a zero here would mean a silent write to nowhere.
   for (const [name, id] of Object.entries(FONDO_FIELDS)) {
     assert.ok(id > 0, `${name} is not mapped`);
@@ -352,4 +355,26 @@ test("page 206's do-not-email subs are kept out of the send button", () => {
   assert.match(fondoNoEmailReason("Rof Construction, Corp."), /No longer/);
   assert.match(fondoNoEmailReason("TO Project Management"), /No longer/);
   assert.equal(fondoNoEmailReason("FSD CONTRACTORS INC"), "");
+});
+
+test("reminders: daily while waiting on the sub, up to the limit, never after submitting", () => {
+  const now = new Date("2026-10-28T13:00:00Z");
+  const base = {
+    status: FONDO_STATUS.awaiting as typeof FONDO_STATUS.awaiting | typeof FONDO_STATUS.submitted,
+    formSentAt: "2026-10-27T13:00:00Z",
+    reminderCount: 0,
+    lastReminderAt: "",
+    now,
+  };
+  assert.equal(reminderDue(base), true);
+  assert.equal(reminderDue({ ...base, status: FONDO_STATUS.returned } as never), true);
+  // A run a little earlier than yesterday's still counts as the next day.
+  assert.equal(reminderDue({ ...base, formSentAt: "2026-10-27T16:30:00Z" }), true);
+  // Not twice in one day.
+  assert.equal(reminderDue({ ...base, lastReminderAt: "2026-10-28T09:00:00Z" }), false);
+  assert.equal(reminderDue({ ...base, reminderCount: REMINDER_MAX }), false);
+  assert.equal(reminderDue({ ...base, formSentAt: "" }), false);
+  // Submitting is what stops them.
+  assert.equal(reminderDue({ ...base, status: FONDO_STATUS.submitted }), false);
+  assert.equal(REMINDER_MAX, 7);
 });

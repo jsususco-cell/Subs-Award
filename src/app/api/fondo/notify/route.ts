@@ -12,6 +12,7 @@ import {
   sendKeyMatches,
   sendMail,
 } from "@/lib/mail";
+import { recordFondo } from "@/lib/fondo-history";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -118,6 +119,7 @@ export async function POST(request: Request) {
         [FONDO_FIELDS.formSentAt]: { value: new Date().toISOString() },
       });
       sent.push(item.recordId);
+      await recordFondo("link.auto-sent", item.recordId, "system", `Form link emailed automatically to ${item.email} after the award.`);
     } catch (e) {
       // The email is already gone. Say so loudly: without the stamp the next
       // run will send it again, and a duplicate is better than silence about it.

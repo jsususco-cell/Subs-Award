@@ -27,7 +27,9 @@ export type FondoFieldName =
   | "reviewNotes"
   | "reviewedBy"
   | "reviewedAt"
-  | "formSentAt";
+  | "formSentAt"
+  | "reminderCount"
+  | "lastReminderAt";
 
 export const FONDO_FIELDS: Record<FondoFieldName, number> = {
   status: 38,
@@ -39,6 +41,9 @@ export const FONDO_FIELDS: Record<FondoFieldName, number> = {
   reviewedBy: 44,
   reviewedAt: 45,
   formSentAt: 46,
+  // Added 2026-10-28 for the daily reminders.
+  reminderCount: 47,
+  lastReminderAt: 48,
 };
 
 export const FONDO_STATUS = {
@@ -306,6 +311,36 @@ export function isOpenAward(po: {
 /** The gap, using the larger of the PO's stamp and the policies actually on file. */
 export function fondoGap(required: number, stamped: number, onFile: number): number {
   return Math.max(0, round(required - Math.max(stamped, onFile)));
+}
+
+/** Daily reminders after the link: this many, then stop (user decision, 28 Oct 2026). */
+export const REMINDER_MAX = 7;
+/**
+ * "Daily" with slack: the sender runs once a day, and a run a few minutes
+ * earlier than yesterday's must not skip a day.
+ */
+const REMINDER_GAP_MS = 20 * 60 * 60 * 1000;
+
+/**
+ * Is a reminder due for this case now?
+ *
+ * Only while the case is waiting on the subcontractor (awaiting, or returned
+ * for correction) and the link has actually gone out. A submission moves the
+ * case to "Submitted - pending review", which is what stops the reminders.
+ */
+export function reminderDue(c: {
+  status: FondoStatus | "";
+  formSentAt: string;
+  reminderCount: number;
+  lastReminderAt: string;
+  now: Date;
+}): boolean {
+  if (c.status !== FONDO_STATUS.awaiting && c.status !== FONDO_STATUS.returned) return false;
+  if (!c.formSentAt) return false;
+  if (c.reminderCount >= REMINDER_MAX) return false;
+  const last = Date.parse(c.lastReminderAt || c.formSentAt);
+  if (!Number.isFinite(last)) return false;
+  return c.now.getTime() - last >= REMINDER_GAP_MS;
 }
 
 /** Does the submitted poliza cover the award? Advisory only, for the reviewer. */

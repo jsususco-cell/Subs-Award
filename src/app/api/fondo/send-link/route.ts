@@ -28,6 +28,8 @@ import {
 } from "@/lib/mail";
 import { refuseRegion } from "@/lib/auth/guard";
 import { currentSession } from "@/lib/auth/current-user";
+import { recordFondo } from "@/lib/fondo-history";
+import { money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -239,6 +241,17 @@ export async function POST(request: Request) {
       e instanceof Error ? e.message : "update failed"
     }`;
   }
+
+  const actor = (await currentSession())?.email ?? "";
+  if (created && award) {
+    await recordFondo(
+      "case.opened",
+      recordId,
+      actor,
+      `Case opened from Send link for PO ${award.poNumber}; required coverage ${money(award.required)}.`,
+    );
+  }
+  await recordFondo("link.sent", recordId, actor, `Form link emailed to ${to}${short ? " (asking for a poliza that covers the award)" : ""}.`);
 
   return NextResponse.json({ ok: true, recordId, created, to, sentAt, stampError });
 }

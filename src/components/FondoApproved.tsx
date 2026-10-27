@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { money } from "@/lib/format";
 import type { ApprovedItem } from "@/lib/fondo-server";
+import { HistoryButton } from "./FondoHistory";
 
 /**
  * The Approved tab: every poliza that counts.
@@ -150,6 +151,7 @@ export default function FondoApproved({
               <div className="min-w-0">
                 <div className="font-semibold whitespace-nowrap text-navy-800">{i.caseNumber || "—"}</div>
                 <div className="truncate text-xs text-navy-600/70 md:hidden">{i.subcontractor}</div>
+                <HistoryButton recordId={i.recordId} caseNumber={i.caseNumber} />
               </div>
               <div className="hidden min-w-0 text-navy-800 md:block">{i.subcontractor || "—"}</div>
               <div className="text-right md:text-right">

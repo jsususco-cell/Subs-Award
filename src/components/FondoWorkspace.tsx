@@ -2,11 +2,12 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { money } from "@/lib/format";
-import { FONDO_STATUS } from "@/lib/fondo";
+import { FONDO_STATUS, REMINDER_MAX } from "@/lib/fondo";
 import type { ApprovedItem, ReviewItem, SendItem } from "@/lib/fondo-server";
 import { rememberKey, storedKey, subscribeToKey } from "@/lib/send-key";
 import FondoReview from "./FondoReview";
 import FondoApproved from "./FondoApproved";
+import { HistoryButton } from "./FondoHistory";
 
 /**
  * The Fondo page: the review queue, plus a way to send the form link by hand.
@@ -26,7 +27,13 @@ const emptyKey = () => "";
 
 type Tab = "review" | "send" | "approved";
 type Filter = "all" | "new" | "short" | "awaiting" | "returned" | "never";
-type Sent = { to: string; sentAt: string; stampError: string | null; created: boolean };
+type Sent = {
+  to: string;
+  sentAt: string;
+  stampError: string | null;
+  created: boolean;
+  recordId: number;
+};
 
 export default function FondoWorkspace({
   reviewItems,
@@ -175,6 +182,7 @@ Email ${where} the form link to send one that covers it?`
             sentAt: body.sentAt,
             stampError: body.stampError,
             created: Boolean(body.created),
+            recordId: Number(body.recordId) || 0,
           },
         }));
         setEditing(null);
@@ -190,7 +198,17 @@ Email ${where} the form link to send one that covers it?`
 
   function sentLabel(item: SendItem) {
     const sentAt = sent[item.key]?.sentAt || item.formSentAt;
-    return sentAt ? formatWhen(sentAt) : <span className="text-navy-600/60">never</span>;
+    if (!sentAt) return <span className="text-navy-600/60">never</span>;
+    return (
+      <>
+        {formatWhen(sentAt)}
+        {item.reminderCount > 0 && (
+          <span className="block text-[11px] text-navy-600/70">
+            reminder {item.reminderCount} of {REMINDER_MAX}
+          </span>
+        )}
+      </>
+    );
   }
 
   function emailCell(item: SendItem) {
@@ -313,7 +331,7 @@ Email ${where} the form link to send one that covers it?`
                     <div className="font-semibold whitespace-nowrap text-navy-800">
                       {item.caseNumber || "—"}
                     </div>
-                    {item.jobName && <div className="text-xs text-navy-600/70">{item.jobName}</div>}
+                    <HistoryButton recordId={sent[item.key]?.recordId || item.recordId} caseNumber={item.caseNumber} />
                   </td>
                   <td className="px-3 py-3 text-navy-800">{item.subcontractor || "—"}</td>
                   <td className="tabular px-3 py-3 text-right whitespace-nowrap text-navy-800">
@@ -343,6 +361,7 @@ Email ${where} the form link to send one that covers it?`
               <div className="min-w-0">
                 <div className="font-semibold whitespace-nowrap text-navy-800">{item.caseNumber || "—"}</div>
                 <div className="text-xs text-navy-600/80">{item.subcontractor || "—"}</div>
+                <HistoryButton recordId={sent[item.key]?.recordId || item.recordId} caseNumber={item.caseNumber} />
               </div>
               <StatePill item={item} />
             </div>

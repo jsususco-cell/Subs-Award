@@ -13,6 +13,7 @@ import {
   isOpenAward,
   normName,
   fondoNoEmailReason,
+  reminderDue,
 } from "./fondo";
 
 /**
@@ -324,6 +325,8 @@ export interface SendItem {
   gap: number;
   status: FondoStatus | "";
   formSentAt: string;
+  /** Daily reminders sent since the link (0..7). */
+  reminderCount: number;
   reviewNotes: string;
   /** Where the email goes. Blank means it cannot be sent until fixed. */
   email: string;
@@ -480,6 +483,7 @@ export async function sendQueue(): Promise<SendItem[]> {
         FONDO_FIELDS.status,
         FONDO_FIELDS.formSentAt,
         FONDO_FIELDS.reviewNotes,
+        FONDO_FIELDS.reminderCount,
       ],
     }),
     openAwards(),
@@ -539,6 +543,7 @@ export async function sendQueue(): Promise<SendItem[]> {
       gap: award?.gap ?? 0,
       status: str(val(r, FONDO_FIELDS.status)) as FondoStatus | "",
       formSentAt: str(val(r, FONDO_FIELDS.formSentAt)),
+      reminderCount: num(val(r, FONDO_FIELDS.reminderCount)),
       reviewNotes: str(val(r, FONDO_FIELDS.reviewNotes)),
       email: v.email,
       blocked: v.blocked,
@@ -574,6 +579,7 @@ export async function sendQueue(): Promise<SendItem[]> {
         gap: a.gap,
         status: "",
         formSentAt: "",
+        reminderCount: 0,
         reviewNotes: "",
         email: v.email,
         blocked: v.blocked,
@@ -722,6 +728,75 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
           a.caseNumber.localeCompare(b.caseNumber),
       )
   );
+}
+
+/** A case owed a reminder today. */
+export interface DueReminder {
+  recordId: number;
+  caseNumber: string;
+  subcontractor: string;
+  awardedAmount: number;
+  /** Which reminder this will be: 1..REMINDER_MAX. */
+  n: number;
+  email: string;
+  accessKey: string;
+  /** Why it cannot go, when it cannot. */
+  blocked: string;
+}
+
+/**
+ * Cases waiting on the subcontractor whose daily reminder is due now.
+ * Submitting moves a case to "Submitted - pending review", which is what
+ * takes it off this list.
+ */
+export async function dueReminders(now = new Date()): Promise<DueReminder[]> {
+  const ins = QB_AWARD.insurance;
+  const f = FONDO_FIELDS;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.relatedSub,
+      f.status,
+      f.formSentAt,
+      f.reminderCount,
+      f.lastReminderAt,
+    ],
+    where:
+      `({${f.status}.EX.'${FONDO_STATUS.awaiting}'}OR{${f.status}.EX.'${FONDO_STATUS.returned}'})` +
+      `AND{${f.formSentAt}.XEX.''}`,
+  });
+  const due = rows.filter((r) =>
+    reminderDue({
+      status: str(val(r, f.status)) as FondoStatus | "",
+      formSentAt: str(val(r, f.formSentAt)),
+      reminderCount: num(val(r, f.reminderCount)),
+      lastReminderAt: str(val(r, f.lastReminderAt)),
+      now,
+    }),
+  );
+  const out: DueReminder[] = [];
+  for (const r of due) {
+    const v = await vendorById(num(val(r, ins.relatedSub)));
+    const name = str(val(r, ins.subcontractorName)).trim() || v?.company || "";
+    out.push({
+      recordId: num(val(r, ins.recordId)),
+      caseNumber: str(val(r, ins.caseNumber)).trim(),
+      subcontractor: name,
+      awardedAmount: num(val(r, ins.awardedAmount)),
+      n: num(val(r, f.reminderCount)) + 1,
+      email: v?.email ?? "",
+      accessKey: v?.accessKey ?? "",
+      blocked: !v
+        ? "No subcontractor on the case"
+        : fondoNoEmailReason(v.company || name) ||
+          (!v.accessKey ? "Vendor has no access key" : !v.email ? "No email on file" : ""),
+    });
+  }
+  return out;
 }
 
 /** What a manual send needs for one case, re-read at send time. */

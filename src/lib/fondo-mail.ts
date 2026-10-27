@@ -261,6 +261,74 @@ export function returnedMail(c: FondoMailCase, notes: string): FondoMail {
   };
 }
 
+/**
+ * Who is copied on every reminder. Read from the deployment's settings, not
+ * kept in code: this repository is public, and these are staff addresses.
+ *
+ *   FONDO_REMINDER_CC   comma-separated, e.g. the PR Weekly Field Activity list
+ *   FONDO_REMINDER_BCC  comma-separated
+ *
+ * Unset means nobody is copied; the reminder still goes to the subcontractor.
+ */
+function addressList(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((a) => a.trim().toLowerCase())
+    .filter((a) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a));
+}
+export function reminderCc(): string[] {
+  return addressList(process.env.FONDO_REMINDER_CC);
+}
+export function reminderBcc(): string[] {
+  return addressList(process.env.FONDO_REMINDER_BCC);
+}
+
+/** The daily nudge while no poliza has come back. `n` is 1..REMINDER_MAX. */
+export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail {
+  const last = n >= of;
+  return {
+    subject: `Recordatorio ${n} de ${of} — Póliza del Fondo (CFSE) — Caso ${c.caseNumber}`,
+    text: [
+      `Estimados ${c.subcontractor}:`,
+      "",
+      `Todavía no hemos recibido la póliza del Fondo del Seguro del Estado (CFSE) para el caso ${c.caseNumber}. Tiene que cubrir ${money(c.awardedAmount)}.`,
+      "",
+      "Puede enviarla desde este enlace:",
+      c.formUrl,
+      "",
+      last
+        ? "Este es el último recordatorio automático. Si ya la envió, puede ignorar este mensaje."
+        : "Si ya la envió, puede ignorar este mensaje.",
+      "",
+      "Recuerde que la retención y el pago de Inspección Final no se liberan hasta que recibamos evidencia de cumplimiento con la CFSE para este proyecto.",
+      "",
+      "Cordialmente,",
+      "Byrdson Services, LLC",
+    ].join("\n"),
+    html: shell({
+      eyebrow: `Recordatorio ${n} de ${of}`,
+      headline: "Seguimos esperando la póliza del Fondo",
+      subhead: `Caso ${c.caseNumber} · ${c.subcontractor}`,
+      stripe: "#9a6b12",
+      intro: `Todavía no hemos recibido la póliza del Fondo del Seguro del Estado (CFSE) para este caso.${
+        last ? " Este es el último recordatorio automático." : ""
+      }`,
+      leadLabel: "La póliza tiene que cubrir",
+      leadAmount: money(c.awardedAmount),
+      rows: [
+        ["Caso", c.caseNumber],
+        ["Subcontratista", c.subcontractor],
+      ],
+      whatToDo:
+        "<strong>Qué hacer:</strong> adjunte la póliza y escriba por cuánto es. Si ya la envió, puede ignorar este mensaje.",
+      action: { text: "Enviar póliza", url: c.formUrl },
+      footnote:
+        "La retención y el pago de Inspección Final no se liberan hasta que recibamos evidencia de cumplimiento con la CFSE para este proyecto.",
+      footerNote: "Póliza del Fondo · recordatorio automático",
+    }),
+  };
+}
+
 /** Sent to the subcontractor once it is accepted. */
 export function approvedMail(c: FondoMailCase): FondoMail {
   return {

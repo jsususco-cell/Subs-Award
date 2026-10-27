@@ -129,6 +129,10 @@ function shell(i: ShellInput): string {
 </td></tr></table></body></html>`;
 }
 
+/** The opening of the form-link email, in the user's words (28 Oct 2026). */
+export const FORM_REQUEST_INTRO =
+  "Este contrato ya ha sido adjudicado. Para avanzar sin demoras, requerimos con urgencia la póliza de la Corporación del Fondo del Seguro del Estado (CFSE) correspondiente a este proyecto. Por favor, proporcione esta documentación a la mayor brevedad posible.";
+
 /** Sent to the subcontractor shortly after the award letter. */
 export function formRequestMail(c: FondoMailCase): FondoMail {
   return {
@@ -136,7 +140,10 @@ export function formRequestMail(c: FondoMailCase): FondoMail {
     text: [
       `Estimados ${c.subcontractor}:`,
       "",
-      `Para el caso ${c.caseNumber} necesitamos la póliza del Fondo del Seguro del Estado (CFSE), y tiene que cubrir el monto adjudicado de ${money(c.awardedAmount)}.`,
+      // Wording set by the user, 28 Oct 2026.
+      FORM_REQUEST_INTRO,
+      "",
+      `Caso ${c.caseNumber}. La póliza tiene que cubrir el monto adjudicado de ${money(c.awardedAmount)}.`,
       "",
       "Puede enviarla desde este enlace:",
       c.formUrl,
@@ -152,8 +159,7 @@ export function formRequestMail(c: FondoMailCase): FondoMail {
       eyebrow: "Póliza del Fondo",
       headline: "Falta la póliza del Fondo (CFSE)",
       subhead: `Caso ${c.caseNumber} · adjudicado a ${c.subcontractor}`,
-      intro:
-        "Este caso ya fue adjudicado. Para continuar necesitamos la póliza del Fondo del Seguro del Estado (CFSE) correspondiente a este proyecto.",
+      intro: FORM_REQUEST_INTRO,
       leadLabel: "La póliza tiene que cubrir",
       leadAmount: money(c.awardedAmount),
       rows: [

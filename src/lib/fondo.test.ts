@@ -15,6 +15,7 @@ import {
   exemptFromFondo,
   fondoGap,
   fondoNoEmailReason,
+  fondoHiddenSub,
   reminderDue,
   REMINDER_MAX,
   rejectReturn,
@@ -377,4 +378,11 @@ test("reminders: daily while waiting on the sub, up to the limit, never after su
   // Submitting is what stops them.
   assert.equal(reminderDue({ ...base, status: FONDO_STATUS.submitted }), false);
   assert.equal(REMINDER_MAX, 7);
+});
+
+test("Mohr is left out of Fondo chasing entirely", () => {
+  assert.equal(fondoHiddenSub("Mohr Construction"), true);
+  assert.equal(fondoHiddenSub("Mohr Construction Services"), true);
+  assert.equal(fondoHiddenSub("MOHR CONSTRUCTION SERVICES, LLC"), true);
+  assert.equal(fondoHiddenSub("FSD CONTRACTORS INC"), false);
 });

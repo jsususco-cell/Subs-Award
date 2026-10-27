@@ -13,6 +13,7 @@ import {
   isOpenAward,
   normName,
   fondoNoEmailReason,
+  fondoHiddenSub,
   reminderDue,
 } from "./fondo";
 
@@ -216,6 +217,10 @@ export async function pendingNotices(limit = 25): Promise<{
 
     if (!v) {
       unreachable.push({ recordId, caseNumber, reason: "no subcontractor on the case" });
+      continue;
+    }
+    if (fondoHiddenSub(str(val(v, VENDOR_COMPANY)) || str(val(r, ins.subcontractorName)))) {
+      unreachable.push({ recordId, caseNumber, reason: "excluded from Fondo emails" });
       continue;
     }
     if (!accessKey) {
@@ -609,7 +614,9 @@ export async function sendQueue(): Promise<SendItem[]> {
     items.set(key, fromCase(newest, "short", a));
   }
 
-  return [...items.values()].sort((a, b) => a.caseNumber.localeCompare(b.caseNumber));
+  return [...items.values()]
+    .filter((i) => !fondoHiddenSub(i.subcontractor))
+    .sort((a, b) => a.caseNumber.localeCompare(b.caseNumber));
 }
 
 /** Open a Fondo case, the same record an award made in this app creates. */
@@ -792,7 +799,9 @@ export async function dueReminders(now = new Date()): Promise<DueReminder[]> {
       accessKey: v?.accessKey ?? "",
       blocked: !v
         ? "No subcontractor on the case"
-        : fondoNoEmailReason(v.company || name) ||
+        : fondoHiddenSub(v.company || name)
+          ? "Excluded from Fondo emails"
+          : fondoNoEmailReason(v.company || name) ||
           (!v.accessKey ? "Vendor has no access key" : !v.email ? "No email on file" : ""),
     });
   }

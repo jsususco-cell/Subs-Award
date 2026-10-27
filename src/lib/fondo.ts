@@ -287,6 +287,17 @@ export function fondoNoEmailReason(subName: string): string {
   return "";
 }
 
+/**
+ * Subcontractors left out of Fondo chasing altogether: hidden from Send link
+ * and never emailed (link, automatic link, reminders). User decision,
+ * 28 Oct 2026: Mohr Construction / Mohr Construction Services.
+ */
+const HIDDEN_SUBS = ["mohrconstruction"];
+export function fondoHiddenSub(subName: string): boolean {
+  const n = normName(subName);
+  return HIDDEN_SUBS.some((x) => n.startsWith(x));
+}
+
 /** Does this PO count as an open award? Every input is what the PO and its job say. */
 export function isOpenAward(po: {
   region: string;

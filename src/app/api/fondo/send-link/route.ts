@@ -6,6 +6,7 @@ import {
   FONDO_STATUS,
   fondoConfigured,
   missingFondoFields,
+  fondoHiddenSub,
   fondoNoEmailReason,
   rejectManualSend,
 } from "@/lib/fondo";
@@ -112,6 +113,9 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+    if (fondoHiddenSub(award.subcontractor)) {
+      return NextResponse.json({ ok: false, error: "This subcontractor is excluded from Fondo emails." }, { status: 409 });
+    }
     const noEmail = fondoNoEmailReason(award.subcontractor);
     if (noEmail) return NextResponse.json({ ok: false, error: noEmail }, { status: 409 });
     recordId = award.caseRecordIds[0] ?? 0;
@@ -143,6 +147,9 @@ export async function POST(request: Request) {
   const short = Boolean(award && award.gap > 0);
   const refused = rejectManualSend(found.status, found.hasPoliza, short);
   if (refused) return NextResponse.json({ ok: false, error: refused }, { status: 409 });
+  if (fondoHiddenSub(found.vendor?.company || found.subcontractor)) {
+    return NextResponse.json({ ok: false, error: "This subcontractor is excluded from Fondo emails." }, { status: 409 });
+  }
   const noEmail = fondoNoEmailReason(found.vendor?.company ?? found.subcontractor);
   if (noEmail) return NextResponse.json({ ok: false, error: noEmail }, { status: 409 });
 

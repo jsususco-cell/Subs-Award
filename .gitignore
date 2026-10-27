@@ -52,3 +52,6 @@ next-env.d.ts
 
 # Undo files from scripts/rederive-vendor-regions.mjs
 vendor-region-backup-*.json
+
+# Dashboard page backups carry the CM v2 app token: keep them local.
+scripts/page43.before-fondoaudit.html

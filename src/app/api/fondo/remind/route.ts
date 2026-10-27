@@ -68,7 +68,14 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       dryRun: true,
-      due: sendable.map((d) => ({ recordId: d.recordId, caseNumber: d.caseNumber, subcontractor: d.subcontractor, n: d.n, to: d.email })),
+      due: sendable.map((d) => ({
+        recordId: d.recordId,
+        caseNumber: d.caseNumber,
+        subcontractor: d.subcontractor,
+        n: d.n,
+        to: d.email,
+        ...(d.members ? { cases: d.members.map((m) => m.caseNumber), total: d.awardedAmount } : {}),
+      })),
       skipped,
       cc: reminderCc(),
       bcc: reminderBcc(),
@@ -97,8 +104,9 @@ export async function POST(request: Request) {
       });
       continue;
     }
+    const cases = d.members && d.members.length > 1 ? d.members.map((m) => m.caseNumber) : undefined;
     const mail = reminderMail(
-      { caseNumber: d.caseNumber, subcontractor: d.subcontractor, awardedAmount: d.awardedAmount, formUrl },
+      { caseNumber: d.caseNumber, subcontractor: d.subcontractor, awardedAmount: d.awardedAmount, formUrl, cases },
       d.n,
       REMINDER_MAX,
     );
@@ -121,11 +129,15 @@ export async function POST(request: Request) {
       continue;
     }
     try {
-      await updateSubmittal({
-        [QB_AWARD.insurance.recordId]: { value: d.recordId },
-        [FONDO_FIELDS.reminderCount]: { value: d.n },
-        [FONDO_FIELDS.lastReminderAt]: { value: new Date().toISOString() },
-      });
+      // A pooled reminder counts for every case it covers.
+      const at = new Date().toISOString();
+      for (const rid of d.members?.map((m) => m.recordId) ?? [d.recordId]) {
+        await updateSubmittal({
+          [QB_AWARD.insurance.recordId]: { value: rid },
+          [FONDO_FIELDS.reminderCount]: { value: d.n },
+          [FONDO_FIELDS.lastReminderAt]: { value: at },
+        });
+      }
       sent.push(d.recordId);
     } catch (e) {
       // Already sent: say so loudly, since without the stamp it goes again tomorrow early.
@@ -134,12 +146,16 @@ export async function POST(request: Request) {
         error: `Reminder sent, but Quickbase did not record it: ${e instanceof Error ? e.message : "update failed"}`,
       });
     }
-    await recordFondo(
-      "reminder.sent",
-      d.recordId,
-      "system",
-      `Reminder ${d.n} of ${REMINDER_MAX} emailed to ${d.email}.`,
-    );
+    for (const rid of d.members?.map((m) => m.recordId) ?? [d.recordId]) {
+      await recordFondo(
+        "reminder.sent",
+        rid,
+        "system",
+        cases
+          ? `Reminder ${d.n} of ${REMINDER_MAX} for ${cases.length} cases (one poliza), emailed to ${d.email}.`
+          : `Reminder ${d.n} of ${REMINDER_MAX} emailed to ${d.email}.`,
+      );
+    }
   }
 
   return NextResponse.json({

@@ -6,8 +6,11 @@ import {
   fondoConfigured,
   missingFondoFields,
   rejectReturn,
+  splitByShare,
+  FONDO_STATUS,
 } from "@/lib/fondo";
-import { polizaFile, stagedFor, updateSubmittal, vendorById } from "@/lib/fondo-server";
+import { QB_AWARD } from "@/lib/qb-award";
+import { poolCases, polizaFile, stagedFor, updateSubmittal, vendorById } from "@/lib/fondo-server";
 import { approvedMail, fondoFormUrl, returnedMail } from "@/lib/fondo-mail";
 import {
   archiveBcc,
@@ -135,12 +138,28 @@ export async function POST(request: Request) {
     };
   }
 
+  // A pooled subcontractor's poliza covers every case in its group: on
+  // approval each case gets the poliza and its share of the amount.
+  const pool =
+    action === "approve"
+      ? (await poolCases(staged.vendorRecordId, staged.subcontractor)).filter(
+          (p) => p.recordId === recordId || p.status !== FONDO_STATUS.submitted,
+        )
+      : [];
+  const pooled = pool.length > 1 && pool.some((p) => p.recordId === recordId);
+  const shares = pooled ? splitByShare(staged.amount, pool.map((p) => p.awardedAmount)) : [];
+
   try {
-    await updateSubmittal(
+    const record =
       action === "approve"
         ? buildApprovalRecord(recordId, { ...staged, file }, reviewer)
-        : buildReturnRecord(recordId, notes, reviewer),
-    );
+        : buildReturnRecord(recordId, notes, reviewer);
+    if (pooled) {
+      record[QB_AWARD.insurance.insuranceAmount] = {
+        value: shares[pool.findIndex((p) => p.recordId === recordId)],
+      };
+    }
+    await updateSubmittal(record);
   } catch (e) {
     console.error("[fondo/review]", e instanceof Error ? e.message : e);
     return NextResponse.json(
@@ -152,6 +171,27 @@ export async function POST(request: Request) {
     );
   }
 
+  // The other cases in the pool: same document, their own share.
+  const poolErrors: string[] = [];
+  if (pooled && file) {
+    for (const [i, p] of pool.entries()) {
+      if (p.recordId === recordId) continue;
+      try {
+        await updateSubmittal({
+          ...buildApprovalRecord(p.recordId, { amount: shares[i], file, submittedAt: staged.submittedAt }, reviewer),
+        });
+        await recordFondo(
+          "approved",
+          p.recordId,
+          (await currentSession())?.email || reviewer,
+          `Approved with the pooled poliza uploaded on ${staged.caseNumber}: this case's share is ${money(shares[i])} of ${money(staged.amount)}.`,
+        );
+      } catch (e) {
+        poolErrors.push(`${p.caseNumber}: ${e instanceof Error ? e.message : "update failed"}`);
+      }
+    }
+  }
+
   {
     const who = (await currentSession())?.email ?? "";
     await recordFondo(
@@ -159,7 +199,9 @@ export async function POST(request: Request) {
       recordId,
       who || reviewer,
       action === "approve"
-        ? `Approved${reviewer ? ` (${reviewer})` : ""}: ${money(staged.amount)} poliza copied onto the case.`
+        ? pooled
+          ? `Approved${reviewer ? ` (${reviewer})` : ""}: one ${money(staged.amount)} poliza for ${pool.length} cases (${pool.map((p) => p.caseNumber).join(", ")}); this case's share is ${money(shares[pool.findIndex((p) => p.recordId === recordId)])}.`
+          : `Approved${reviewer ? ` (${reviewer})` : ""}: ${money(staged.amount)} poliza copied onto the case.`
         : `Sent back for correction${reviewer ? ` (${reviewer})` : ""}: ${notes.trim().slice(0, 300)}`,
     );
   }
@@ -179,8 +221,11 @@ export async function POST(request: Request) {
     const shape = {
       caseNumber: staged.caseNumber,
       subcontractor: staged.subcontractor || vendor.company,
-      awardedAmount: staged.awardedAmount,
+      awardedAmount: pooled
+        ? Math.round(pool.reduce((t, p) => t + p.awardedAmount, 0) * 100) / 100
+        : staged.awardedAmount,
       formUrl: fondoFormUrl(vendor.accessKey, recordId),
+      ...(pooled ? { cases: pool.map((p) => p.caseNumber) } : {}),
     };
     const mail = action === "approve" ? approvedMail(shape) : returnedMail(shape, notes);
     // Only the approval is archived. A correction notice is a back-and-forth
@@ -207,6 +252,8 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
+    pooledCases: pooled ? pool.map((p) => p.caseNumber) : [],
+    poolErrors,
     action,
     recordId,
     notified,

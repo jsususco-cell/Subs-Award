@@ -14,6 +14,7 @@ import {
   caseForSend,
   createSubmittal,
   openAwards,
+  sendQueue,
   updateSubmittal,
   type OpenAward,
 } from "@/lib/fondo-server";
@@ -97,6 +98,11 @@ export async function POST(request: Request) {
   // Optional: send to someone other than the address on the vendor record,
   // for when that address is missing or wrong.
   const override = typeof body.to === "string" ? body.to.trim().slice(0, 200) : "";
+
+  // A pooled subcontractor's combined row: one email, one poliza for the total.
+  if (typeof body.pool === "string" && body.pool) {
+    return sendPool(body.pool, override);
+  }
 
   if (!recordId && !poRecordId) {
     return NextResponse.json({ ok: false, error: "No case given." }, { status: 400 });
@@ -261,4 +267,142 @@ export async function POST(request: Request) {
   await recordFondo("link.sent", recordId, actor, `Form link emailed to ${to}${short ? " (asking for a poliza that covers the award)" : ""}.`);
 
   return NextResponse.json({ ok: true, recordId, created, to, sentAt, stampError });
+}
+
+/**
+ * Send the combined row of a pooled subcontractor (fondoPoolOf).
+ *
+ * Every open award in the pool that has no case yet gets one, then ONE email
+ * asks for one poliza covering the total, with the link on the lead case (the
+ * oldest). Every case in the pool is stamped as sent, so the automatic sender
+ * and the per-case reminders treat them as one. Approving the lead's upload
+ * records the poliza on all of them (see /api/fondo/review).
+ */
+async function sendPool(pool: string, override: string) {
+  const row = (await sendQueue()).find((i) => i.pool === pool);
+  if (!row || !row.members?.length) {
+    return NextResponse.json({ ok: false, error: "Nothing in that group is still owed a poliza." }, { status: 409 });
+  }
+  const actor = (await currentSession())?.email ?? "";
+
+  // Open the missing cases first; nothing is emailed if any of them fails.
+  const awards = row.members.some((m) => !m.recordId) ? await openAwards() : [];
+  const members: { recordId: number; caseNumber: string; amount: number; created: boolean }[] = [];
+  for (const m of row.members) {
+    if (m.recordId) {
+      members.push({ recordId: m.recordId, caseNumber: m.caseNumber, amount: m.amount, created: false });
+      continue;
+    }
+    const award = awards.find((a) => a.poRecordId === m.poRecordId);
+    if (!award) continue; // closed or covered since the list loaded
+    try {
+      const id = await createSubmittal(award, actor);
+      members.push({ recordId: id, caseNumber: m.caseNumber, amount: award.required, created: true });
+    } catch (e) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Could not open the Fondo case for ${m.caseNumber}, so nothing was sent: ${
+            e instanceof Error ? e.message : "create failed"
+          }`,
+        },
+        { status: 502 },
+      );
+    }
+  }
+
+  // Re-check each case now; one already submitted or approved drops out.
+  const live: { recordId: number; caseNumber: string; amount: number; created: boolean; status: string }[] = [];
+  let vendor: { accessKey: string; email: string; company: string } | null = null;
+  let leadNotes = "";
+  for (const m of members.sort((a, b) => a.recordId - b.recordId)) {
+    const found = await caseForSend(m.recordId);
+    if (!found) continue;
+    const short = row.members.find((x) => x.caseNumber === m.caseNumber)?.kind === "short";
+    if (rejectManualSend(found.status, found.hasPoliza, short)) continue;
+    vendor ??= found.vendor;
+    if (!live.length) leadNotes = found.status === FONDO_STATUS.returned ? found.reviewNotes : "";
+    live.push({ ...m, status: found.status });
+  }
+  if (!live.length) {
+    return NextResponse.json({ ok: false, error: "Nothing in that group is still owed a poliza." }, { status: 409 });
+  }
+  if (!vendor?.accessKey) {
+    return NextResponse.json(
+      { ok: false, error: "The subcontractor has no access key (Subs/Vendors field 66), so the link cannot be built." },
+      { status: 400 },
+    );
+  }
+  const to = override || vendor.email;
+  if (!to) {
+    return NextResponse.json({ ok: false, error: "The subcontractor has no email on file. Type one in to send it." }, { status: 400 });
+  }
+  const check = checkRecipients([to]);
+  if (!check.ok) {
+    return NextResponse.json(
+      { ok: false, error: check.blocked.length ? `${to} is not on the send allowlist.` : `${to} is not a valid address.` },
+      { status: 400 },
+    );
+  }
+
+  const lead = live[0];
+  const formUrl = fondoFormUrl(vendor.accessKey, lead.recordId);
+  if (!formUrl) {
+    return NextResponse.json({ ok: false, error: "APP_BASE_URL is not set, so the link would be broken. Nothing was sent." }, { status: 503 });
+  }
+  const total = Math.round(live.reduce((t, m) => t + m.amount, 0) * 100) / 100;
+  const shape = {
+    caseNumber: lead.caseNumber,
+    subcontractor: row.subcontractor,
+    awardedAmount: total,
+    formUrl,
+    cases: live.map((m) => m.caseNumber),
+  };
+  const mail = leadNotes ? returnedMail(shape, leadNotes) : formRequestMail(shape);
+  try {
+    await sendMail({ to: [to], cc: [], subject: mail.subject, text: mail.text, html: mail.html, attachments: [] });
+  } catch (e) {
+    return NextResponse.json(
+      { ok: false, error: `The email did not go out: ${e instanceof Error ? e.message : "send failed"}` },
+      { status: 502 },
+    );
+  }
+
+  const sentAt = new Date().toISOString();
+  let stampError: string | null = null;
+  for (const m of live) {
+    const stamp: Record<string, { value: unknown }> = {
+      [QB_AWARD.insurance.recordId]: { value: m.recordId },
+      [FONDO_FIELDS.formSentAt]: { value: sentAt },
+      [QB_AWARD.insurance.awardedAmount]: { value: m.amount },
+    };
+    if (m.status === "") stamp[FONDO_FIELDS.status] = { value: FONDO_STATUS.awaiting };
+    try {
+      await updateSubmittal(stamp);
+    } catch (e) {
+      stampError = `The email went out, but Quickbase did not record it on every case: ${
+        e instanceof Error ? e.message : "update failed"
+      }`;
+    }
+    if (m.created) {
+      await recordFondo("case.opened", m.recordId, actor, `Case opened from the ${row.subcontractor} combined row.`);
+    }
+    await recordFondo(
+      "link.sent",
+      m.recordId,
+      actor,
+      `One link for ${live.length} cases (${shape.cases.join(", ")}), one poliza for ${money(total)}, emailed to ${to}. Upload goes to ${lead.caseNumber}.`,
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    recordId: lead.recordId,
+    created: live.some((m) => m.created),
+    to,
+    sentAt,
+    stampError,
+    cases: shape.cases,
+    total,
+  });
 }

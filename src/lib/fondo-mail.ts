@@ -29,6 +29,23 @@ export interface FondoMailCase {
   subcontractor: string;
   awardedAmount: number;
   formUrl: string;
+  /**
+   * Every case one poliza has to cover, when it covers several (pooled
+   * subcontractors). awardedAmount is then the total.
+   */
+  cases?: string[];
+}
+
+/** "Caso X", or the list when one poliza covers several cases. */
+function caseLine(c: FondoMailCase): string {
+  return c.cases && c.cases.length > 1
+    ? `Casos (${c.cases.length}): ${c.cases.join(", ")}`
+    : `Caso ${c.caseNumber}`;
+}
+function caseRows(c: FondoMailCase): [string, string][] {
+  return c.cases && c.cases.length > 1
+    ? [["Casos", c.cases.join(", ")]]
+    : [["Caso", c.caseNumber]];
 }
 
 export interface FondoMail {
@@ -136,14 +153,14 @@ export const FORM_REQUEST_INTRO =
 /** Sent to the subcontractor shortly after the award letter. */
 export function formRequestMail(c: FondoMailCase): FondoMail {
   return {
-    subject: `Póliza del Fondo (CFSE) — Caso ${c.caseNumber}`,
+    subject: `Póliza del Fondo (CFSE) — ${caseLine(c)}`,
     text: [
       `Estimados ${c.subcontractor}:`,
       "",
       // Wording set by the user, 28 Oct 2026.
       FORM_REQUEST_INTRO,
       "",
-      `Caso ${c.caseNumber}. La póliza tiene que cubrir el monto adjudicado de ${money(c.awardedAmount)}.`,
+      `${caseLine(c)}. La póliza tiene que cubrir el monto adjudicado de ${money(c.awardedAmount)}.`,
       "",
       "Puede enviarla desde este enlace:",
       c.formUrl,
@@ -158,12 +175,12 @@ export function formRequestMail(c: FondoMailCase): FondoMail {
     html: shell({
       eyebrow: "Póliza del Fondo",
       headline: "Falta la póliza del Fondo (CFSE)",
-      subhead: `Caso ${c.caseNumber} · adjudicado a ${c.subcontractor}`,
+      subhead: `${caseLine(c)} · adjudicado a ${c.subcontractor}`,
       intro: FORM_REQUEST_INTRO,
       leadLabel: "La póliza tiene que cubrir",
       leadAmount: money(c.awardedAmount),
       rows: [
-        ["Caso", c.caseNumber],
+        ...caseRows(c),
         ["Subcontratista", c.subcontractor],
       ],
       whatToDo:
@@ -228,7 +245,7 @@ export function reviewRequestMail(
 /** Sent to the subcontractor when the reviewer sends it back. */
 export function returnedMail(c: FondoMailCase, notes: string): FondoMail {
   return {
-    subject: `Corrección necesaria — Póliza del Fondo — Caso ${c.caseNumber}`,
+    subject: `Corrección necesaria — Póliza del Fondo — ${caseLine(c)}`,
     text: [
       `Estimados ${c.subcontractor}:`,
       "",
@@ -245,7 +262,7 @@ export function returnedMail(c: FondoMailCase, notes: string): FondoMail {
     html: shell({
       eyebrow: "Póliza del Fondo",
       headline: "Hay que corregir la póliza",
-      subhead: `Caso ${c.caseNumber} · ${c.subcontractor}`,
+      subhead: `${caseLine(c)} · ${c.subcontractor}`,
       stripe: "#7a2f22",
       intro:
         "Revisamos la póliza que envió y no la podemos aceptar todavía. Esto es lo que hay que corregir:",
@@ -253,7 +270,7 @@ export function returnedMail(c: FondoMailCase, notes: string): FondoMail {
       leadAmount: notes.trim(),
       leadIsText: true,
       rows: [
-        ["Caso", c.caseNumber],
+        ...caseRows(c),
         ["Subcontratista", c.subcontractor],
         ["Monto adjudicado", money(c.awardedAmount)],
       ],
@@ -293,7 +310,7 @@ export function reminderBcc(): string[] {
 export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail {
   const last = n >= of;
   return {
-    subject: `Recordatorio ${n} de ${of} — Póliza del Fondo (CFSE) — Caso ${c.caseNumber}`,
+    subject: `Recordatorio ${n} de ${of} — Póliza del Fondo (CFSE) — ${caseLine(c)}`,
     text: [
       `Estimados ${c.subcontractor}:`,
       "",
@@ -314,7 +331,7 @@ export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail
     html: shell({
       eyebrow: `Recordatorio ${n} de ${of}`,
       headline: "Seguimos esperando la póliza del Fondo",
-      subhead: `Caso ${c.caseNumber} · ${c.subcontractor}`,
+      subhead: `${caseLine(c)} · ${c.subcontractor}`,
       stripe: "#9a6b12",
       intro: `Todavía no hemos recibido la póliza del Fondo del Seguro del Estado (CFSE) para este caso.${
         last ? " Este es el último recordatorio automático." : ""
@@ -322,7 +339,7 @@ export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail
       leadLabel: "La póliza tiene que cubrir",
       leadAmount: money(c.awardedAmount),
       rows: [
-        ["Caso", c.caseNumber],
+        ...caseRows(c),
         ["Subcontratista", c.subcontractor],
       ],
       whatToDo:
@@ -338,7 +355,7 @@ export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail
 /** Sent to the subcontractor once it is accepted. */
 export function approvedMail(c: FondoMailCase): FondoMail {
   return {
-    subject: `Póliza recibida — Caso ${c.caseNumber}`,
+    subject: `Póliza recibida — ${caseLine(c)}`,
     text: [
       `Estimados ${c.subcontractor}:`,
       "",
@@ -350,14 +367,14 @@ export function approvedMail(c: FondoMailCase): FondoMail {
     html: shell({
       eyebrow: "Póliza del Fondo",
       headline: "Póliza aceptada",
-      subhead: `Caso ${c.caseNumber} · ${c.subcontractor}`,
+      subhead: `${caseLine(c)} · ${c.subcontractor}`,
       stripe: "#1d5c3f",
       intro:
         "Recibimos y aceptamos la póliza del Fondo (CFSE) para este caso. No hace falta enviar nada más.",
       leadLabel: "Monto adjudicado",
       leadAmount: money(c.awardedAmount),
       rows: [
-        ["Caso", c.caseNumber],
+        ...caseRows(c),
         ["Subcontratista", c.subcontractor],
       ],
       footnote:

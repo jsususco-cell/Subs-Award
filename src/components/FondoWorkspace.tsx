@@ -44,7 +44,8 @@ export default function FondoWorkspace({
   sendItems: SendItem[];
   approvedItems: ApprovedItem[];
 }) {
-  const [tab, setTab] = useState<Tab>("review");
+  // Send link first, then To review, then Approved (user order, 28 Oct 2026).
+  const [tab, setTab] = useState<Tab>("send");
   const remembered = useSyncExternalStore(subscribeToKey, storedKey, emptyKey);
   const [typedKey, setTypedKey] = useState<string | null>(null);
   const sendKey = typedKey ?? remembered;
@@ -91,11 +92,11 @@ export default function FondoWorkspace({
       </div>
 
       <div role="tablist" className="mt-6 mb-4 flex flex-wrap gap-2 border-b border-navy-100 pb-3">
-        <TabButton active={tab === "review"} onClick={() => setTab("review")}>
-          To review <Count n={reviewItems.length} />
-        </TabButton>
         <TabButton active={tab === "send"} onClick={() => setTab("send")}>
           Send link <Count n={sendItems.length} />
+        </TabButton>
+        <TabButton active={tab === "review"} onClick={() => setTab("review")}>
+          To review <Count n={reviewItems.length} />
         </TabButton>
         <TabButton active={tab === "approved"} onClick={() => setTab("approved")}>
           Approved <Count n={approvedItems.length} />
@@ -145,7 +146,11 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
     const to = (overrides[item.key] ?? "").trim();
     const where = to || item.email;
     const ask =
-      item.kind === "new"
+      item.kind === "pool"
+        ? `${item.subcontractor}: ${item.members?.length ?? 0} cases (${item.jobName}).
+
+This opens any missing Fondo cases and sends ONE email to ${where} asking for one poliza covering the total of ${money(item.awardedAmount)}. Approving it records that poliza on every case, each with its share.`
+        : item.kind === "new"
         ? `${item.caseNumber} (${item.subcontractor}) has no Fondo case yet.
 
 This opens the case in Quickbase (required ${money(item.awardedAmount)}) and emails the form link to ${where}.`
@@ -166,7 +171,11 @@ Email ${where} the form link to send one that covers it?`
           ...(sendKey ? { "x-send-key": sendKey } : {}),
         },
         body: JSON.stringify({
-          ...(item.kind === "case" ? { recordId: item.recordId } : { poRecordId: item.poRecordId }),
+          ...(item.kind === "pool"
+            ? { pool: item.pool }
+            : item.kind === "case"
+              ? { recordId: item.recordId }
+              : { poRecordId: item.poRecordId }),
           ...(to ? { to } : {}),
         }),
       });
@@ -331,6 +340,9 @@ Email ${where} the form link to send one that covers it?`
                     <div className="font-semibold whitespace-nowrap text-navy-800">
                       {item.caseNumber || "—"}
                     </div>
+                    {item.kind === "pool" && (
+                      <div className="text-xs text-navy-600/70">{item.jobName}</div>
+                    )}
                     <HistoryButton recordId={sent[item.key]?.recordId || item.recordId} caseNumber={item.caseNumber} />
                   </td>
                   <td className="px-3 py-3 text-navy-800">{item.subcontractor || "—"}</td>
@@ -361,7 +373,10 @@ Email ${where} the form link to send one that covers it?`
               <div className="min-w-0">
                 <div className="font-semibold whitespace-nowrap text-navy-800">{item.caseNumber || "—"}</div>
                 <div className="text-xs text-navy-600/80">{item.subcontractor || "—"}</div>
-                <HistoryButton recordId={sent[item.key]?.recordId || item.recordId} caseNumber={item.caseNumber} />
+                {item.kind === "pool" && (
+                      <div className="text-xs text-navy-600/70">{item.jobName}</div>
+                    )}
+                    <HistoryButton recordId={sent[item.key]?.recordId || item.recordId} caseNumber={item.caseNumber} />
               </div>
               <StatePill item={item} />
             </div>
@@ -402,6 +417,9 @@ function StatePill({ item }: { item: SendItem }) {
       {text}
     </span>
   );
+  if (item.kind === "pool") {
+    return pill(`${item.members?.length ?? 0} cases combined`, "bg-navy-50 text-navy-700");
+  }
   if (item.kind === "new") return pill("No case yet", "bg-brand-red-50 text-brand-red-dark");
   if (item.kind === "short") return pill(`Short ${money(item.gap)}`, "bg-amber-50 text-amber-800");
   if (item.status === FONDO_STATUS.returned) {

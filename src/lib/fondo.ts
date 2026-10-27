@@ -298,6 +298,39 @@ export function fondoHiddenSub(subName: string): boolean {
   return HIDDEN_SUBS.some((x) => n.startsWith(x));
 }
 
+/**
+ * Subcontractors whose open awards are chased as ONE: a single Send link row
+ * with the summed amount, one email, one poliza for the total, and approving
+ * it records that poliza on every case with that case's share. User decision,
+ * 28 Oct 2026: Civil Consulting Engineers LLC.
+ */
+const POOLED_SUBS: { key: string; label: string }[] = [
+  { key: "civilconsultingengineers", label: "Civil Consulting Engineers LLC" },
+];
+/** The pool a subcontractor belongs to, or "" when it is chased case by case. */
+export function fondoPoolOf(subName: string): string {
+  const n = normName(subName);
+  return POOLED_SUBS.find((p) => n.startsWith(p.key))?.key ?? "";
+}
+export function fondoPoolLabel(key: string): string {
+  return POOLED_SUBS.find((p) => p.key === key)?.label ?? key;
+}
+
+/**
+ * Split one poliza amount across cases in proportion to what each needs, to
+ * the cent, with any rounding left on the last case so the shares add up
+ * exactly. Equal split when nothing has a weight.
+ */
+export function splitByShare(total: number, weights: number[]): number[] {
+  if (!weights.length) return [];
+  const sum = weights.reduce((a, b) => a + Math.max(0, b), 0);
+  const raw = weights.map((w) => (sum > 0 ? (total * Math.max(0, w)) / sum : total / weights.length));
+  const out = raw.map((x) => Math.round(x * 100) / 100);
+  const drift = Math.round((total - out.reduce((a, b) => a + b, 0)) * 100) / 100;
+  out[out.length - 1] = Math.round((out[out.length - 1] + drift) * 100) / 100;
+  return out;
+}
+
 /** Does this PO count as an open award? Every input is what the PO and its job say. */
 export function isOpenAward(po: {
   region: string;

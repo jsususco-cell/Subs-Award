@@ -16,6 +16,8 @@ import {
   fondoGap,
   fondoNoEmailReason,
   fondoHiddenSub,
+  fondoPoolOf,
+  splitByShare,
   reminderDue,
   REMINDER_MAX,
   rejectReturn,
@@ -385,4 +387,19 @@ test("Mohr is left out of Fondo chasing entirely", () => {
   assert.equal(fondoHiddenSub("Mohr Construction Services"), true);
   assert.equal(fondoHiddenSub("MOHR CONSTRUCTION SERVICES, LLC"), true);
   assert.equal(fondoHiddenSub("FSD CONTRACTORS INC"), false);
+});
+
+test("Civil Consulting Engineers is chased as one pool", () => {
+  assert.equal(fondoPoolOf("CIVIL CONSULTING ENGINEERS LLC"), "civilconsultingengineers");
+  assert.equal(fondoPoolOf("Civil Consulting Engineers, LLC"), "civilconsultingengineers");
+  assert.equal(fondoPoolOf("FSD CONTRACTORS INC"), "");
+});
+
+test("a pooled poliza is split by share, to the cent, adding up exactly", () => {
+  assert.deepEqual(splitByShare(1040, [520, 520]), [520, 520]);
+  assert.deepEqual(splitByShare(1000, [1, 1, 1]), [333.33, 333.33, 333.34]);
+  assert.deepEqual(splitByShare(500, [300, 700]), [150, 350]);
+  assert.deepEqual(splitByShare(90, [0, 0]), [45, 45]);
+  const parts = splitByShare(1234.57, [100, 250.5, 3]);
+  assert.equal(Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100, 1234.57);
 });

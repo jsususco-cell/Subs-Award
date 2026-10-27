@@ -14,6 +14,8 @@ import {
   normName,
   fondoNoEmailReason,
   fondoHiddenSub,
+  fondoPoolLabel,
+  fondoPoolOf,
   reminderDue,
 } from "./fondo";
 
@@ -111,18 +113,63 @@ export async function caseForVendor(
 
   const fileName = currentFile(val(r, FONDO_FIELDS.submittedPoliza)).name;
 
+  // A pooled subcontractor uploads one poliza for every case in the group:
+  // show them the total and every case it covers.
+  const subName = str(val(r, ins.subcontractorName)).trim() || vendor.company;
+  const pool = await poolCases(vendor.recordId, vendor.company || subName);
+  const pooled = pool.length > 1 && pool.some((p) => p.recordId === recordId);
+
   return {
     recordId: num(val(r, ins.recordId)),
-    caseNumber: str(val(r, ins.caseNumber)).trim(),
+    caseNumber: pooled ? pool.map((p) => p.caseNumber).join(", ") : str(val(r, ins.caseNumber)).trim(),
     jobName: str(val(r, 23)).trim(),
-    subcontractor: str(val(r, ins.subcontractorName)).trim() || vendor.company,
-    awardedAmount: num(val(r, ins.awardedAmount)),
+    subcontractor: subName,
+    awardedAmount: pooled
+      ? Math.round(pool.reduce((t, p) => t + p.awardedAmount, 0) * 100) / 100
+      : num(val(r, ins.awardedAmount)),
     status: (str(val(r, FONDO_FIELDS.status)) as FondoStatus) || FONDO_STATUS.awaiting,
     reviewNotes: str(val(r, FONDO_FIELDS.reviewNotes)),
     submittedAmount: num(val(r, FONDO_FIELDS.submittedAmount)),
     submittedPolicyNumber: str(val(r, FONDO_FIELDS.submittedPolicyNumber)),
     submittedFileName: fileName,
   };
+}
+
+/** A case in a pooled subcontractor's group. */
+export interface PoolCase {
+  recordId: number;
+  caseNumber: string;
+  awardedAmount: number;
+  status: FondoStatus | "";
+}
+
+/**
+ * The cases one pooled poliza covers: this vendor's cases still waiting on a
+ * poliza or with one in review, oldest first. Empty when the vendor is not in
+ * a pool (fondoPoolOf).
+ */
+export async function poolCases(vendorRecordId: number, subName: string): Promise<PoolCase[]> {
+  if (!vendorRecordId || !fondoPoolOf(subName)) return [];
+  const ins = QB_AWARD.insurance;
+  const f = FONDO_FIELDS;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [ins.recordId, ins.caseNumber, ins.awardedAmount, f.status],
+    where:
+      `{${ins.relatedSub}.EX.${vendorRecordId}}AND(` +
+      [FONDO_STATUS.awaiting, FONDO_STATUS.returned, FONDO_STATUS.submitted]
+        .map((st) => `{${f.status}.EX.'${st}'}`)
+        .join("OR") +
+      ")",
+  });
+  return rows
+    .map((r) => ({
+      recordId: num(val(r, ins.recordId)),
+      caseNumber: str(val(r, ins.caseNumber)).trim(),
+      awardedAmount: num(val(r, ins.awardedAmount)),
+      status: str(val(r, f.status)) as FondoStatus | "",
+    }))
+    .sort((a, b) => a.recordId - b.recordId);
 }
 
 /** Apply a record patch to the submittal table. */
@@ -223,6 +270,10 @@ export async function pendingNotices(limit = 25): Promise<{
       unreachable.push({ recordId, caseNumber, reason: "excluded from Fondo emails" });
       continue;
     }
+    if (fondoPoolOf(str(val(v, VENDOR_COMPANY)) || str(val(r, ins.subcontractorName)))) {
+      unreachable.push({ recordId, caseNumber, reason: "pooled: send from the combined row on the Fondo page" });
+      continue;
+    }
     if (!accessKey) {
       unreachable.push({ recordId, caseNumber, reason: "the subcontractor has no access key" });
       continue;
@@ -274,6 +325,7 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
       ins.subcontractorName,
       ins.awardedAmount,
       ins.submittedBy,
+      ins.relatedSub,
       FONDO_FIELDS.submittedAmount,
       FONDO_FIELDS.submittedPolicyNumber,
       FONDO_FIELDS.submittedAt,
@@ -282,6 +334,14 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
     where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.submitted}'}`,
   });
 
+  // Pooled subcontractors: the upload covers every case in the group.
+  const pooled = new Map<number, PoolCase[]>();
+  for (const r of rows) {
+    const name = str(val(r, ins.subcontractorName));
+    const vid = num(val(r, ins.relatedSub));
+    if (fondoPoolOf(name) && !pooled.has(vid)) pooled.set(vid, await poolCases(vid, name));
+  }
+
   return rows
     .map((r) => {
       // The current version, not the first: see currentFile above.
@@ -289,12 +349,16 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
         val(r, FONDO_FIELDS.submittedPoliza),
         QB_CONFIG.realm,
       );
+      const pool = pooled.get(num(val(r, ins.relatedSub))) ?? [];
+      const inPool = pool.length > 1;
       return {
         recordId: num(val(r, ins.recordId)),
-        caseNumber: str(val(r, ins.caseNumber)).trim(),
+        caseNumber: inPool ? pool.map((p) => p.caseNumber).join(", ") : str(val(r, ins.caseNumber)).trim(),
         jobName: str(val(r, 23)).trim(),
         subcontractor: str(val(r, ins.subcontractorName)).trim(),
-        awardedAmount: num(val(r, ins.awardedAmount)),
+        awardedAmount: inPool
+          ? Math.round(pool.reduce((t, p) => t + p.awardedAmount, 0) * 100) / 100
+          : num(val(r, ins.awardedAmount)),
         submittedAmount: num(val(r, FONDO_FIELDS.submittedAmount)),
         submittedPolicyNumber: str(val(r, FONDO_FIELDS.submittedPolicyNumber)),
         submittedBy: str(val(r, ins.submittedBy)).trim(),
@@ -319,8 +383,12 @@ export interface SendItem {
    * case: still owed a poliza (awaiting, returned, never had one).
    * new: an open award with no Fondo case at all.
    * short: a poliza is on file but is less than the award needs.
+   * pool: every row of a pooled subcontractor (see fondoPoolOf), summed into one.
    */
-  kind: "case" | "new" | "short";
+  kind: "case" | "new" | "short" | "pool";
+  /** pool rows only: the pool's key and the rows it sums. */
+  pool?: string;
+  members?: PoolMember[];
   caseNumber: string;
   jobName: string;
   subcontractor: string;
@@ -337,6 +405,70 @@ export interface SendItem {
   email: string;
   /** Why it cannot be sent, when it cannot. Short: it sits in a table cell. */
   blocked: string;
+}
+
+/** One case or open award inside a pooled Send link row. */
+export interface PoolMember {
+  key: string;
+  recordId: number;
+  poRecordId: number;
+  poNumber: string;
+  caseNumber: string;
+  amount: number;
+  kind: "case" | "new" | "short";
+}
+
+/**
+ * Collapse every row of a pooled subcontractor into one: the amounts summed,
+ * the cases listed, the newest send and the most reminders carried.
+ */
+function collapsePools(items: SendItem[]): SendItem[] {
+  const pools = new Map<string, SendItem[]>();
+  const rest: SendItem[] = [];
+  for (const i of items) {
+    const key = fondoPoolOf(i.subcontractor);
+    if (key) pools.set(key, [...(pools.get(key) ?? []), i]);
+    else rest.push(i);
+  }
+  for (const [key, rows] of pools) {
+    const sum = (f: (i: SendItem) => number) =>
+      Math.round(rows.reduce((t, i) => t + f(i), 0) * 100) / 100;
+    const sent = rows.map((r) => r.formSentAt).filter(Boolean).sort();
+    rest.push({
+      key: `pool:${key}`,
+      recordId: 0,
+      poRecordId: 0,
+      poNumber: "",
+      kind: "pool",
+      pool: key,
+      members: rows.map((r) => ({
+        key: r.key,
+        recordId: r.recordId,
+        poRecordId: r.poRecordId,
+        poNumber: r.poNumber,
+        caseNumber: r.caseNumber,
+        amount: r.awardedAmount,
+        kind: r.kind as PoolMember["kind"],
+      })),
+      caseNumber: `${rows.length} case${rows.length === 1 ? "" : "s"}`,
+      jobName: rows.map((r) => r.caseNumber).join(", "),
+      subcontractor: fondoPoolLabel(key),
+      awardedAmount: sum((i) => i.awardedAmount),
+      onFile: sum((i) => i.onFile),
+      gap: sum((i) => i.gap),
+      status: rows.some((r) => r.status === FONDO_STATUS.returned)
+        ? FONDO_STATUS.returned
+        : rows.some((r) => r.status === FONDO_STATUS.awaiting)
+          ? FONDO_STATUS.awaiting
+          : "",
+      formSentAt: sent.at(-1) ?? "",
+      reminderCount: Math.max(...rows.map((r) => r.reminderCount)),
+      reviewNotes: rows.find((r) => r.reviewNotes)?.reviewNotes ?? "",
+      email: rows.find((r) => r.email)?.email ?? "",
+      blocked: rows.every((r) => r.blocked) ? rows[0].blocked : "",
+    });
+  }
+  return rest;
 }
 
 /** An open award, read the way the Fondo Coverage page (code page 206) reads it. */
@@ -614,9 +746,9 @@ export async function sendQueue(): Promise<SendItem[]> {
     items.set(key, fromCase(newest, "short", a));
   }
 
-  return [...items.values()]
-    .filter((i) => !fondoHiddenSub(i.subcontractor))
-    .sort((a, b) => a.caseNumber.localeCompare(b.caseNumber));
+  return collapsePools([...items.values()].filter((i) => !fondoHiddenSub(i.subcontractor))).sort(
+    (a, b) => a.caseNumber.localeCompare(b.caseNumber),
+  );
 }
 
 /** Open a Fondo case, the same record an award made in this app creates. */
@@ -749,6 +881,8 @@ export interface DueReminder {
   accessKey: string;
   /** Why it cannot go, when it cannot. */
   blocked: string;
+  /** Pooled subcontractor: every case this one reminder covers (lead first). */
+  members?: { recordId: number; caseNumber: string; amount: number }[];
 }
 
 /**
@@ -786,6 +920,7 @@ export async function dueReminders(now = new Date()): Promise<DueReminder[]> {
     }),
   );
   const out: DueReminder[] = [];
+  const pools = new Map<string, DueReminder>();
   for (const r of due) {
     const v = await vendorById(num(val(r, ins.relatedSub)));
     const name = str(val(r, ins.subcontractorName)).trim() || v?.company || "";
@@ -804,6 +939,29 @@ export async function dueReminders(now = new Date()): Promise<DueReminder[]> {
           : fondoNoEmailReason(v.company || name) ||
           (!v.accessKey ? "Vendor has no access key" : !v.email ? "No email on file" : ""),
     });
+    // A pooled subcontractor gets ONE reminder for the whole group.
+    const item = out[out.length - 1];
+    const poolKey = fondoPoolOf(v?.company || name);
+    if (poolKey) {
+      out.pop();
+      const k = `${poolKey}|${num(val(r, ins.relatedSub))}`;
+      const member = { recordId: item.recordId, caseNumber: item.caseNumber, amount: item.awardedAmount };
+      const held = pools.get(k);
+      if (!held) {
+        pools.set(k, { ...item, subcontractor: fondoPoolLabel(poolKey), members: [member] });
+      } else {
+        held.members!.push(member);
+        held.n = Math.max(held.n, item.n);
+        if (item.recordId < held.recordId) {
+          Object.assign(held, { recordId: item.recordId, caseNumber: item.caseNumber });
+        }
+      }
+    }
+  }
+  for (const p of pools.values()) {
+    p.members!.sort((a, b) => a.recordId - b.recordId);
+    p.awardedAmount = Math.round(p.members!.reduce((t, m) => t + m.amount, 0) * 100) / 100;
+    out.push(p);
   }
   return out;
 }

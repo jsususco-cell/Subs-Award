@@ -3,9 +3,10 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { money } from "@/lib/format";
 import { FONDO_STATUS } from "@/lib/fondo";
-import type { ReviewItem, SendItem } from "@/lib/fondo-server";
+import type { ApprovedItem, ReviewItem, SendItem } from "@/lib/fondo-server";
 import { rememberKey, storedKey, subscribeToKey } from "@/lib/send-key";
 import FondoReview from "./FondoReview";
+import FondoApproved from "./FondoApproved";
 
 /**
  * The Fondo page: the review queue, plus a way to send the form link by hand.
@@ -23,16 +24,18 @@ import FondoReview from "./FondoReview";
  */
 const emptyKey = () => "";
 
-type Tab = "review" | "send";
+type Tab = "review" | "send" | "approved";
 type Filter = "all" | "new" | "short" | "awaiting" | "returned" | "never";
 type Sent = { to: string; sentAt: string; stampError: string | null; created: boolean };
 
 export default function FondoWorkspace({
   reviewItems,
   sendItems,
+  approvedItems,
 }: {
   reviewItems: ReviewItem[];
   sendItems: SendItem[];
+  approvedItems: ApprovedItem[];
 }) {
   const [tab, setTab] = useState<Tab>("review");
   const remembered = useSyncExternalStore(subscribeToKey, storedKey, emptyKey);
@@ -87,14 +90,19 @@ export default function FondoWorkspace({
         <TabButton active={tab === "send"} onClick={() => setTab("send")}>
           Send link <Count n={sendItems.length} />
         </TabButton>
+        <TabButton active={tab === "approved"} onClick={() => setTab("approved")}>
+          Approved <Count n={approvedItems.length} />
+        </TabButton>
       </div>
 
       {tab === "review" ? (
         <div>
           <FondoReview items={reviewItems} sendKey={sendKey} />
         </div>
-      ) : (
+      ) : tab === "send" ? (
         <SendLinks items={sendItems} sendKey={sendKey} />
+      ) : (
+        <FondoApproved items={approvedItems} sendKey={sendKey} />
       )}
     </div>
   );

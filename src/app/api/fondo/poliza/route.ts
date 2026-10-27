@@ -38,12 +38,15 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: "Not configured." }, { status: 503 });
   }
 
-  const recordId = Number(new URL(request.url).searchParams.get("recordId")) || 0;
+  const params = new URL(request.url).searchParams;
+  const recordId = Number(params.get("recordId")) || 0;
+  // ?doc=record reads the approved poliza (14) instead of the staged upload (40).
+  const which = params.get("doc") === "record" ? "record" : "staged";
   if (!recordId) {
     return Response.json({ ok: false, error: "No case given." }, { status: 400 });
   }
 
-  const file = await polizaFile(recordId);
+  const file = await polizaFile(recordId, which);
   if (!file) {
     return Response.json(
       { ok: false, error: "There is no document on that case." },

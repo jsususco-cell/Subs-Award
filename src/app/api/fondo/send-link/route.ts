@@ -224,9 +224,8 @@ export async function POST(request: Request) {
     [QB_AWARD.insurance.recordId]: { value: recordId },
     [FONDO_FIELDS.formSentAt]: { value: sentAt },
   };
-  // Once asked, the case is awaiting the subcontractor: a migrated case had no
-  // status, and an approved-but-short one has to reopen or the form refuses it.
-  if (found.status === "" || found.status === FONDO_STATUS.approved) {
+  // Once asked, the case is awaiting the subcontractor: a migrated case had no status.
+  if (found.status === "") {
     stamp[FONDO_FIELDS.status] = { value: FONDO_STATUS.awaiting };
   }
   // Compare future uploads against what the award needs today.

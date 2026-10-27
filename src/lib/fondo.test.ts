@@ -312,8 +312,8 @@ test("a link can be sent by hand only while the case is open", () => {
   assert.match(rejectManualSend("", true) ?? "", /already has a poliza/);
 });
 
-test("a short poliza can be chased even when approved or migrated", () => {
-  assert.equal(rejectManualSend(FONDO_STATUS.approved, true, true), null);
+test("a short migrated poliza can be chased; an approved one never is", () => {
+  assert.match(rejectManualSend(FONDO_STATUS.approved, true, true) ?? "", /already approved/);
   assert.equal(rejectManualSend("", true, true), null);
   // Never while the subcontractor's upload is waiting for a reviewer.
   assert.match(rejectManualSend(FONDO_STATUS.submitted, true, true) ?? "", /waiting for review/);

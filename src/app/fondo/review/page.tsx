@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import FondoWorkspace from "@/components/FondoWorkspace";
 import { fondoConfigured, missingFondoFields } from "@/lib/fondo";
-import { reviewQueue, sendQueue } from "@/lib/fondo-server";
+import { approvedQueue, reviewQueue, sendQueue } from "@/lib/fondo-server";
 import { requireSession } from "@/lib/auth/current-user";
 import { AccessUnavailableError, regionAccess } from "@/lib/auth/access";
 import { allows } from "@/lib/auth/roster";
@@ -66,6 +66,16 @@ export default async function ReviewPage() {
     );
   }
 
-  const [reviewItems, sendItems] = await Promise.all([reviewQueue(), sendQueue()]);
-  return <FondoWorkspace reviewItems={reviewItems} sendItems={sendItems} />;
+  const [reviewItems, sendItems, approvedItems] = await Promise.all([
+    reviewQueue(),
+    sendQueue(),
+    approvedQueue(),
+  ]);
+  return (
+    <FondoWorkspace
+      reviewItems={reviewItems}
+      sendItems={sendItems}
+      approvedItems={approvedItems}
+    />
+  );
 }

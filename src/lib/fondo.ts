@@ -230,16 +230,18 @@ export function rejectReturn(notes: string): string | null {
 export function rejectManualSend(
   status: FondoStatus | "",
   hasPolizaOnRecord: boolean,
-  /** The poliza on file is less than the open award needs: ask for a bigger one. */
+  /** An older poliza on file is less than the open award needs: ask for a bigger one. */
   short = false,
 ): string | null {
   if (status === FONDO_STATUS.submitted) {
     return "The subcontractor already sent it. It is waiting for review, not for them.";
   }
-  if (short) return null;
+  // Approved is final: it lives in the Approved tab and is never chased from
+  // Send link, short or not (user decision, 27 Oct 2026).
   if (status === FONDO_STATUS.approved) {
     return "This poliza is already approved. There is nothing to ask for.";
   }
+  if (short) return null;
   if (status === "" && hasPolizaOnRecord) {
     return "This case already has a poliza on record.";
   }

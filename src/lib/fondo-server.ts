@@ -599,6 +599,7 @@ export async function sendQueue(): Promise<SendItem[]> {
     if (a.gap <= 0) continue;
     const status = str(val(newest, FONDO_FIELDS.status)) as FondoStatus | "";
     if (status === FONDO_STATUS.submitted) continue; // the review queue has it
+    if (status === FONDO_STATUS.approved) continue; // the Approved tab has it
     items.set(key, fromCase(newest, "short", a));
   }
 
@@ -647,6 +648,80 @@ export async function createSubmittal(award: OpenAward, openedBy: string): Promi
   const id = body.metadata?.createdRecordIds?.[0];
   if (!id) throw new Error("Quickbase did not return the new case's id.");
   return id;
+}
+
+/** One row of the Approved tab. */
+export interface ApprovedItem {
+  recordId: number;
+  caseNumber: string;
+  jobName: string;
+  subcontractor: string;
+  awardedAmount: number;
+  insuranceAmount: number;
+  /** Quickbase's own Coverage Status formula (21): COVERED, SHORT, AMOUNT NOT RECORDED... */
+  coverage: string;
+  /** true: approved through the review queue. false: on file from before it existed. */
+  approvedHere: boolean;
+  reviewedBy: string;
+  reviewedAt: string;
+  dateSubmitted: string;
+  source: string;
+  polizaName: string;
+}
+
+/**
+ * Polizas that count: approved through the review queue, plus the ones that
+ * were already on file before the queue existed (no status, document on the
+ * record). Those older ones were never reviewed here and are marked so.
+ */
+export async function approvedQueue(): Promise<ApprovedItem[]> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [
+      ins.recordId,
+      ins.caseNumber,
+      23,
+      ins.subcontractorName,
+      ins.awardedAmount,
+      ins.insuranceAmount,
+      ins.poliza,
+      ins.coverageStatus,
+      ins.dateSubmitted,
+      ins.source,
+      FONDO_FIELDS.status,
+      FONDO_FIELDS.reviewedBy,
+      FONDO_FIELDS.reviewedAt,
+    ],
+    where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.approved}'}OR{${FONDO_FIELDS.status}.EX.''}`,
+  });
+  return (
+    rows
+      .map((r) => ({
+        recordId: num(val(r, ins.recordId)),
+        caseNumber: str(val(r, ins.caseNumber)).trim(),
+        jobName: str(val(r, 23)).trim(),
+        subcontractor: str(val(r, ins.subcontractorName)).trim(),
+        awardedAmount: num(val(r, ins.awardedAmount)),
+        insuranceAmount: num(val(r, ins.insuranceAmount)),
+        coverage: str(val(r, ins.coverageStatus)).trim(),
+        approvedHere: str(val(r, FONDO_FIELDS.status)) === FONDO_STATUS.approved,
+        reviewedBy: str(val(r, FONDO_FIELDS.reviewedBy)).trim(),
+        reviewedAt: str(val(r, FONDO_FIELDS.reviewedAt)),
+        dateSubmitted: str(val(r, ins.dateSubmitted)),
+        source: str(val(r, ins.source)).trim(),
+        polizaName: currentFile(val(r, ins.poliza)).name,
+      }))
+      // A blank status with no document is still owed one: Send link has it.
+      .filter((i) => i.approvedHere || i.polizaName)
+      // Approved here first, newest decision first, then by case.
+      .sort(
+        (a, b) =>
+          Number(b.approvedHere) - Number(a.approvedHere) ||
+          b.reviewedAt.localeCompare(a.reviewedAt) ||
+          a.caseNumber.localeCompare(b.caseNumber),
+      )
+  );
 }
 
 /** What a manual send needs for one case, re-read at send time. */
@@ -754,19 +829,24 @@ export async function vendorById(
  * base64-encoded to a token holder, so the server reads it and hands it on.
  * The token stays here; the browser only ever sees the document.
  */
-export async function polizaFile(recordId: number): Promise<{
+export async function polizaFile(
+  recordId: number,
+  /** staged: what the sub sent (40), for review. record: the approved poliza (14). */
+  which: "staged" | "record" = "staged",
+): Promise<{
   body: Buffer;
   contentType: string;
   fileName: string;
 } | null> {
   if (!fondoConfigured()) return null;
+  const field = which === "record" ? QB_AWARD.insurance.poliza : FONDO_FIELDS.submittedPoliza;
 
   const rows = await queryAll({
     from: QB_AWARD.tables.insurance,
-    select: [QB_AWARD.insurance.recordId, FONDO_FIELDS.submittedPoliza],
+    select: [QB_AWARD.insurance.recordId, field],
     where: `{${QB_AWARD.insurance.recordId}.EX.${recordId}}`,
   });
-  const raw = rows[0] ? val(rows[0], FONDO_FIELDS.submittedPoliza) : null;
+  const raw = rows[0] ? val(rows[0], field) : null;
   if (!raw || typeof raw !== "object") return null;
 
   const url = String((raw as { url?: string }).url ?? "");

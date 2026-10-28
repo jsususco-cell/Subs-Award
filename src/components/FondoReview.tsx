@@ -185,6 +185,7 @@ export default function FondoReview({
             </header>
 
             <dl className="divide-y divide-navy-50 text-sm">
+              <Row k="PO #" v={item.poNumber || "—"} />
               <Row k="Awarded" v={item.awardedAmount > 0 ? money(item.awardedAmount) : "not recorded"} />
               <Row k="Poliza is for" v={money(item.submittedAmount)} />
               {item.submittedPolicyNumber && (

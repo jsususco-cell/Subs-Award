@@ -139,6 +139,7 @@ export async function caseForVendor(
 /** A case in a pooled subcontractor's group. */
 export interface PoolCase {
   recordId: number;
+  jobRecordId: number;
   caseNumber: string;
   awardedAmount: number;
   status: FondoStatus | "";
@@ -155,7 +156,7 @@ export async function poolCases(vendorRecordId: number, subName: string): Promis
   const f = FONDO_FIELDS;
   const rows = await queryAll({
     from: QB_AWARD.tables.insurance,
-    select: [ins.recordId, ins.caseNumber, ins.awardedAmount, f.status],
+    select: [ins.recordId, ins.relatedJob, ins.caseNumber, ins.awardedAmount, f.status],
     where:
       `{${ins.relatedSub}.EX.${vendorRecordId}}AND(` +
       [FONDO_STATUS.awaiting, FONDO_STATUS.returned, FONDO_STATUS.submitted]
@@ -166,6 +167,7 @@ export async function poolCases(vendorRecordId: number, subName: string): Promis
   return rows
     .map((r) => ({
       recordId: num(val(r, ins.recordId)),
+      jobRecordId: num(val(r, ins.relatedJob)),
       caseNumber: str(val(r, ins.caseNumber)).trim(),
       awardedAmount: num(val(r, ins.awardedAmount)),
       status: str(val(r, f.status)) as FondoStatus | "",
@@ -312,6 +314,8 @@ export interface ReviewItem {
   submittedAt: string;
   polizaUrl: string;
   polizaName: string;
+  /** The purchase order(s) behind the case; every case's, for a pooled group. */
+  poNumber: string;
 }
 
 /** Everything sitting in "submitted, pending review", oldest first. */
@@ -327,6 +331,7 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
       ins.awardedAmount,
       ins.submittedBy,
       ins.relatedSub,
+      ins.relatedJob,
       FONDO_FIELDS.submittedAmount,
       FONDO_FIELDS.submittedPolicyNumber,
       FONDO_FIELDS.submittedAt,
@@ -342,6 +347,11 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
     const vid = num(val(r, ins.relatedSub));
     if (fondoPoolOf(name) && !pooled.has(vid)) pooled.set(vid, await poolCases(vid, name));
   }
+
+  const poByPair = await poNumbersByJobSub([
+    ...rows.map((r) => ({ job: num(val(r, ins.relatedJob)), sub: num(val(r, ins.relatedSub)) })),
+    ...[...pooled.entries()].flatMap(([sub, cases]) => cases.map((c) => ({ job: c.jobRecordId, sub }))),
+  ]);
 
   return rows
     .map((r) => {
@@ -366,6 +376,15 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
         submittedAt: str(val(r, FONDO_FIELDS.submittedAt)).slice(0, 19).replace("T", " "),
         polizaUrl,
         polizaName,
+        poNumber: (inPool
+          ? [
+              ...new Set(
+                pool
+                  .map((p) => poByPair.get(`${p.jobRecordId}|${num(val(r, ins.relatedSub))}`))
+                  .filter(Boolean),
+              ),
+            ].join(", ")
+          : poByPair.get(`${num(val(r, ins.relatedJob))}|${num(val(r, ins.relatedSub))}`)) ?? "",
       };
     })
     .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
@@ -503,6 +522,40 @@ const PO = {
 const JOB = { recordId: 3, status: 35, caseId: 919 };
 /** Fee POs that need no Fondo coverage (as in scripts/backfill-encon-fondo.mjs). */
 const FEE_PO_TITLE = /xactimate|scoping|scope change serv|inspection|professional|recon|site walk|feasibility/i;
+
+/**
+ * The PO number(s) behind a case, by job + subcontractor: the award PO, else
+ * the field-work POs (not scoping/inspection fees), else whatever there is.
+ * Keyed `${job}|${sub}`; a pair with no PO is simply absent.
+ */
+async function poNumbersByJobSub(pairs: { job: number; sub: number }[]): Promise<Map<string, string>> {
+  const want = [...new Map(pairs.filter((p) => p.job && p.sub).map((p) => [`${p.job}|${p.sub}`, p])).values()];
+  const out = new Map<string, string>();
+  if (!want.length) return out;
+  const pos: QbRow[] = [];
+  for (let i = 0; i < want.length; i += 50) {
+    pos.push(
+      ...(await queryAll({
+        from: QB_AWARD.tables.pos,
+        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub],
+        where: want
+          .slice(i, i + 50)
+          .map((p) => `({${PO.job}.EX.${p.job}}AND{${PO.sub}.EX.${p.sub}})`)
+          .join("OR"),
+      })),
+    );
+  }
+  for (const p of want) {
+    const mine = pos.filter((x) => num(val(x, PO.job)) === p.job && num(val(x, PO.sub)) === p.sub);
+    const award = mine.filter((x) => AWARD_TITLE.test(str(val(x, PO.title))));
+    const field = mine.filter((x) => !FEE_PO_TITLE.test(str(val(x, PO.title))));
+    const pick = (award.length ? award : field.length ? field : mine)
+      .map((x) => str(val(x, PO.number)))
+      .filter(Boolean);
+    if (pick.length) out.set(`${p.job}|${p.sub}`, [...new Set(pick)].join(", "));
+  }
+  return out;
+}
 
 /**
  * Every open award, with the Fondo cases that already exist for it.
@@ -755,32 +808,18 @@ export async function sendQueue(): Promise<SendItem[]> {
   }
 
   // Owed cases with no open award behind them (older loads, or a PO that no
-  // longer passes the filter) still show their PO: found by job + subcontractor,
-  // preferring the award PO, else every PO that pair has.
-  const missing = [...items.values()].filter((i) => !i.poNumber && i.recordId);
+  // longer passes the filter) still show their PO, found by job + subcontractor.
+  const missing = [...items.values()]
+    .filter((i) => !i.poNumber && i.recordId)
+    .map((i) => caseBy.get(i.recordId))
+    .filter((r): r is QbRow => Boolean(r))
+    .map((r) => ({ job: num(val(r, ins.relatedJob)), sub: num(val(r, ins.relatedSub)), rid: num(val(r, ins.recordId)) }));
   if (missing.length) {
-    const pairs = missing
-      .map((i) => caseBy.get(i.recordId))
-      .filter((r): r is QbRow => Boolean(r))
-      .map((r) => ({ job: num(val(r, ins.relatedJob)), sub: num(val(r, ins.relatedSub)), rid: num(val(r, ins.recordId)) }))
-      .filter((p) => p.job && p.sub);
-    const pos = pairs.length
-      ? await queryAll({
-          from: QB_AWARD.tables.pos,
-          select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub],
-          where: pairs.map((p) => `({${PO.job}.EX.${p.job}}AND{${PO.sub}.EX.${p.sub}})`).join("OR"),
-        })
-      : [];
-    for (const p of pairs) {
-      const mine = pos.filter((x) => num(val(x, PO.job)) === p.job && num(val(x, PO.sub)) === p.sub);
-      const award = mine.filter((x) => AWARD_TITLE.test(str(val(x, PO.title))));
-      // No award PO: the field-work ones, not scoping/inspection/fee POs.
-      const field = mine.filter((x) => !FEE_PO_TITLE.test(str(val(x, PO.title))));
-      const pick = (award.length ? award : field.length ? field : mine)
-        .map((x) => str(val(x, PO.number)))
-        .filter(Boolean);
-      const item = items.get(`c${p.rid}`);
-      if (item && pick.length) item.poNumber = [...new Set(pick)].join(", ");
+    const found = await poNumbersByJobSub(missing);
+    for (const m of missing) {
+      const item = items.get(`c${m.rid}`);
+      const po = found.get(`${m.job}|${m.sub}`);
+      if (item && po) item.poNumber = po;
     }
   }
 

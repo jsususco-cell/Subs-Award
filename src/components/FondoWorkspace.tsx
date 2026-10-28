@@ -136,7 +136,7 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
       if (filter === "returned" && i.status !== FONDO_STATUS.returned) return false;
       if (filter === "never" && (i.formSentAt || sent[i.key])) return false;
       if (!q) return true;
-      return [i.caseNumber, i.subcontractor, i.jobName, i.email].some((s) =>
+      return [i.caseNumber, i.poNumber, i.subcontractor, i.jobName, i.email].some((s) =>
         s.toLowerCase().includes(q),
       );
     });
@@ -306,7 +306,7 @@ Email ${where} the form link to send one that covers it?`
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search case, sub, email"
+          placeholder="Search case, PO, sub, email"
           aria-label="Search cases"
           className="ml-auto w-full rounded-md border border-navy-200 px-2.5 py-1.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 sm:w-60"
         />
@@ -325,6 +325,7 @@ Email ${where} the form link to send one that covers it?`
             <thead>
               <tr className="border-b border-navy-100 text-left text-[11px] font-semibold tracking-wide text-navy-600 uppercase">
                 <th className="px-3 py-2.5">Case</th>
+                <th className="px-3 py-2.5">PO #</th>
                 <th className="px-3 py-2.5">Subcontractor</th>
                 <th className="px-3 py-2.5 text-right">Required</th>
                 <th className="px-3 py-2.5">State</th>
@@ -345,6 +346,7 @@ Email ${where} the form link to send one that covers it?`
                     )}
                     <HistoryButton recordId={sent[item.key]?.recordId || item.recordId} caseNumber={item.caseNumber} />
                   </td>
+                  <td className="px-3 py-3 text-xs text-navy-800">{item.poNumber || "—"}</td>
                   <td className="px-3 py-3 text-navy-800">{item.subcontractor || "—"}</td>
                   <td className="tabular px-3 py-3 text-right whitespace-nowrap text-navy-800">
                     {item.awardedAmount ? money(item.awardedAmount) : "—"}
@@ -381,6 +383,10 @@ Email ${where} the form link to send one that covers it?`
               <StatePill item={item} />
             </div>
             <dl className="mt-3 space-y-1.5 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-navy-600">PO #</dt>
+                <dd className="text-right text-navy-800">{item.poNumber || "—"}</dd>
+              </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-navy-600">Required</dt>
                 <dd className="tabular font-semibold text-navy-800">

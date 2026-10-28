@@ -17,6 +17,7 @@ import {
   fondoPoolLabel,
   fondoPoolOf,
   reminderDue,
+  AWARD_TITLE,
 } from "./fondo";
 
 /**
@@ -438,7 +439,7 @@ function collapsePools(items: SendItem[]): SendItem[] {
       key: `pool:${key}`,
       recordId: 0,
       poRecordId: 0,
-      poNumber: "",
+      poNumber: rows.map((r) => r.poNumber).filter(Boolean).join(", "),
       kind: "pool",
       pool: key,
       members: rows.map((r) => ({
@@ -500,6 +501,8 @@ const PO = {
   required: 294,
 };
 const JOB = { recordId: 3, status: 35, caseId: 919 };
+/** Fee POs that need no Fondo coverage (as in scripts/backfill-encon-fondo.mjs). */
+const FEE_PO_TITLE = /xactimate|scoping|scope change serv|inspection|professional|recon|site walk|feasibility/i;
 
 /**
  * Every open award, with the Fondo cases that already exist for it.
@@ -621,6 +624,7 @@ export async function sendQueue(): Promise<SendItem[]> {
         ins.insuranceAmount,
         ins.poliza,
         ins.relatedSub,
+        ins.relatedJob,
         FONDO_FIELDS.status,
         FONDO_FIELDS.formSentAt,
         FONDO_FIELDS.reviewNotes,
@@ -748,6 +752,36 @@ export async function sendQueue(): Promise<SendItem[]> {
     if (status === FONDO_STATUS.submitted) continue; // the review queue has it
     if (status === FONDO_STATUS.approved) continue; // the Approved tab has it
     items.set(key, fromCase(newest, "short", a));
+  }
+
+  // Owed cases with no open award behind them (older loads, or a PO that no
+  // longer passes the filter) still show their PO: found by job + subcontractor,
+  // preferring the award PO, else every PO that pair has.
+  const missing = [...items.values()].filter((i) => !i.poNumber && i.recordId);
+  if (missing.length) {
+    const pairs = missing
+      .map((i) => caseBy.get(i.recordId))
+      .filter((r): r is QbRow => Boolean(r))
+      .map((r) => ({ job: num(val(r, ins.relatedJob)), sub: num(val(r, ins.relatedSub)), rid: num(val(r, ins.recordId)) }))
+      .filter((p) => p.job && p.sub);
+    const pos = pairs.length
+      ? await queryAll({
+          from: QB_AWARD.tables.pos,
+          select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub],
+          where: pairs.map((p) => `({${PO.job}.EX.${p.job}}AND{${PO.sub}.EX.${p.sub}})`).join("OR"),
+        })
+      : [];
+    for (const p of pairs) {
+      const mine = pos.filter((x) => num(val(x, PO.job)) === p.job && num(val(x, PO.sub)) === p.sub);
+      const award = mine.filter((x) => AWARD_TITLE.test(str(val(x, PO.title))));
+      // No award PO: the field-work ones, not scoping/inspection/fee POs.
+      const field = mine.filter((x) => !FEE_PO_TITLE.test(str(val(x, PO.title))));
+      const pick = (award.length ? award : field.length ? field : mine)
+        .map((x) => str(val(x, PO.number)))
+        .filter(Boolean);
+      const item = items.get(`c${p.rid}`);
+      if (item && pick.length) item.poNumber = [...new Set(pick)].join(", ");
+    }
   }
 
   return collapsePools([...items.values()].filter((i) => !fondoHiddenSub(i.subcontractor))).sort(

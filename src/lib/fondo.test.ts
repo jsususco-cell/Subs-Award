@@ -334,8 +334,17 @@ test("open awards follow the Fondo Coverage page's rule", () => {
     caseNumber: "PR-R3-00001",
     required: 1000,
     subName: "FSD CONTRACTORS INC",
+    poStatus: "Released",
+    workStatus: "Not Started",
   };
   assert.equal(isOpenAward(base), true);
+  // Only released POs, and only these work statuses.
+  assert.equal(isOpenAward({ ...base, poStatus: "Unreleased" }), false);
+  assert.equal(isOpenAward({ ...base, poStatus: "Approved" }), false);
+  assert.equal(isOpenAward({ ...base, workStatus: "Partially Completed" }), true);
+  assert.equal(isOpenAward({ ...base, workStatus: "Work Complete" }), true);
+  assert.equal(isOpenAward({ ...base, workStatus: "Work Incomplete" }), false);
+  assert.equal(isOpenAward({ ...base, workStatus: "" }), false);
   assert.equal(isOpenAward({ ...base, jobStatus: "ON-HOLD" }), true);
   assert.equal(isOpenAward({ ...base, region: "Florida" }), false);
   assert.equal(isOpenAward({ ...base, cancelled: true }), false);

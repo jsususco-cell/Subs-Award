@@ -262,6 +262,13 @@ export function rejectManualSend(
 export const AWARD_TITLE = /^\s*(award|reconstr|relocat|relocaci|demol|repair|rehab)/i;
 const EXEMPT = ["kimberlycruz", "towerwindows", "tileinternational"];
 export const OPEN_JOB_STATUSES = ["OPEN", "ON-HOLD"];
+/**
+ * Only released POs whose work has started, finished or not started yet
+ * (user filter, 29 Oct 2026). Values as Quickbase spells them: PO Status
+ * (fid 15) and Work Status Options (fid 16). "Work Incomplete" and blank are out.
+ */
+export const FONDO_PO_STATUSES = ["Released"];
+export const FONDO_WORK_STATUSES = ["Work Complete", "Partially Completed", "Not Started"];
 
 /** Lowercase letters and digits only: how page 206 compares names. */
 export function normName(s: string): string {
@@ -340,6 +347,8 @@ export function isOpenAward(po: {
   caseNumber: string;
   required: number;
   subName: string;
+  poStatus: string;
+  workStatus: string;
 }): boolean {
   return (
     po.region === "Puerto Rico" &&
@@ -348,6 +357,8 @@ export function isOpenAward(po: {
     Boolean(po.caseNumber) &&
     OPEN_JOB_STATUSES.includes(po.jobStatus) &&
     po.required > 0 &&
+    FONDO_PO_STATUSES.includes(po.poStatus) &&
+    FONDO_WORK_STATUSES.includes(po.workStatus) &&
     !exemptFromFondo(po.subName)
   );
 }

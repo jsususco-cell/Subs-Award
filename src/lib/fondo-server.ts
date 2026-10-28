@@ -493,6 +493,8 @@ const PO = {
   number: 17,
   sub: 21,
   cancelled: 122,
+  poStatus: 15,
+  workStatus: 16,
   state: 129,
   stampedOnFile: 282,
   required: 294,
@@ -564,6 +566,8 @@ export async function openAwards(): Promise<OpenAward[]> {
         caseNumber,
         required,
         subName: name,
+        poStatus: str(val(p, PO.poStatus)).trim(),
+        workStatus: str(val(p, PO.workStatus)).trim(),
       })
     ) {
       continue;

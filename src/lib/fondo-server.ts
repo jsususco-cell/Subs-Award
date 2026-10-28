@@ -349,7 +349,11 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
   }
 
   const poByPair = await poNumbersByJobSub([
-    ...rows.map((r) => ({ job: num(val(r, ins.relatedJob)), sub: num(val(r, ins.relatedSub)) })),
+    ...rows.map((r) => ({
+      job: num(val(r, ins.relatedJob)),
+      sub: num(val(r, ins.relatedSub)),
+      name: str(val(r, ins.subcontractorName)),
+    })),
     ...[...pooled.entries()].flatMap(([sub, cases]) => cases.map((c) => ({ job: c.jobRecordId, sub }))),
   ]);
 
@@ -520,33 +524,48 @@ const PO = {
   required: 294,
 };
 const JOB = { recordId: 3, status: 35, caseId: 919 };
+/** PO "Performed By": the subcontractor's name, looked up from the vendor. */
+const PO_SUB_NAME = QB_AWARD.pos.subName;
 /** Fee POs that need no Fondo coverage (as in scripts/backfill-encon-fondo.mjs). */
 const FEE_PO_TITLE = /xactimate|scoping|scope change serv|inspection|professional|recon|site walk|feasibility/i;
 
 /**
  * The PO number(s) behind a case, by job + subcontractor: the award PO, else
  * the field-work POs (not scoping/inspection fees), else whatever there is.
- * Keyed `${job}|${sub}`; a pair with no PO is simply absent.
+ * The subcontractor is matched by vendor record, and failing that by name
+ * (some subs, ANG for one, have more than one vendor record). Keyed
+ * `${job}|${sub}`; a pair with no PO is simply absent.
  */
-async function poNumbersByJobSub(pairs: { job: number; sub: number }[]): Promise<Map<string, string>> {
-  const want = [...new Map(pairs.filter((p) => p.job && p.sub).map((p) => [`${p.job}|${p.sub}`, p])).values()];
+async function poNumbersByJobSub(
+  pairs: { job: number; sub: number; name?: string }[],
+): Promise<Map<string, string>> {
+  const want = [...new Map(pairs.filter((p) => p.job).map((p) => [`${p.job}|${p.sub}`, p])).values()];
   const out = new Map<string, string>();
   if (!want.length) return out;
+  const jobs = [...new Set(want.map((p) => p.job))];
   const pos: QbRow[] = [];
-  for (let i = 0; i < want.length; i += 50) {
+  for (let i = 0; i < jobs.length; i += 80) {
     pos.push(
       ...(await queryAll({
         from: QB_AWARD.tables.pos,
-        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub],
-        where: want
-          .slice(i, i + 50)
-          .map((p) => `({${PO.job}.EX.${p.job}}AND{${PO.sub}.EX.${p.sub}})`)
+        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub, PO_SUB_NAME],
+        where: jobs
+          .slice(i, i + 80)
+          .map((j) => `{${PO.job}.EX.${j}}`)
           .join("OR"),
       })),
     );
   }
+  const byJob = new Map<number, QbRow[]>();
+  for (const x of pos) byJob.set(num(val(x, PO.job)), [...(byJob.get(num(val(x, PO.job))) ?? []), x]);
   for (const p of want) {
-    const mine = pos.filter((x) => num(val(x, PO.job)) === p.job && num(val(x, PO.sub)) === p.sub);
+    const onJob = byJob.get(p.job) ?? [];
+    let mine = onJob.filter((x) => num(val(x, PO.sub)) === p.sub);
+    if (!mine.length && p.name) {
+      // Same subcontractor under another vendor record: match the name.
+      const n = normName(p.name).slice(0, 12);
+      mine = n ? onJob.filter((x) => normName(str(val(x, PO_SUB_NAME))).startsWith(n)) : [];
+    }
     const award = mine.filter((x) => AWARD_TITLE.test(str(val(x, PO.title))));
     const field = mine.filter((x) => !FEE_PO_TITLE.test(str(val(x, PO.title))));
     const pick = (award.length ? award : field.length ? field : mine)
@@ -813,7 +832,12 @@ export async function sendQueue(): Promise<SendItem[]> {
     .filter((i) => !i.poNumber && i.recordId)
     .map((i) => caseBy.get(i.recordId))
     .filter((r): r is QbRow => Boolean(r))
-    .map((r) => ({ job: num(val(r, ins.relatedJob)), sub: num(val(r, ins.relatedSub)), rid: num(val(r, ins.recordId)) }));
+    .map((r) => ({
+      job: num(val(r, ins.relatedJob)),
+      sub: num(val(r, ins.relatedSub)),
+      name: str(val(r, ins.subcontractorName)),
+      rid: num(val(r, ins.recordId)),
+    }));
   if (missing.length) {
     const found = await poNumbersByJobSub(missing);
     for (const m of missing) {
@@ -889,6 +913,8 @@ export interface ApprovedItem {
   dateSubmitted: string;
   source: string;
   polizaName: string;
+  /** The purchase order(s) behind the case, by job + subcontractor. */
+  poNumber: string;
 }
 
 /**
@@ -911,12 +937,20 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
       ins.coverageStatus,
       ins.dateSubmitted,
       ins.source,
+      ins.relatedJob,
+      ins.relatedSub,
       FONDO_FIELDS.status,
       FONDO_FIELDS.reviewedBy,
       FONDO_FIELDS.reviewedAt,
     ],
     where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.approved}'}OR{${FONDO_FIELDS.status}.EX.''}`,
   });
+  const pairOf = (r: QbRow) => ({
+    job: num(val(r, ins.relatedJob)),
+    sub: num(val(r, ins.relatedSub)),
+    name: str(val(r, ins.subcontractorName)),
+  });
+  const poByPair = await poNumbersByJobSub(rows.map(pairOf));
   return (
     rows
       .map((r) => ({
@@ -933,6 +967,7 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
         dateSubmitted: str(val(r, ins.dateSubmitted)),
         source: str(val(r, ins.source)).trim(),
         polizaName: currentFile(val(r, ins.poliza)).name,
+        poNumber: poByPair.get(`${pairOf(r).job}|${pairOf(r).sub}`) ?? "",
       }))
       // A blank status with no document is still owed one: Send link has it.
       .filter((i) => i.approvedHere || i.polizaName)

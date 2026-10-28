@@ -40,7 +40,9 @@ export default function FondoApproved({
       if (filter === "covered" && i.coverage !== "COVERED") return false;
       if (filter === "attention" && i.coverage === "COVERED") return false;
       if (!q) return true;
-      return [i.caseNumber, i.subcontractor, i.jobName].some((s) => s.toLowerCase().includes(q));
+      return [i.caseNumber, i.poNumber, i.subcontractor, i.jobName].some((s) =>
+        s.toLowerCase().includes(q),
+      );
     });
   }, [items, filter, query]);
 
@@ -129,7 +131,7 @@ export default function FondoApproved({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search case or sub"
+          placeholder="Search case, PO or sub"
           aria-label="Search approved polizas"
           className="ml-auto w-full rounded-md border border-navy-200 px-2.5 py-1.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 sm:w-60"
         />
@@ -150,6 +152,7 @@ export default function FondoApproved({
             <div className="grid grid-cols-2 items-center gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[1.1fr_1.6fr_1fr_1fr_1.2fr_1.6fr_auto]">
               <div className="min-w-0">
                 <div className="font-semibold whitespace-nowrap text-navy-800">{i.caseNumber || "—"}</div>
+                <div className="text-xs text-navy-600/80">PO # {i.poNumber || "—"}</div>
                 <div className="truncate text-xs text-navy-600/70 md:hidden">{i.subcontractor}</div>
                 <HistoryButton recordId={i.recordId} caseNumber={i.caseNumber} />
               </div>

@@ -314,7 +314,10 @@ export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail
     text: [
       `Estimados ${c.subcontractor}:`,
       "",
-      `Todavía no hemos recibido la póliza del Fondo del Seguro del Estado (CFSE) para el caso ${c.caseNumber}. Tiene que cubrir ${money(c.awardedAmount)}.`,
+      // Same opening as the form-link email, per the user (29 Oct 2026).
+      FORM_REQUEST_INTRO,
+      "",
+      `${caseLine(c)}. La póliza tiene que cubrir ${money(c.awardedAmount)}.`,
       "",
       "Puede enviarla desde este enlace:",
       c.formUrl,
@@ -333,7 +336,7 @@ export function reminderMail(c: FondoMailCase, n: number, of: number): FondoMail
       headline: "Seguimos esperando la póliza del Fondo",
       subhead: `${caseLine(c)} · ${c.subcontractor}`,
       stripe: "#9a6b12",
-      intro: `Todavía no hemos recibido la póliza del Fondo del Seguro del Estado (CFSE) para este caso.${
+      intro: `${FORM_REQUEST_INTRO}${
         last ? " Este es el último recordatorio automático." : ""
       }`,
       leadLabel: "La póliza tiene que cubrir",

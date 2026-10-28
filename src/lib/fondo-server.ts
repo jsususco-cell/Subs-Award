@@ -528,6 +528,8 @@ const JOB = { recordId: 3, status: 35, caseId: 919 };
 const PO_SUB_NAME = QB_AWARD.pos.subName;
 /** Fee POs that need no Fondo coverage (as in scripts/backfill-encon-fondo.mjs). */
 const FEE_PO_TITLE = /xactimate|scoping|scope change serv|inspection|professional|recon|site walk|feasibility/i;
+/** Scope changes and change orders: never "the award PO" for the PO # column. */
+const CHANGE_PO_TITLE = /scope change|change order|cambio de orden|orden de cambio/i;
 
 /**
  * The PO number(s) behind a case, by job + subcontractor: the award PO, else
@@ -566,7 +568,11 @@ async function poNumbersByJobSub(
       const n = normName(p.name).slice(0, 12);
       mine = n ? onJob.filter((x) => normName(str(val(x, PO_SUB_NAME))).startsWith(n)) : [];
     }
-    const award = mine.filter((x) => AWARD_TITLE.test(str(val(x, PO.title))));
+    // A scope change or change order is not the award, even when its title
+    // starts like one ("Demolition Scope Change"): it falls to field work.
+    const award = mine.filter(
+      (x) => AWARD_TITLE.test(str(val(x, PO.title))) && !CHANGE_PO_TITLE.test(str(val(x, PO.title))),
+    );
     const field = mine.filter((x) => !FEE_PO_TITLE.test(str(val(x, PO.title))));
     const pick = (award.length ? award : field.length ? field : mine)
       .map((x) => str(val(x, PO.number)))

@@ -316,6 +316,8 @@ export interface ReviewItem {
   polizaName: string;
   /** The purchase order(s) behind the case; every case's, for a pooled group. */
   poNumber: string;
+  /** Every PO behind the case, marked counted or not (the breakdown under PO #). */
+  poLines: PoLine[];
 }
 
 /** Everything sitting in "submitted, pending review", oldest first. */
@@ -348,7 +350,7 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
     if (fondoPoolOf(name) && !pooled.has(vid)) pooled.set(vid, await poolCases(vid, name));
   }
 
-  const poByPair = await poNumbersByJobSub([
+  const poByPair = await poLinesByJobSub([
     ...rows.map((r) => ({
       job: num(val(r, ins.relatedJob)),
       sub: num(val(r, ins.relatedSub)),
@@ -380,15 +382,16 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
         submittedAt: str(val(r, FONDO_FIELDS.submittedAt)).slice(0, 19).replace("T", " "),
         polizaUrl,
         polizaName,
-        poNumber: (inPool
-          ? [
-              ...new Set(
-                pool
-                  .map((p) => poByPair.get(`${p.jobRecordId}|${num(val(r, ins.relatedSub))}`))
-                  .filter(Boolean),
-              ),
-            ].join(", ")
-          : poByPair.get(`${num(val(r, ins.relatedJob))}|${num(val(r, ins.relatedSub))}`)) ?? "",
+        ...(() => {
+          const sub = num(val(r, ins.relatedSub));
+          const lines = inPool
+            ? pool.flatMap((p) => poByPair.get(`${p.jobRecordId}|${sub}`) ?? [])
+            : (poByPair.get(`${num(val(r, ins.relatedJob))}|${sub}`) ?? []);
+          return {
+            poLines: lines,
+            poNumber: [...new Set(lines.filter((l) => l.counted).map((l) => l.number).filter(Boolean))].join(", "),
+          };
+        })(),
       };
     })
     .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
@@ -526,6 +529,8 @@ const PO = {
 const JOB = { recordId: 3, status: 35, caseId: 919 };
 /** PO "Performed By": the subcontractor's name, looked up from the vendor. */
 const PO_SUB_NAME = QB_AWARD.pos.subName;
+/** PO "Total Builder Cost": what the purchase order is worth. */
+const PO_BUILDER_COST = 112;
 /** Fee POs that need no Fondo coverage (as in scripts/backfill-encon-fondo.mjs). */
 const FEE_PO_TITLE = /xactimate|scoping|scope change serv|inspection|professional|recon|site walk|feasibility/i;
 /** Scope changes and change orders: never "the award PO" for the PO # column. */
@@ -541,8 +546,33 @@ const CHANGE_PO_TITLE = /scope change|change order|cambio de orden|orden de camb
 async function poNumbersByJobSub(
   pairs: { job: number; sub: number; name?: string }[],
 ): Promise<Map<string, string>> {
-  const want = [...new Map(pairs.filter((p) => p.job).map((p) => [`${p.job}|${p.sub}`, p])).values()];
+  const lines = await poLinesByJobSub(pairs);
   const out = new Map<string, string>();
+  for (const [k, l] of lines) {
+    const picked = [...new Set(l.filter((x) => x.counted).map((x) => x.number).filter(Boolean))];
+    if (picked.length) out.set(k, picked.join(", "));
+  }
+  return out;
+}
+
+/** One PO behind a case, for the breakdown under PO #. */
+export interface PoLine {
+  number: string;
+  title: string;
+  status: string;
+  /** Total Builder Cost (PO field 112). */
+  amount: number;
+  /** Shown in PO # and what an award built from POs adds up. */
+  counted: boolean;
+  why: string;
+}
+
+/** Every PO the subcontractor has on the job, each marked counted or not, and why. */
+async function poLinesByJobSub(
+  pairs: { job: number; sub: number; name?: string }[],
+): Promise<Map<string, PoLine[]>> {
+  const want = [...new Map(pairs.filter((p) => p.job).map((p) => [`${p.job}|${p.sub}`, p])).values()];
+  const out = new Map<string, PoLine[]>();
   if (!want.length) return out;
   const jobs = [...new Set(want.map((p) => p.job))];
   const pos: QbRow[] = [];
@@ -550,7 +580,7 @@ async function poNumbersByJobSub(
     pos.push(
       ...(await queryAll({
         from: QB_AWARD.tables.pos,
-        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub, PO_SUB_NAME],
+        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub, PO_SUB_NAME, PO.poStatus, PO_BUILDER_COST],
         where: jobs
           .slice(i, i + 80)
           .map((j) => `{${PO.job}.EX.${j}}`)
@@ -568,16 +598,37 @@ async function poNumbersByJobSub(
       const n = normName(p.name).slice(0, 12);
       mine = n ? onJob.filter((x) => normName(str(val(x, PO_SUB_NAME))).startsWith(n)) : [];
     }
+    if (!mine.length) continue;
+    const title = (x: QbRow) => str(val(x, PO.title)).trim();
     // A scope change or change order is not the award, even when its title
     // starts like one ("Demolition Scope Change"): it falls to field work.
-    const award = mine.filter(
-      (x) => AWARD_TITLE.test(str(val(x, PO.title))) && !CHANGE_PO_TITLE.test(str(val(x, PO.title))),
+    const isAward = (x: QbRow) => AWARD_TITLE.test(title(x)) && !CHANGE_PO_TITLE.test(title(x));
+    const isFee = (x: QbRow) => FEE_PO_TITLE.test(title(x));
+    const hasAward = mine.some(isAward);
+    const hasField = mine.some((x) => !isFee(x));
+    out.set(
+      `${p.job}|${p.sub}`,
+      mine
+        .map((x) => {
+          const counted = hasAward ? isAward(x) : hasField ? !isFee(x) : true;
+          const why = isAward(x)
+            ? "award PO"
+            : isFee(x)
+              ? "scoping / inspection fee"
+              : hasAward
+                ? "not the award PO"
+                : "field work";
+          return {
+            number: str(val(x, PO.number)),
+            title: title(x),
+            status: str(val(x, PO.poStatus)),
+            amount: Math.round(num(val(x, PO_BUILDER_COST)) * 100) / 100,
+            counted,
+            why,
+          };
+        })
+        .sort((a, b) => Number(b.counted) - Number(a.counted) || a.number.localeCompare(b.number)),
     );
-    const field = mine.filter((x) => !FEE_PO_TITLE.test(str(val(x, PO.title))));
-    const pick = (award.length ? award : field.length ? field : mine)
-      .map((x) => str(val(x, PO.number)))
-      .filter(Boolean);
-    if (pick.length) out.set(`${p.job}|${p.sub}`, [...new Set(pick)].join(", "));
   }
   return out;
 }

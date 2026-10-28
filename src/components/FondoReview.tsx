@@ -185,7 +185,7 @@ export default function FondoReview({
             </header>
 
             <dl className="divide-y divide-navy-50 text-sm">
-              <Row k="PO #" v={item.poNumber || "—"} />
+              <PoRow item={item} />
               <Row k="Awarded" v={item.awardedAmount > 0 ? money(item.awardedAmount) : "not recorded"} />
               <Row k="Poliza is for" v={money(item.submittedAmount)} />
               {item.submittedPolicyNumber && (
@@ -322,6 +322,78 @@ export default function FondoReview({
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * PO # with its breakdown: click to see every PO the subcontractor has on
+ * the job, what each is worth, and whether it counts toward the award.
+ */
+function PoRow({ item }: { item: ReviewItem }) {
+  const [open, setOpen] = useState(false);
+  const lines = item.poLines ?? [];
+  const counted = lines.filter((l) => l.counted);
+  const total = Math.round(counted.reduce((t, l) => t + l.amount, 0) * 100) / 100;
+  if (!lines.length) return <Row k="PO #" v={item.poNumber || "—"} />;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between px-4 py-2 text-left hover:bg-navy-50"
+      >
+        <span className="text-navy-600">
+          PO # <span className="text-xs text-navy-600/70">({open ? "hide" : "show"} breakdown)</span>
+        </span>
+        <span className="tabular font-semibold text-navy-800">{item.poNumber || "—"}</span>
+      </button>
+      {open && (
+        <div className="overflow-x-auto px-4 pb-3">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-navy-100 text-left text-[11px] text-navy-600 uppercase">
+                <th className="py-1.5 pr-3">PO #</th>
+                <th className="py-1.5 pr-3">Title</th>
+                <th className="py-1.5 pr-3 text-right">Amount</th>
+                <th className="py-1.5">Counted</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-navy-50">
+              {lines.map((l, i) => (
+                <tr key={`${l.number}-${i}`} className={l.counted ? "" : "text-navy-600/60"}>
+                  <td className="py-1.5 pr-3 whitespace-nowrap">{l.number || "—"}</td>
+                  <td className="py-1.5 pr-3">
+                    {l.title || "—"}
+                    {l.status && <span className="text-navy-600/60"> · {l.status}</span>}
+                  </td>
+                  <td className="tabular py-1.5 pr-3 text-right whitespace-nowrap">{money(l.amount)}</td>
+                  <td className="py-1.5 whitespace-nowrap">
+                    {l.counted ? (
+                      <span className="font-semibold text-emerald-700">yes</span>
+                    ) : (
+                      <span>no</span>
+                    )}{" "}
+                    <span className="text-navy-600/60">· {l.why}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-navy-200 font-semibold text-navy-800">
+                <td className="py-1.5 pr-3" colSpan={2}>
+                  Counted total
+                </td>
+                <td className="tabular py-1.5 pr-3 text-right">{money(total)}</td>
+                <td className="py-1.5 text-navy-600/70">
+                  Awarded {item.awardedAmount > 0 ? money(item.awardedAmount) : "not recorded"}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

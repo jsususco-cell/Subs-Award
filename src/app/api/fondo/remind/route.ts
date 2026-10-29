@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import { QB_AWARD } from "@/lib/qb-award";
 import { FONDO_FIELDS, REMINDER_MAX, fondoConfigured, missingFondoFields } from "@/lib/fondo";
-import { dueReminders, updateSubmittal } from "@/lib/fondo-server";
+import { dueReminders, syncAwardedFromPos, updateSubmittal } from "@/lib/fondo-server";
 import { fondoFormUrl, reminderBcc, reminderCc, reminderMail } from "@/lib/fondo-mail";
 import { recordFondo } from "@/lib/fondo-history";
 import {
@@ -59,6 +59,16 @@ export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
   const dryRun = params.get("dryRun") === "1";
   const testTo = (params.get("testTo") ?? "").trim();
+
+  // Keep Awarded in step with any PO corrected since yesterday (real runs only).
+  let synced = 0;
+  if (!dryRun && !testTo) {
+    try {
+      synced = (await syncAwardedFromPos(true)).length;
+    } catch (e) {
+      console.error("[fondo/remind] awarded sync", e instanceof Error ? e.message : e);
+    }
+  }
 
   const due = await dueReminders();
   const sendable = due.filter((d) => !d.blocked);
@@ -161,6 +171,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     test: Boolean(testTo),
+    awardedSynced: synced,
     sent: sent.length,
     sentRecordIds: sent,
     failed,

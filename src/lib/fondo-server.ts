@@ -395,9 +395,15 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
                 num(val(r, FONDO_FIELDS.poRecordId)),
                 str(val(r, FONDO_FIELDS.poNumber)).trim(),
               );
+          const own = !inPool && num(val(r, FONDO_FIELDS.poRecordId))
+            ? lines.find((l) => l.recordId === num(val(r, FONDO_FIELDS.poRecordId)))
+            : undefined;
           return {
             poLines: lines,
             poNumber: [...new Set(lines.filter((l) => l.counted).map((l) => l.number).filter(Boolean))].join(", "),
+            // Tied to a PO: Awarded follows the PO's live amount, so a
+            // correction on the PO shows here straight away.
+            ...(own && own.amount > 0 ? { awardedAmount: own.amount } : {}),
           };
         })(),
       };
@@ -567,7 +573,7 @@ export interface PoLine {
   number: string;
   title: string;
   status: string;
-  /** Total Builder Cost (PO field 112). */
+  /** What this PO's poliza must cover: poFondoAmount (its live Total Builder Cost). */
   amount: number;
   /** Shown in PO # and what an award built from POs adds up. */
   counted: boolean;
@@ -600,7 +606,7 @@ async function poLinesByJobSub(
     pos.push(
       ...(await queryAll({
         from: QB_AWARD.tables.pos,
-        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub, PO_SUB_NAME, PO.poStatus, PO_BUILDER_COST],
+        select: [PO.recordId, PO.title, PO.job, PO.number, PO.sub, PO_SUB_NAME, PO.poStatus, PO_BUILDER_COST, PO.required],
         where: jobs
           .slice(i, i + 80)
           .map((j) => `{${PO.job}.EX.${j}}`)
@@ -643,7 +649,7 @@ async function poLinesByJobSub(
             number: str(val(x, PO.number)),
             title: title(x),
             status: str(val(x, PO.poStatus)),
-            amount: Math.round(num(val(x, PO_BUILDER_COST)) * 100) / 100,
+            amount: poFondoAmount(num(val(x, PO.required)), num(val(x, PO_BUILDER_COST))),
             counted,
             why,
           };
@@ -1081,6 +1087,11 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
         dateSubmitted: str(val(r, ins.dateSubmitted)),
         source: str(val(r, ins.source)).trim(),
         polizaName: currentFile(val(r, ins.poliza)).name,
+        ...(() => {
+          const rid = num(val(r, FONDO_FIELDS.poRecordId));
+          const own = rid ? (poLines.get(`${pairOf(r).job}|${pairOf(r).sub}`) ?? []).find((l) => l.recordId === rid) : undefined;
+          return own && own.amount > 0 ? { awardedAmount: own.amount } : {};
+        })(),
         poNumber: [
           ...new Set(
             linesForRecord(
@@ -1104,6 +1115,52 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
           a.caseNumber.localeCompare(b.caseNumber),
       )
   );
+}
+
+/**
+ * Keep each record's stored Awarded Amount (12) equal to its PO's live amount,
+ * so Quickbase's own Coverage Status formula agrees with the page after a PO
+ * is corrected. Only records tied to a PO (field 49). Returns what changed.
+ */
+export async function syncAwardedFromPos(apply: boolean): Promise<
+  { recordId: number; caseNumber: string; poNumber: string; before: number; after: number }[]
+> {
+  const ins = QB_AWARD.insurance;
+  const rows = await queryAll({
+    from: QB_AWARD.tables.insurance,
+    select: [ins.recordId, ins.caseNumber, ins.awardedAmount, FONDO_FIELDS.poRecordId, FONDO_FIELDS.poNumber],
+    where: `{${FONDO_FIELDS.poRecordId}.XEX.''}`,
+  });
+  const ids = [...new Set(rows.map((r) => num(val(r, FONDO_FIELDS.poRecordId))).filter(Boolean))];
+  const pos: QbRow[] = [];
+  for (let i = 0; i < ids.length; i += 80) {
+    pos.push(
+      ...(await queryAll({
+        from: QB_AWARD.tables.pos,
+        select: [PO.recordId, PO.required, PO_BUILDER_COST],
+        where: ids.slice(i, i + 80).map((id) => `{${PO.recordId}.EX.${id}}`).join("OR"),
+      })),
+    );
+  }
+  const live = new Map(pos.map((p) => [num(val(p, PO.recordId)), poFondoAmount(num(val(p, PO.required)), num(val(p, PO_BUILDER_COST)))]));
+  const changes = rows
+    .map((r) => ({
+      recordId: num(val(r, ins.recordId)),
+      caseNumber: str(val(r, ins.caseNumber)).trim(),
+      poNumber: str(val(r, FONDO_FIELDS.poNumber)).trim(),
+      before: Math.round(num(val(r, ins.awardedAmount)) * 100) / 100,
+      after: live.get(num(val(r, FONDO_FIELDS.poRecordId))) ?? 0,
+    }))
+    .filter((c) => c.after > 0 && Math.abs(c.after - c.before) >= 0.01);
+  if (apply) {
+    for (const c of changes) {
+      await updateSubmittal({
+        [ins.recordId]: { value: c.recordId },
+        [ins.awardedAmount]: { value: c.after },
+      });
+    }
+  }
+  return changes;
 }
 
 /** A case owed a reminder today. */

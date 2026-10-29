@@ -282,11 +282,14 @@ export function isFieldWorkTitle(title: string): boolean {
 }
 
 /**
- * What one PO's poliza has to cover: its Required Fondo Coverage (award plus
- * approved change orders) when it has one, otherwise its Total Builder Cost.
+ * What one PO's poliza has to cover: the PO's live value, its Total Builder
+ * Cost (the sum of its cost items), so a correction to the PO shows straight
+ * away. The stored Required Fondo Coverage stamp is only a fallback for a PO
+ * with no cost recorded (user decision, 30 Oct 2026: the stamp went stale
+ * when PO-15287 was corrected).
  */
 export function poFondoAmount(required: number, builderCost: number): number {
-  return round(required > 0 ? required : builderCost > 0 ? builderCost : 0);
+  return round(builderCost > 0 ? builderCost : required > 0 ? required : 0);
 }
 const EXEMPT = ["kimberlycruz", "towerwindows", "tileinternational"];
 export const OPEN_JOB_STATUSES = ["OPEN", "ON-HOLD"];

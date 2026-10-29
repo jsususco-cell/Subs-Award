@@ -426,9 +426,11 @@ test("a pooled poliza is split by share, to the cent, adding up exactly", () => 
   assert.equal(Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100, 1234.57);
 });
 
-test("a PO's poliza covers its required coverage, else its value", () => {
-  assert.equal(poFondoAmount(203368.01, 162694.41), 203368.01);
+test("a PO's poliza covers the PO's live value, else the stored stamp", () => {
+  // PO-15287: cost items corrected to 150,643.82; the stamp still said 155,643.82.
+  assert.equal(poFondoAmount(155643.82, 150643.82), 150643.82);
   assert.equal(poFondoAmount(0, 14301.78), 14301.78);
+  assert.equal(poFondoAmount(33242.52, 0), 33242.52);
   assert.equal(poFondoAmount(0, 0), 0);
 });
 

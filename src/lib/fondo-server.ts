@@ -16,8 +16,10 @@ import {
   fondoHiddenSub,
   fondoPoolLabel,
   fondoPoolOf,
+  poFondoAmount,
   reminderDue,
   AWARD_TITLE,
+  FEE_PO_TITLE,
 } from "./fondo";
 
 /**
@@ -334,6 +336,8 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
       ins.submittedBy,
       ins.relatedSub,
       ins.relatedJob,
+      FONDO_FIELDS.poRecordId,
+      FONDO_FIELDS.poNumber,
       FONDO_FIELDS.submittedAmount,
       FONDO_FIELDS.submittedPolicyNumber,
       FONDO_FIELDS.submittedAt,
@@ -386,7 +390,11 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
           const sub = num(val(r, ins.relatedSub));
           const lines = inPool
             ? pool.flatMap((p) => poByPair.get(`${p.jobRecordId}|${sub}`) ?? [])
-            : (poByPair.get(`${num(val(r, ins.relatedJob))}|${sub}`) ?? []);
+            : linesForRecord(
+                poByPair.get(`${num(val(r, ins.relatedJob))}|${sub}`) ?? [],
+                num(val(r, FONDO_FIELDS.poRecordId)),
+                str(val(r, FONDO_FIELDS.poNumber)).trim(),
+              );
           return {
             poLines: lines,
             poNumber: [...new Set(lines.filter((l) => l.counted).map((l) => l.number).filter(Boolean))].join(", "),
@@ -531,8 +539,6 @@ const JOB = { recordId: 3, status: 35, caseId: 919 };
 const PO_SUB_NAME = QB_AWARD.pos.subName;
 /** PO "Total Builder Cost": what the purchase order is worth. */
 const PO_BUILDER_COST = 112;
-/** Fee POs that need no Fondo coverage (as in scripts/backfill-encon-fondo.mjs). */
-const FEE_PO_TITLE = /xactimate|scoping|scope change serv|inspection|professional|recon|site walk|feasibility/i;
 /** Scope changes and change orders: never "the award PO" for the PO # column. */
 const CHANGE_PO_TITLE = /scope change|change order|cambio de orden|orden de cambio/i;
 
@@ -557,6 +563,7 @@ async function poNumbersByJobSub(
 
 /** One PO behind a case, for the breakdown under PO #. */
 export interface PoLine {
+  recordId: number;
   number: string;
   title: string;
   status: string;
@@ -565,6 +572,19 @@ export interface PoLine {
   /** Shown in PO # and what an award built from POs adds up. */
   counted: boolean;
   why: string;
+}
+
+/**
+ * A record tied to one PO (field 49) shows that PO alone, counted; one not yet
+ * tied to a PO keeps the job + subcontractor breakdown.
+ */
+function linesForRecord(lines: PoLine[], poRecordId: number, poNumber: string): PoLine[] {
+  if (!poRecordId) return lines;
+  const own = lines.filter((l) => l.recordId === poRecordId);
+  if (own.length) return own.map((l) => ({ ...l, counted: true, why: "this record's PO" }));
+  return poNumber
+    ? [{ recordId: poRecordId, number: poNumber, title: "", status: "", amount: 0, counted: true, why: "this record's PO" }]
+    : lines;
 }
 
 /** Every PO the subcontractor has on the job, each marked counted or not, and why. */
@@ -619,6 +639,7 @@ async function poLinesByJobSub(
                 ? "not the award PO"
                 : "field work";
           return {
+            recordId: num(val(x, PO.recordId)),
             number: str(val(x, PO.number)),
             title: title(x),
             status: str(val(x, PO.poStatus)),
@@ -645,8 +666,10 @@ export async function openAwards(): Promise<OpenAward[]> {
   const [pos, jobs, subs, cases] = await Promise.all([
     queryAll({
       from: QB_AWARD.tables.pos,
-      select: Object.values(PO),
-      where: `{${PO.state}.EX.'Puerto Rico'}AND{${PO.required}.GT.0}`,
+      select: [...Object.values(PO), PO_BUILDER_COST],
+      // Field-work POs need not carry Required Fondo Coverage: the PO value
+      // stands in for it (poFondoAmount), so released PR POs are all read.
+      where: `{${PO.state}.EX.'Puerto Rico'}AND{${PO.poStatus}.EX.'Released'}`,
     }),
     queryAll({
       from: QB_CONFIG.tables.jobs,
@@ -664,6 +687,7 @@ export async function openAwards(): Promise<OpenAward[]> {
         ins.relatedJob,
         ins.relatedSub,
         31, // Related Subcontractor - Company (lookup)
+        FONDO_FIELDS.poRecordId,
       ],
     }),
   ]);
@@ -671,9 +695,18 @@ export async function openAwards(): Promise<OpenAward[]> {
   const jobBy = new Map(jobs.map((j) => [num(val(j, JOB.recordId)), j]));
   const subName = new Map(subs.map((s) => [num(val(s, 3)), str(val(s, VENDOR_COMPANY)).trim()]));
 
+  // One Fondo record per PO: a case tied to a PO (field 49) belongs to that PO
+  // only. A case not yet tied to one (before the split) stands in for its job
+  // and subcontractor, but only where that pair has a single field-work PO.
+  const byPo = new Map<number, QbRow[]>();
   const byIds = new Map<string, QbRow[]>();
   const byName = new Map<string, QbRow[]>();
   for (const c of cases) {
+    const po = num(val(c, FONDO_FIELDS.poRecordId));
+    if (po) {
+      byPo.set(po, [...(byPo.get(po) ?? []), c]);
+      continue;
+    }
     const a = `${num(val(c, ins.relatedJob))}|${num(val(c, ins.relatedSub))}`;
     const b = `${str(val(c, ins.caseNumber)).trim()}|${normName(
       str(val(c, 31)) || str(val(c, ins.subcontractorName)),
@@ -682,13 +715,13 @@ export async function openAwards(): Promise<OpenAward[]> {
     byName.set(b, [...(byName.get(b) ?? []), c]);
   }
 
-  const out: OpenAward[] = [];
+  const candidates: { p: QbRow; caseNumber: string; name: string; required: number }[] = [];
   for (const p of pos) {
     const job = jobBy.get(num(val(p, PO.job)));
     const caseNumber = job ? str(val(job, JOB.caseId)).trim() : "";
     const subRecordId = num(val(p, PO.sub));
     const name = subName.get(subRecordId) ?? "";
-    const required = num(val(p, PO.required));
+    const required = poFondoAmount(num(val(p, PO.required)), num(val(p, PO_BUILDER_COST)));
     if (
       !isOpenAward({
         region: str(val(p, PO.state)),
@@ -704,15 +737,33 @@ export async function openAwards(): Promise<OpenAward[]> {
     ) {
       continue;
     }
+    candidates.push({ p, caseNumber, name, required });
+  }
+  const perPair = new Map<string, number>();
+  for (const { p } of candidates) {
+    const k = `${num(val(p, PO.job))}|${num(val(p, PO.sub))}`;
+    perPair.set(k, (perPair.get(k) ?? 0) + 1);
+  }
+
+  const out: OpenAward[] = [];
+  for (const { p, caseNumber, name, required } of candidates) {
+    const subRecordId = num(val(p, PO.sub));
+    const pair = `${num(val(p, PO.job))}|${subRecordId}`;
     const mine = new Map<number, QbRow>();
-    for (const c of [
-      ...(byIds.get(`${num(val(p, PO.job))}|${subRecordId}`) ?? []),
-      ...(byName.get(`${caseNumber}|${normName(name)}`) ?? []),
-    ]) {
-      mine.set(num(val(c, ins.recordId)), c);
+    for (const c of byPo.get(num(val(p, PO.recordId))) ?? []) mine.set(num(val(c, ins.recordId)), c);
+    if (!mine.size && perPair.get(pair) === 1) {
+      for (const c of [
+        ...(byIds.get(pair) ?? []),
+        ...(byName.get(`${caseNumber}|${normName(name)}`) ?? []),
+      ]) {
+        mine.set(num(val(c, ins.recordId)), c);
+      }
     }
     const onFile = [...mine.values()].reduce((s, c) => s + num(val(c, ins.insuranceAmount)), 0);
-    const stamped = num(val(p, PO.stampedOnFile));
+    // The PO's own compliance stamp is per award; with one record per PO the
+    // record's poliza is what counts, so the stamp only stands in when the PO
+    // is the job's single field-work PO for this sub.
+    const stamped = perPair.get(pair) === 1 ? num(val(p, PO.stampedOnFile)) : 0;
     out.push({
       poRecordId: num(val(p, PO.recordId)),
       poNumber: str(val(p, PO.number)),
@@ -758,6 +809,8 @@ export async function sendQueue(): Promise<SendItem[]> {
         FONDO_FIELDS.formSentAt,
         FONDO_FIELDS.reviewNotes,
         FONDO_FIELDS.reminderCount,
+        FONDO_FIELDS.poRecordId,
+        FONDO_FIELDS.poNumber,
       ],
     }),
     openAwards(),
@@ -806,8 +859,8 @@ export async function sendQueue(): Promise<SendItem[]> {
     return {
       key: `c${recordId}`,
       recordId,
-      poRecordId: award?.poRecordId ?? 0,
-      poNumber: award?.poNumber ?? "",
+      poRecordId: award?.poRecordId ?? num(val(r, FONDO_FIELDS.poRecordId)),
+      poNumber: award?.poNumber ?? str(val(r, FONDO_FIELDS.poNumber)).trim(),
       kind,
       caseNumber: str(val(r, ins.caseNumber)).trim(),
       jobName: str(val(r, 23)).trim(),
@@ -930,8 +983,10 @@ export async function createSubmittal(award: OpenAward, openedBy: string): Promi
           [f.relatedSub]: { value: award.subRecordId },
           [f.source]: { value: QB_AWARD.insuranceSource },
           [FONDO_FIELDS.status]: { value: FONDO_STATUS.awaiting },
+          [FONDO_FIELDS.poRecordId]: { value: award.poRecordId },
+          [FONDO_FIELDS.poNumber]: { value: award.poNumber },
           [f.comments]: {
-            value: `Opened from the Fondo page (Send link) by ${openedBy || "staff"}. Purchase order ${award.poNumber}. Awarded = required Fondo coverage (award + approved change orders).`,
+            value: `Opened from the Fondo page (Send link) by ${openedBy || "staff"} for purchase order ${award.poNumber}. Awarded = what that PO's poliza must cover (its Required Fondo Coverage, else its value).`,
           },
         },
       ],
@@ -999,6 +1054,8 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
       FONDO_FIELDS.status,
       FONDO_FIELDS.reviewedBy,
       FONDO_FIELDS.reviewedAt,
+      FONDO_FIELDS.poRecordId,
+      FONDO_FIELDS.poNumber,
     ],
     where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.approved}'}OR{${FONDO_FIELDS.status}.EX.''}`,
   });
@@ -1007,7 +1064,7 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
     sub: num(val(r, ins.relatedSub)),
     name: str(val(r, ins.subcontractorName)),
   });
-  const poByPair = await poNumbersByJobSub(rows.map(pairOf));
+  const poLines = await poLinesByJobSub(rows.map(pairOf));
   return (
     rows
       .map((r) => ({
@@ -1024,7 +1081,18 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
         dateSubmitted: str(val(r, ins.dateSubmitted)),
         source: str(val(r, ins.source)).trim(),
         polizaName: currentFile(val(r, ins.poliza)).name,
-        poNumber: poByPair.get(`${pairOf(r).job}|${pairOf(r).sub}`) ?? "",
+        poNumber: [
+          ...new Set(
+            linesForRecord(
+              poLines.get(`${pairOf(r).job}|${pairOf(r).sub}`) ?? [],
+              num(val(r, FONDO_FIELDS.poRecordId)),
+              str(val(r, FONDO_FIELDS.poNumber)).trim(),
+            )
+              .filter((l) => l.counted)
+              .map((l) => l.number)
+              .filter(Boolean),
+          ),
+        ].join(", "),
       }))
       // A blank status with no document is still owed one: Send link has it.
       .filter((i) => i.approvedHere || i.polizaName)

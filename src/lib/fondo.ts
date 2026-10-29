@@ -29,7 +29,9 @@ export type FondoFieldName =
   | "reviewedAt"
   | "formSentAt"
   | "reminderCount"
-  | "lastReminderAt";
+  | "lastReminderAt"
+  | "poRecordId"
+  | "poNumber";
 
 export const FONDO_FIELDS: Record<FondoFieldName, number> = {
   status: 38,
@@ -44,6 +46,9 @@ export const FONDO_FIELDS: Record<FondoFieldName, number> = {
   // Added 2026-10-28 for the daily reminders.
   reminderCount: 47,
   lastReminderAt: 48,
+  // One Fondo record per field-work PO (2026-10-30): the PO this record is for.
+  poRecordId: 49,
+  poNumber: 50,
 };
 
 export const FONDO_STATUS = {
@@ -260,6 +265,29 @@ export function rejectManualSend(
  * pages count the same 113 awards. If the rule changes there, change it here.
  */
 export const AWARD_TITLE = /^\s*(award|reconstr|relocat|relocaci|demol|repair|rehab)/i;
+
+/*
+ * Field-work POs: the ones that need their own Fondo poliza (user decision,
+ * 30 Oct 2026). The Fondo Coverage page's "core" and "other" field-work
+ * words, minus scoping / inspection / professional fees.
+ */
+const FIELD_CORE =
+  /award|reconstr|relocat|relocaci|demol|demolici|repair|rehab|cambio de orden|change order|orden de cambio|movilizaci|mobiliz/i;
+const FIELD_OTHER =
+  /lead|abatement|asbestos abat|slab|retaining|photovolt|mitigation|window|septic|cistern|roof|solar|cabinet|tile|paint|pv /i;
+export const FEE_PO_TITLE =
+  /xactimate|scoping|scope change serv|inspection|professional|\brecon\b|site walk|feasibility/i;
+export function isFieldWorkTitle(title: string): boolean {
+  return (FIELD_CORE.test(title) || FIELD_OTHER.test(title)) && !FEE_PO_TITLE.test(title);
+}
+
+/**
+ * What one PO's poliza has to cover: its Required Fondo Coverage (award plus
+ * approved change orders) when it has one, otherwise its Total Builder Cost.
+ */
+export function poFondoAmount(required: number, builderCost: number): number {
+  return round(required > 0 ? required : builderCost > 0 ? builderCost : 0);
+}
 const EXEMPT = ["kimberlycruz", "towerwindows", "tileinternational"];
 export const OPEN_JOB_STATUSES = ["OPEN", "ON-HOLD"];
 /**
@@ -338,7 +366,10 @@ export function splitByShare(total: number, weights: number[]): number[] {
   return out;
 }
 
-/** Does this PO count as an open award? Every input is what the PO and its job say. */
+/**
+ * Does this PO need its own Fondo poliza now? Every input is what the PO and
+ * its job say; `required` is poFondoAmount(...).
+ */
 export function isOpenAward(po: {
   region: string;
   cancelled: boolean;
@@ -353,7 +384,7 @@ export function isOpenAward(po: {
   return (
     po.region === "Puerto Rico" &&
     !po.cancelled &&
-    AWARD_TITLE.test(po.title) &&
+    isFieldWorkTitle(po.title) &&
     Boolean(po.caseNumber) &&
     OPEN_JOB_STATUSES.includes(po.jobStatus) &&
     po.required > 0 &&

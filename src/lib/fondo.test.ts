@@ -18,6 +18,8 @@ import {
   fondoHiddenSub,
   fondoPoolOf,
   splitByShare,
+  poFondoAmount,
+  FEE_PO_TITLE,
   reminderDue,
   REMINDER_MAX,
   rejectReturn,
@@ -107,7 +109,8 @@ test("returning a submission requires a reason the subcontractor can act on", ()
 test("every staging field is mapped to a real Quickbase field", () => {
   const names = Object.keys(FONDO_FIELDS);
   // 9 staging fields, plus Reminder Count and Last Reminder At (2026-10-28).
-  assert.equal(names.length, 11);
+  // ...and the PO this record is for: Fondo PO Record ID / Number (2026-10-30).
+  assert.equal(names.length, 13);
   // Field 0 does not exist; a zero here would mean a silent write to nowhere.
   for (const [name, id] of Object.entries(FONDO_FIELDS)) {
     assert.ok(id > 0, `${name} is not mapped`);
@@ -348,7 +351,17 @@ test("open awards follow the Fondo Coverage page's rule", () => {
   assert.equal(isOpenAward({ ...base, jobStatus: "ON-HOLD" }), true);
   assert.equal(isOpenAward({ ...base, region: "Florida" }), false);
   assert.equal(isOpenAward({ ...base, cancelled: true }), false);
-  assert.equal(isOpenAward({ ...base, title: "Lead Abatement" }), false);
+  // Field work counts now, one record per PO; fees, surveys and signs do not.
+  assert.equal(isOpenAward({ ...base, title: "Lead Abatement" }), true);
+  assert.equal(isOpenAward({ ...base, title: "Asbestos Abatement" }), true);
+  assert.equal(isOpenAward({ ...base, title: "Change Order #2" }), true);
+  assert.equal(isOpenAward({ ...base, title: "Asbestos and Lead Inspection" }), false);
+  assert.equal(isOpenAward({ ...base, title: "Xactimate Scoping Services" }), false);
+  assert.equal(isOpenAward({ ...base, title: "Survey" }), false);
+  assert.equal(isOpenAward({ ...base, title: "Rotulos" }), false);
+  // "Recon" the fee, not "Reconstruction" the award.
+  assert.equal(isOpenAward({ ...base, title: "Preliminary Recon" }), false);
+  assert.equal(isOpenAward({ ...base, title: "Award Letter - Reconstruction" }), true);
   assert.equal(isOpenAward({ ...base, jobStatus: "CLOSED" }), false);
   assert.equal(isOpenAward({ ...base, required: 0 }), false);
   assert.equal(isOpenAward({ ...base, caseNumber: "" }), false);
@@ -411,4 +424,18 @@ test("a pooled poliza is split by share, to the cent, adding up exactly", () => 
   assert.deepEqual(splitByShare(90, [0, 0]), [45, 45]);
   const parts = splitByShare(1234.57, [100, 250.5, 3]);
   assert.equal(Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100, 1234.57);
+});
+
+test("a PO's poliza covers its required coverage, else its value", () => {
+  assert.equal(poFondoAmount(203368.01, 162694.41), 203368.01);
+  assert.equal(poFondoAmount(0, 14301.78), 14301.78);
+  assert.equal(poFondoAmount(0, 0), 0);
+});
+
+test("the fee pattern catches recon fees but not reconstruction", () => {
+  assert.equal(FEE_PO_TITLE.test("Preliminary Recon"), true);
+  assert.equal(FEE_PO_TITLE.test("Xactimate Scoping Services"), true);
+  assert.equal(FEE_PO_TITLE.test("Asbestos and Lead Inspection"), true);
+  assert.equal(FEE_PO_TITLE.test("Award Letter - Reconstruction"), false);
+  assert.equal(FEE_PO_TITLE.test("Reconstrucción"), false);
 });

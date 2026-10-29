@@ -631,8 +631,9 @@ export function buildInsuranceRecord(
     // that exact status, which is what keeps the 64 migrated submittals -- all
     // of which have no status -- out of the mailing.
     [FONDO_FIELDS.status]: { value: FONDO_STATUS.awaiting },
-    // There is no Related PO field on this table, so the tie back to the
-    // purchase order lives here rather than being lost.
+    // One Fondo record per PO (2026-10-30): which PO this one is for.
+    [FONDO_FIELDS.poRecordId]: { value: poRecordId },
+    // Kept in the comment too, for anyone reading the record in Quickbase.
     [f.comments]: {
       value: `Opened by the Subcontractor Award System on award. Purchase order #${poRecordId}. Awaiting the Fondo (CFSE) poliza.`,
     },

@@ -51,6 +51,9 @@ export const FONDO_FIELDS = [
   // (added 2026-10-28).
   { label: "Fondo Reminder Count", fieldType: "numeric" },
   { label: "Fondo Last Reminder At", fieldType: "timestamp", fallback: "date" },
+  // One Fondo record per field-work PO (2026-10-30): which PO this record is for.
+  { label: "Fondo PO Record ID", fieldType: "numeric" },
+  { label: "Fondo PO Number", fieldType: "text" },
 ];
 
 async function create(def) {

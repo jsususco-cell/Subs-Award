@@ -50,6 +50,21 @@ export default function FondoWorkspace({
   const [typedKey, setTypedKey] = useState<string | null>(null);
   const sendKey = typedKey ?? remembered;
 
+  // One search for all three tabs; what was typed stays when switching tabs.
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = (...fields: (string | undefined)[]) =>
+    !q || fields.some((f) => (f ?? "").toLowerCase().includes(q));
+  const sendShown = sendItems.filter((i) =>
+    matches(i.caseNumber, i.poNumber, i.subcontractor, i.jobName, i.email),
+  );
+  const reviewShown = reviewItems.filter((i) =>
+    matches(i.caseNumber, i.poNumber, i.subcontractor, i.submittedPolicyNumber, i.submittedBy),
+  );
+  const approvedShown = approvedItems.filter((i) =>
+    matches(i.caseNumber, i.poNumber, i.subcontractor, i.jobName),
+  );
+
   const noCase = sendItems.filter((i) => i.kind === "new").length;
   const short = sendItems.filter((i) => i.kind === "short").length;
   const awaiting = sendItems.filter(
@@ -91,26 +106,37 @@ export default function FondoWorkspace({
         </div>
       </div>
 
-      <div role="tablist" className="mt-6 mb-4 flex flex-wrap gap-2 border-b border-navy-100 pb-3">
+      <div className="mt-6">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search all tabs: case, PO, subcontractor, email, policy number"
+          aria-label="Search all tabs"
+          className="w-full rounded-md border border-navy-200 bg-white px-3 py-2 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 sm:max-w-xl"
+        />
+      </div>
+
+      <div role="tablist" className="mt-3 mb-4 flex flex-wrap gap-2 border-b border-navy-100 pb-3">
         <TabButton active={tab === "send"} onClick={() => setTab("send")}>
-          Send link <Count n={sendItems.length} />
+          Send link <Count n={sendShown.length} />
         </TabButton>
         <TabButton active={tab === "review"} onClick={() => setTab("review")}>
-          To review <Count n={reviewItems.length} />
+          To review <Count n={reviewShown.length} />
         </TabButton>
         <TabButton active={tab === "approved"} onClick={() => setTab("approved")}>
-          Approved <Count n={approvedItems.length} />
+          Approved <Count n={approvedShown.length} />
         </TabButton>
       </div>
 
       {tab === "review" ? (
         <div>
-          <FondoReview items={reviewItems} sendKey={sendKey} />
+          <FondoReview items={reviewShown} sendKey={sendKey} />
         </div>
       ) : tab === "send" ? (
-        <SendLinks items={sendItems} sendKey={sendKey} />
+        <SendLinks items={sendShown} sendKey={sendKey} />
       ) : (
-        <FondoApproved items={approvedItems} sendKey={sendKey} />
+        <FondoApproved items={approvedShown} sendKey={sendKey} />
       )}
     </div>
   );
@@ -118,15 +144,14 @@ export default function FondoWorkspace({
 
 function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [sent, setSent] = useState<Record<string, Sent>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<string | null>(null);
 
+  // Search is applied above, across all tabs; this narrows by the chips.
   const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return items.filter((i) => {
       if (filter === "new" && i.kind !== "new") return false;
       if (filter === "short" && i.kind !== "short") return false;
@@ -135,12 +160,9 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
       }
       if (filter === "returned" && i.status !== FONDO_STATUS.returned) return false;
       if (filter === "never" && (i.formSentAt || sent[i.key])) return false;
-      if (!q) return true;
-      return [i.caseNumber, i.poNumber, i.subcontractor, i.jobName, i.email].some((s) =>
-        s.toLowerCase().includes(q),
-      );
+      return true;
     });
-  }, [items, filter, query, sent]);
+  }, [items, filter, sent]);
 
   async function send(item: SendItem) {
     const to = (overrides[item.key] ?? "").trim();
@@ -302,14 +324,6 @@ Email ${where} the form link to send one that covers it?`
             {label}
           </TabButton>
         ))}
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search case, PO, sub, email"
-          aria-label="Search cases"
-          className="ml-auto w-full rounded-md border border-navy-200 px-2.5 py-1.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 sm:w-60"
-        />
       </div>
 
       {!shown.length && (

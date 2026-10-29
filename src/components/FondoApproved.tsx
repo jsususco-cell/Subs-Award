@@ -28,23 +28,19 @@ export default function FondoApproved({
   sendKey: string;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState<number | null>(null);
   const [doc, setDoc] = useState<Doc | null>(null);
 
+  // Search is applied by the page, across all tabs; this narrows by the chips.
   const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return items.filter((i) => {
       if (filter === "here" && !i.approvedHere) return false;
       if (filter === "before" && i.approvedHere) return false;
       if (filter === "covered" && i.coverage !== "COVERED") return false;
       if (filter === "attention" && i.coverage === "COVERED") return false;
-      if (!q) return true;
-      return [i.caseNumber, i.poNumber, i.subcontractor, i.jobName].some((s) =>
-        s.toLowerCase().includes(q),
-      );
+      return true;
     });
-  }, [items, filter, query]);
+  }, [items, filter]);
 
   // Load the document for the open row; drop the blob when it closes.
   useEffect(() => {
@@ -127,14 +123,6 @@ export default function FondoApproved({
             {label}
           </button>
         ))}
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search case, PO or sub"
-          aria-label="Search approved polizas"
-          className="ml-auto w-full rounded-md border border-navy-200 px-2.5 py-1.5 text-sm outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20 sm:w-60"
-        />
       </div>
 
       {!shown.length && (

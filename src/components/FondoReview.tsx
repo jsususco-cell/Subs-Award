@@ -147,7 +147,7 @@ export default function FondoReview({
 
       {!items.length && (
         <div className="rounded-xl border border-navy-200 bg-white p-6 text-sm text-navy-600/80 shadow-sm">
-          Nothing waiting. Polizas appear here as subcontractors send them in.
+          Nothing here. Polizas appear as subcontractors send them in (or the search above has no match).
         </div>
       )}
 

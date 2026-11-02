@@ -32,6 +32,9 @@ function isPublic(pathname: string): boolean {
   // /fondo/review is the internal queue and is deliberately not covered.
   if (pathname.startsWith("/fondo/") && !pathname.startsWith("/fondo/review")) return true;
   if (pathname === "/api/fondo") return true;
+  // Where that form gets its one-time Google Drive upload address: same gate
+  // (the vendor's access key + a case of theirs), checked by the route.
+  if (pathname === "/api/fondo/upload-url") return true;
 
   // The scheduled notifier, called by n8n with CRON_SECRET or the send key.
   // The route authorises itself; a sign-in page would just confuse a robot.

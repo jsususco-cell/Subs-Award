@@ -193,6 +193,69 @@ async function isInFondoFolder(folderId: string): Promise<boolean> {
   }
 }
 
+/**
+ * A one-time Google upload address for this record's poliza, in Fondo
+ * Poliza/<case>/, for the subcontractor's browser to PUT the file to directly.
+ * `origin` must be the page's own origin: Google only accepts the cross-site
+ * upload from the origin the session was started with.
+ */
+export async function startDirectUpload(
+  recordId: number,
+  file: { fileName: string; mimeType: string; size: number },
+  origin: string,
+): Promise<{ uploadUrl: string; folderId: string }> {
+  const info = await driveInfo(recordId);
+  if (!info) throw new Error("That case no longer exists.");
+  const out = await call({
+    action: "session",
+    caseNumber: info.caseNumber,
+    fileName: driveFileName(info.poNumber, info.subcontractor, "SUBMITTED", file.fileName),
+    mimeType: file.mimeType || mimeOf(file.fileName),
+    size: file.size,
+    origin,
+  });
+  if (!out.uploadUrl) throw new Error("Google did not return an upload address.");
+  return { uploadUrl: String(out.uploadUrl), folderId: String(out.folderId ?? "") };
+}
+
+/**
+ * Is this Drive file a poliza uploaded into Fondo Poliza (in a case folder
+ * directly under it)? Returns its details, or null when it is not.
+ */
+export async function fondoDriveFile(fileId: string): Promise<{
+  fileId: string;
+  name: string;
+  size: number;
+  folderId: string;
+} | null> {
+  if (!/^[A-Za-z0-9_-]{10,100}$/.test(fileId)) return null;
+  try {
+    const out = await call({ action: "info", fileId });
+    const folderId = String(out.parentId ?? "");
+    if (out.trashed === true || !folderId || !(await isInFondoFolder(folderId))) return null;
+    return { fileId, name: String(out.name ?? ""), size: Number(out.size) || 0, folderId };
+  } catch {
+    return null;
+  }
+}
+
+/** Record on the case where its poliza sits in Drive. */
+export async function recordDriveFile(recordId: number, fileId: string, folderId: string): Promise<void> {
+  await updateSubmittal({
+    [QB_AWARD.insurance.recordId]: { value: recordId },
+    [DRIVE_FIELDS.fileId]: { value: fileId },
+    [DRIVE_FIELDS.folderId]: { value: folderId },
+    [DRIVE_FIELDS.status]: { value: "MIRRORED" },
+    [DRIVE_FIELDS.mirroredOn]: { value: new Date().toISOString().slice(0, 10) },
+  });
+}
+
+/** The record's poliza in Fondo Poliza (field 37), when it has one there. */
+export async function driveFileOf(recordId: number) {
+  const info = await driveInfo(recordId);
+  return info?.fileId ? fondoDriveFile(info.fileId) : null;
+}
+
 /** Rename an already-filed poliza when its status changes. Never throws. */
 export async function renameInDrive(fileId: string, name: string): Promise<boolean> {
   if (!fileId) return false;

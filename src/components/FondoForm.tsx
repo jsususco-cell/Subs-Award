@@ -32,7 +32,9 @@ export default function FondoForm({ accessKey, initial }: Props) {
   );
   const [policyNumber, setPolicyNumber] = useState(initial.submittedPolicyNumber);
   const [submittedBy, setSubmittedBy] = useState("");
-  const [file, setFile] = useState<{ fileName: string; data: string } | null>(null);
+  // The file itself: it goes straight from this browser to Google Drive.
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
   const [fileLabel, setFileLabel] = useState(initial.submittedFileName);
   const [stage, setStage] = useState<Stage>("form");
   const [error, setError] = useState<string | null>(null);
@@ -44,26 +46,72 @@ export default function FondoForm({ accessKey, initial }: Props) {
   const parsed = Number(amount.replace(/[^0-9.]/g, "")) || 0;
   const cover = coverageOf(parsed, initial.awardedAmount);
 
-  async function readFile(f: File) {
+  function pickFile(f: File) {
     setError(null);
     if (f.size > MAX_POLIZA_BYTES) {
-      setError("Ese archivo pesa más de 10 MB. Envíe un escaneo más pequeño.");
+      setError(`Ese archivo pesa más de ${Math.round(MAX_POLIZA_BYTES / 1024 / 1024)} MB. Envíe un escaneo más pequeño.`);
       return;
     }
-    const buf = await f.arrayBuffer();
-    let binary = "";
-    const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i += 8192) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-    }
-    setFile({ fileName: f.name, data: btoa(binary) });
+    setFile(f);
     setFileLabel(f.name);
+  }
+
+  /**
+   * Send the file straight to Google Drive (Fondo Poliza/<case>/) through a
+   * one-time upload address the server asks Google for, so no server sits in
+   * the middle limiting its size. Resolves to the Drive file id.
+   */
+  async function uploadToDrive(f: File): Promise<string> {
+    const start = await fetch("/api/fondo/upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accessKey,
+        recordId: initial.recordId,
+        fileName: f.name,
+        mimeType: f.type || "application/pdf",
+        size: f.size,
+      }),
+    });
+    const s = await start.json();
+    if (!s.ok || !s.uploadUrl) throw new Error(s.error ?? "No se pudo preparar el envío del archivo.");
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", s.uploadUrl);
+      xhr.setRequestHeader("Content-Type", f.type || "application/pdf");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        try {
+          const out = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300 && out.id) resolve(out.id);
+          else reject(new Error("Google Drive no aceptó el archivo. Intente otra vez."));
+        } catch {
+          reject(new Error("Google Drive no aceptó el archivo. Intente otra vez."));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Se perdió la conexión al subir el archivo. Intente otra vez."));
+      xhr.send(f);
+    });
   }
 
   async function submit() {
     setStage("sending");
     setError(null);
+    setProgress(null);
+    if (!(parsed > 0)) {
+      setError("Escriba el monto de la póliza.");
+      setStage("form");
+      return;
+    }
+    if (!file && !initial.submittedFileName) {
+      setError("Adjunte la póliza antes de enviarla.");
+      setStage("form");
+      return;
+    }
     try {
+      const driveFileId = file ? await uploadToDrive(file) : "";
       const res = await fetch("/api/fondo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,7 +121,7 @@ export default function FondoForm({ accessKey, initial }: Props) {
           insuranceAmount: parsed,
           policyNumber,
           submittedBy,
-          file,
+          ...(driveFileId ? { driveFileId, fileName: file?.name ?? "" } : {}),
         }),
       });
       const body = await res.json();
@@ -83,9 +131,10 @@ export default function FondoForm({ accessKey, initial }: Props) {
         return;
       }
       setStage("sent");
-    } catch {
-      setError("No se pudo conectar. Nada fue enviado. Intente otra vez.");
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "No se pudo conectar. Nada fue enviado. Intente otra vez.");
       setStage("form");
+      setProgress(null);
     }
   }
 
@@ -185,7 +234,7 @@ export default function FondoForm({ accessKey, initial }: Props) {
               accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) void readFile(f);
+                if (f) pickFile(f);
               }}
               className="block w-full text-sm text-navy-700 file:mr-3 file:rounded-md file:border-0 file:bg-navy-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-800"
             />
@@ -226,7 +275,11 @@ export default function FondoForm({ accessKey, initial }: Props) {
                 : "bg-navy-700 hover:bg-navy-800"
             }`}
           >
-            {stage === "sending" ? "Enviando…" : "Enviar póliza"}
+            {stage === "sending"
+              ? progress !== null && progress < 100
+                ? `Subiendo archivo… ${progress}%`
+                : "Enviando…"
+              : "Enviar póliza"}
           </button>
         </div>
       </div>

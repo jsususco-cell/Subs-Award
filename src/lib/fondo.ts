@@ -94,7 +94,9 @@ export interface FondoCase {
   submittedFileName: string;
 }
 
-export const MAX_POLIZA_BYTES = 10 * 1024 * 1024;
+// Files go straight from the browser to Google Drive, so this is a sanity cap,
+// not a server limit (3 Nov 2026).
+export const MAX_POLIZA_BYTES = 100 * 1024 * 1024;
 
 /** Roughly how many bytes a base64 payload decodes to. */
 export function base64Bytes(data: string): number {
@@ -132,7 +134,7 @@ export function rejectSubmission(
       return "The poliza has to be a PDF or an image (JPG, PNG, HEIC or WEBP).";
     }
     if (base64Bytes(input.file.data) > MAX_POLIZA_BYTES) {
-      return "That file is larger than 10 MB. Send a smaller scan.";
+      return `That file is larger than ${Math.round(MAX_POLIZA_BYTES / 1024 / 1024)} MB. Send a smaller scan.`;
     }
     if (base64Bytes(input.file.data) < 100) {
       return "That file looks empty. Attach the poliza again.";

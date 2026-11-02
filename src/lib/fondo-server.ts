@@ -108,13 +108,17 @@ export async function caseForVendor(
       FONDO_FIELDS.submittedAmount,
       FONDO_FIELDS.submittedPolicyNumber,
       FONDO_FIELDS.submittedPoliza,
+      37, // Drive File ID
     ],
     where: `{${ins.recordId}.EX.${recordId}}AND{${ins.relatedSub}.EX.${vendor.recordId}}`,
   });
   const r = rows[0];
   if (!r) return null;
 
-  const fileName = currentFile(val(r, FONDO_FIELDS.submittedPoliza)).name;
+  // An upload that went straight to Google Drive has no copy in field 40.
+  const fileName =
+    currentFile(val(r, FONDO_FIELDS.submittedPoliza)).name ||
+    (str(val(r, 37)) ? "archivo en Google Drive" : "");
 
   // A pooled subcontractor uploads one poliza for every case in the group:
   // show them the total and every case it covers.
@@ -316,6 +320,8 @@ export interface ReviewItem {
   submittedAt: string;
   polizaUrl: string;
   polizaName: string;
+  /** The poliza in Google Drive (Fondo Poliza/<case>/): what the reviewer reads. */
+  driveFileId: string;
   /** The purchase order(s) behind the case; every case's, for a pooled group. */
   poNumber: string;
   /** Every PO behind the case, marked counted or not (the breakdown under PO #). */
@@ -342,6 +348,7 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
       FONDO_FIELDS.submittedPolicyNumber,
       FONDO_FIELDS.submittedAt,
       FONDO_FIELDS.submittedPoliza,
+      37, // Drive File ID
     ],
     where: `{${FONDO_FIELDS.status}.EX.'${FONDO_STATUS.submitted}'}`,
   });
@@ -385,7 +392,8 @@ export async function reviewQueue(): Promise<ReviewItem[]> {
         submittedBy: str(val(r, ins.submittedBy)).trim(),
         submittedAt: str(val(r, FONDO_FIELDS.submittedAt)).slice(0, 19).replace("T", " "),
         polizaUrl,
-        polizaName,
+        polizaName: polizaName || (str(val(r, 37)) ? "Póliza en Google Drive" : ""),
+        driveFileId: str(val(r, 37)),
         ...(() => {
           const sub = num(val(r, ins.relatedSub));
           const lines = inPool
@@ -1031,6 +1039,8 @@ export interface ApprovedItem {
   dateSubmitted: string;
   source: string;
   polizaName: string;
+  /** The poliza in Google Drive, when it has been filed there. */
+  driveFileId: string;
   /** The purchase order(s) behind the case, by job + subcontractor. */
   poNumber: string;
 }
@@ -1052,6 +1062,7 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
       ins.awardedAmount,
       ins.insuranceAmount,
       ins.poliza,
+      37, // Drive File ID
       ins.coverageStatus,
       ins.dateSubmitted,
       ins.source,
@@ -1086,7 +1097,8 @@ export async function approvedQueue(): Promise<ApprovedItem[]> {
         reviewedAt: str(val(r, FONDO_FIELDS.reviewedAt)),
         dateSubmitted: str(val(r, ins.dateSubmitted)),
         source: str(val(r, ins.source)).trim(),
-        polizaName: currentFile(val(r, ins.poliza)).name,
+        polizaName: currentFile(val(r, ins.poliza)).name || (str(val(r, 37)) ? "Póliza en Google Drive" : ""),
+        driveFileId: str(val(r, 37)),
         ...(() => {
           const rid = num(val(r, FONDO_FIELDS.poRecordId));
           const own = rid ? (poLines.get(`${pairOf(r).job}|${pairOf(r).sub}`) ?? []).find((l) => l.recordId === rid) : undefined;

@@ -110,14 +110,29 @@ const nodes = [
   }),
   respond("Parent", [1100, 200], 200, "={{ { ok: true, fileId: $json.id, parentId: ($json.parents || [])[0] || null } }}"),
 
-  // upload
+  // file info
+  iff("Info?", [880, 300], "={{ $('Webhook').item.json.body.action === 'info' }}"),
+  drive("Get info", [1100, 400], {
+    method: "GET",
+    url: "=https://www.googleapis.com/drive/v3/files/{{ $('Webhook').item.json.body.fileId }}",
+    ...q([["supportsAllDrives", "true"], ["fields", "id,name,size,mimeType,parents,webViewLink,trashed"]]),
+  }),
+  respond(
+    "Info",
+    [1320, 400],
+    200,
+    "={{ { ok: true, fileId: $json.id, name: $json.name, size: $json.size, mimeType: $json.mimeType, parentId: ($json.parents || [])[0] || null, webViewLink: $json.webViewLink, trashed: $json.trashed } }}",
+  ),
+
+  // upload (bytes in the request) and session (the browser uploads the bytes itself)
   code(
     "Prepare",
     [660, 0],
-    `const b = $json.body || {};
+    `const b = $('Webhook').item.json.body || {};
 const name = String(b.fileName || 'poliza.pdf').replace(/[\\\\/:*?"<>|]+/g, '-').slice(0, 200);
 const folder = String(b.caseNumber || 'Sin caso').replace(/[\\\\/:*?"<>|]+/g, '-').trim();
 const mime = b.mimeType || 'application/pdf';
+if (b.action === 'session') return { json: { name, folder, mime, size: Number(b.size) || 0, origin: String(b.origin || '') } };
 const bin = await this.helpers.prepareBinaryData(Buffer.from(String(b.data || ''), 'base64'), name, mime);
 return { json: { name, folder, mime }, binary: { file: bin } };`,
   ),
@@ -144,7 +159,31 @@ return { json: { name, folder, mime }, binary: { file: bin } };`,
     jsonBody: `={{ JSON.stringify({ name: $('Prepare').item.json.folder, mimeType: 'application/vnd.google-apps.folder', parents: ['${ROOT}'] }) }}`,
   }),
   code("New folder", [1540, 100], "return { json: { folderId: $json.id } };"),
-  drive("Create file", [1760, 0], {
+  iff("Session?", [1650, 0], "={{ $('Webhook').item.json.body.action === 'session' }}"),
+  drive("Start session", [1870, -200], {
+    method: "POST",
+    url: "https://www.googleapis.com/upload/drive/v3/files",
+    ...q([["uploadType", "resumable"], ["supportsAllDrives", "true"], ["fields", "id,name,size,parents,webViewLink"]]),
+    sendHeaders: true,
+    headerParameters: {
+      parameters: [
+        { name: "X-Upload-Content-Type", value: "={{ $('Prepare').item.json.mime }}" },
+        { name: "X-Upload-Content-Length", value: "={{ String($('Prepare').item.json.size) }}" },
+        { name: "Origin", value: "={{ $('Prepare').item.json.origin }}" },
+      ],
+    },
+    sendBody: true,
+    specifyBody: "json",
+    jsonBody: "={{ JSON.stringify({ name: $('Prepare').item.json.name, mimeType: $('Prepare').item.json.mime, parents: [$json.folderId] }) }}",
+    options: { response: { response: { fullResponse: true } } },
+  }),
+  respond(
+    "Session",
+    [2090, -200],
+    200,
+    "={{ { ok: true, uploadUrl: $json.headers.location, folderId: $('Session?').item.json.folderId } }}",
+  ),
+  drive("Create file", [1870, 0], {
     method: "POST",
     url: "https://www.googleapis.com/drive/v3/files",
     ...q([["supportsAllDrives", "true"], ["fields", "id,name,webViewLink"]]),
@@ -178,15 +217,19 @@ const connections = {
   Webhook: link("Key ok?"),
   "Key ok?": { main: [[{ node: "Rename?", type: "main", index: 0 }], [{ node: "Refuse", type: "main", index: 0 }]] },
   "Rename?": { main: [[{ node: "Rename file", type: "main", index: 0 }], [{ node: "Parent?", type: "main", index: 0 }]] },
-  "Parent?": { main: [[{ node: "Get parent", type: "main", index: 0 }], [{ node: "Prepare", type: "main", index: 0 }]] },
+  "Parent?": { main: [[{ node: "Get parent", type: "main", index: 0 }], [{ node: "Info?", type: "main", index: 0 }]] },
+  "Info?": { main: [[{ node: "Get info", type: "main", index: 0 }], [{ node: "Prepare", type: "main", index: 0 }]] },
+  "Get info": link("Info"),
+  "Session?": { main: [[{ node: "Start session", type: "main", index: 0 }], [{ node: "Create file", type: "main", index: 0 }]] },
+  "Start session": link("Session"),
   "Get parent": link("Parent"),
   "Rename file": link("Renamed"),
   Prepare: link("Find case folder"),
   "Find case folder": link("Folder exists?"),
   "Folder exists?": { main: [[{ node: "Use folder", type: "main", index: 0 }], [{ node: "Create case folder", type: "main", index: 0 }]] },
-  "Use folder": link("Create file"),
+  "Use folder": link("Session?"),
   "Create case folder": link("New folder"),
-  "New folder": link("Create file"),
+  "New folder": link("Session?"),
   "Create file": link("Bytes"),
   Bytes: link("Upload content"),
   "Upload content": link("Uploaded"),

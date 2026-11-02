@@ -13,7 +13,7 @@ import { fondoReviewUrl, reviewRequestMail, reviewerEmail } from "@/lib/fondo-ma
 import { checkRecipients, isMailConfigured, sendMail } from "@/lib/mail";
 import { recordFondo } from "@/lib/fondo-history";
 import { money } from "@/lib/format";
-import { fileInDrive } from "@/lib/fondo-drive";
+import { fondoDriveFile, recordDriveFile } from "@/lib/fondo-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -79,11 +79,24 @@ export async function POST(request: Request) {
     );
   }
 
-  const rawFile = body.file as { fileName?: unknown; data?: unknown } | null | undefined;
-  const file =
-    rawFile && typeof rawFile.fileName === "string" && typeof rawFile.data === "string"
-      ? { fileName: rawFile.fileName.slice(0, 200), data: rawFile.data }
-      : null;
+  // The file never comes through here: the form uploads it straight to Google
+  // Drive (Fondo Poliza/<case>/) and sends its Drive id. That is what keeps a
+  // large scan from hitting the server's request-size limit.
+  if (body.file) {
+    return NextResponse.json(
+      { ok: false, error: "Esta página está desactualizada. Recárguela e intente otra vez." },
+      { status: 400 },
+    );
+  }
+  const driveFileId = typeof body.driveFileId === "string" ? body.driveFileId.trim() : "";
+  const driveFile = driveFileId ? await fondoDriveFile(driveFileId) : null;
+  if (driveFileId && !driveFile) {
+    return NextResponse.json(
+      { ok: false, error: "El archivo no llegó a Google Drive. Adjúntelo y envíelo otra vez." },
+      { status: 400 },
+    );
+  }
+  const file = null;
 
   const submission: FondoSubmission = {
     insuranceAmount: Number(body.insuranceAmount) || 0,
@@ -94,7 +107,7 @@ export async function POST(request: Request) {
       typeof body.submittedBy === "string" ? body.submittedBy.slice(0, 200) : "",
   };
 
-  const problem = rejectSubmission(submission, Boolean(found.submittedFileName));
+  const problem = rejectSubmission(submission, Boolean(found.submittedFileName) || Boolean(driveFile));
   if (problem) {
     return NextResponse.json({ ok: false, error: problem }, { status: 400 });
   }
@@ -115,7 +128,11 @@ export async function POST(request: Request) {
 
   // A copy in Google Drive: Fondo Poliza / <case> / "<PO> - <sub> - SUBMITTED - <date>".
   // Never fails the submission.
-  if (file) await fileInDrive(found.recordId, "SUBMITTED", file);
+  if (driveFile) {
+    await recordDriveFile(found.recordId, driveFile.fileId, driveFile.folderId).catch((e) =>
+      console.error("[fondo] drive link", e instanceof Error ? e.message : e),
+    );
+  }
 
   await recordFondo(
     "submitted",

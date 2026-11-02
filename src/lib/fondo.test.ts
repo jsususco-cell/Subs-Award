@@ -9,6 +9,7 @@ import {
   coverageOf,
   currentFile,
   fondoConfigured,
+  MAX_POLIZA_BYTES,
   missingFondoFields,
   rejectManualSend,
   isOpenAward,
@@ -79,11 +80,9 @@ test("only documents we can read are accepted, and not oversized ones", () => {
   assert.equal(rejectSubmission(sub({ file: { fileName: "POLIZA.PDF", data: "A".repeat(400) } }), false), null);
   assert.equal(rejectSubmission(sub({ file: { fileName: "foto.HEIC", data: "A".repeat(400) } }), false), null);
 
-  // Base64 carries 3 bytes per 4 characters, so the string has to be a third
-  // longer than the limit to exceed it: 11 MB of base64 is only ~8.25 MB.
-  const huge = "A".repeat(14 * 1024 * 1024);
-  assert.ok(base64Bytes(huge) > 10 * 1024 * 1024, "fixture must actually exceed the cap");
-  assert.match(String(rejectSubmission(sub({ file: { fileName: "p.pdf", data: huge } }), false)), /larger than 10 MB/i);
+  // Files now go straight from the browser to Google Drive; the size cap is a
+  // sanity check (100 MB), enforced before the upload address is issued.
+  assert.equal(MAX_POLIZA_BYTES, 100 * 1024 * 1024);
   assert.match(String(rejectSubmission(sub({ file: { fileName: "p.pdf", data: "AA" } }), false)), /looks empty/i);
 });
 

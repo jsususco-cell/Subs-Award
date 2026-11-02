@@ -45,6 +45,7 @@ export default function FondoApproved({
   // Load the document for the open row; drop the blob when it closes.
   useEffect(() => {
     if (open === null || !sendKey) return;
+    if (items.find((x) => x.recordId === open)?.driveFileId) return; // shown by Drive
     let cancelled = false;
     let made = "";
     (async () => {
@@ -74,9 +75,16 @@ export default function FondoApproved({
       cancelled = true;
       if (made) URL.revokeObjectURL(made);
     };
-  }, [open, sendKey]);
+  }, [open, sendKey, items]);
 
   function toggle(recordId: number) {
+    // A poliza filed in Google Drive is shown by Drive itself: nothing to fetch.
+    const item = items.find((x) => x.recordId === recordId);
+    if (item?.driveFileId) {
+      setDoc(open === recordId ? null : { url: `https://drive.google.com/file/d/${item.driveFileId}/preview`, kind: "pdf" });
+      setOpen(open === recordId ? null : recordId);
+      return;
+    }
     setDoc(open === recordId ? null : "loading");
     setOpen(open === recordId ? null : recordId);
   }
@@ -90,8 +98,21 @@ export default function FondoApproved({
     ["attention", "Needs attention"],
   ];
 
+  const openItem = items.find((x) => x.recordId === open);
   const viewer =
-    open === null ? null : !sendKey ? (
+    open === null ? null : openItem?.driveFileId && doc && doc !== "loading" && !("error" in doc) ? (
+      <div>
+        <a
+          href={`https://drive.google.com/file/d/${openItem.driveFileId}/view`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mb-2 inline-block text-xs text-navy-600/80 underline"
+        >
+          open in Google Drive
+        </a>
+        <iframe src={doc.url} title="Poliza" allow="autoplay" className="h-[560px] w-full rounded border border-navy-200 bg-white" />
+      </div>
+    ) : !sendKey ? (
       <p className="px-4 py-3 text-xs text-navy-600/70">
         Enter the send key above to read the document here.
       </p>

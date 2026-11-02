@@ -46,7 +46,7 @@ export default function FondoReview({
 
     (async () => {
       for (const item of items) {
-        if (!item.polizaName) continue;
+        if (!item.polizaName || item.driveFileId) continue; // Drive previews itself
         try {
           const res = await fetch(`/api/fondo/poliza?recordId=${item.recordId}`, {
             headers: { "x-send-key": sendKey },
@@ -200,19 +200,41 @@ export default function FondoReview({
                 <span className="text-xs font-medium text-navy-700">
                   {item.polizaName || "No document attached"}
                 </span>
-                {item.polizaUrl && (
+                {item.driveFileId ? (
                   <a
-                    href={item.polizaUrl}
+                    href={`https://drive.google.com/file/d/${item.driveFileId}/view`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-navy-600/70 underline"
                   >
-                    open in Quickbase
+                    open in Google Drive
                   </a>
+                ) : (
+                  item.polizaUrl && (
+                    <a
+                      href={item.polizaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-navy-600/70 underline"
+                    >
+                      open in Quickbase
+                    </a>
+                  )
                 )}
               </div>
 
-              {item.polizaName &&
+              {/* The poliza in Google Drive is the one of record now: Drive's own
+                  preview, which needs no send key (the reader's Google access). */}
+              {item.driveFileId ? (
+                <div className="px-4 pb-4">
+                  <iframe
+                    src={`https://drive.google.com/file/d/${item.driveFileId}/preview`}
+                    title={`Poliza for ${item.caseNumber}`}
+                    allow="autoplay"
+                    className="h-[560px] w-full rounded border border-navy-200 bg-white"
+                  />
+                </div>
+              ) : item.polizaName &&
                 (!sendKey ? (
                   <p className="px-4 pb-3 text-xs text-navy-600/70">
                     Enter the send key above to read the document here.

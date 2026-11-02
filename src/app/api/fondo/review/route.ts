@@ -25,7 +25,7 @@ import { refuseRegion } from "@/lib/auth/guard";
 import { recordFondo } from "@/lib/fondo-history";
 import { currentSession } from "@/lib/auth/current-user";
 import { money } from "@/lib/format";
-import { markInDrive } from "@/lib/fondo-drive";
+import { driveFileOf, markInDrive, recordDriveFile } from "@/lib/fondo-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -120,8 +120,13 @@ export async function POST(request: Request) {
   // approval without the bytes would record a decision that changes nothing.
   // The bytes have to be fetched: what a query returns is a reference, and
   // writing a reference back uploads nothing.
+  // Polizas live in Google Drive now (Fondo Poliza/<case>/), uploaded there
+  // straight from the subcontractor's browser: approving takes the Drive file
+  // as the poliza of record, and only an older upload still sitting in
+  // Quickbase (field 40) is copied byte for byte.
   let file: { fileName: string; data: string } | null = null;
-  if (action === "approve") {
+  const drive = action === "approve" ? await driveFileOf(recordId) : null;
+  if (action === "approve" && !drive) {
     const fetched = await polizaFile(recordId);
     if (!fetched) {
       return NextResponse.json(
@@ -174,13 +179,15 @@ export async function POST(request: Request) {
 
   // The other cases in the pool: same document, their own share.
   const poolErrors: string[] = [];
-  if (pooled && file) {
+  if (pooled && (file || drive)) {
     for (const [i, p] of pool.entries()) {
       if (p.recordId === recordId) continue;
       try {
         await updateSubmittal({
           ...buildApprovalRecord(p.recordId, { amount: shares[i], file, submittedAt: staged.submittedAt }, reviewer),
         });
+        // Same Drive document for every case in the group.
+        if (drive) await recordDriveFile(p.recordId, drive.fileId, drive.folderId);
         await recordFondo(
           "approved",
           p.recordId,
@@ -213,7 +220,7 @@ export async function POST(request: Request) {
   await markInDrive(recordId, action === "approve" ? "APPROVED" : "RETURNED", file);
   if (pooled && action === "approve") {
     for (const p of pool) {
-      if (p.recordId !== recordId && file) await markInDrive(p.recordId, "APPROVED", file);
+      if (p.recordId !== recordId && file && !drive) await markInDrive(p.recordId, "APPROVED", file);
     }
   }
 

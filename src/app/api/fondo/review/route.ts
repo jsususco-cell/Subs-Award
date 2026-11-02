@@ -25,6 +25,7 @@ import { refuseRegion } from "@/lib/auth/guard";
 import { recordFondo } from "@/lib/fondo-history";
 import { currentSession } from "@/lib/auth/current-user";
 import { money } from "@/lib/format";
+import { markInDrive } from "@/lib/fondo-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -204,6 +205,16 @@ export async function POST(request: Request) {
           : `Approved${reviewer ? ` (${reviewer})` : ""}: ${money(staged.amount)} poliza copied onto the case.`
         : `Sent back for correction${reviewer ? ` (${reviewer})` : ""}: ${notes.trim().slice(0, 300)}`,
     );
+  }
+
+  // The copy in Google Drive follows the decision: renamed APPROVED / RETURNED,
+  // or filed now if it never was. Pooled cases share the lead's document, so
+  // each points at the same file. Never fails the decision.
+  await markInDrive(recordId, action === "approve" ? "APPROVED" : "RETURNED", file);
+  if (pooled && action === "approve") {
+    for (const p of pool) {
+      if (p.recordId !== recordId && file) await markInDrive(p.recordId, "APPROVED", file);
+    }
   }
 
   // Decision recorded. Anything below can only fail to *notify*.

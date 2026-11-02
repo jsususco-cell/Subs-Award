@@ -13,6 +13,7 @@ import { fondoReviewUrl, reviewRequestMail, reviewerEmail } from "@/lib/fondo-ma
 import { checkRecipients, isMailConfigured, sendMail } from "@/lib/mail";
 import { recordFondo } from "@/lib/fondo-history";
 import { money } from "@/lib/format";
+import { fileInDrive } from "@/lib/fondo-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -111,6 +112,10 @@ export async function POST(request: Request) {
       { status: 502 },
     );
   }
+
+  // A copy in Google Drive: Fondo Poliza / <case> / "<PO> - <sub> - SUBMITTED - <date>".
+  // Never fails the submission.
+  if (file) await fileInDrive(found.recordId, "SUBMITTED", file);
 
   await recordFondo(
     "submitted",

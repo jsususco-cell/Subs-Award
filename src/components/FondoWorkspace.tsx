@@ -164,7 +164,12 @@ function SendLinks({ items, sendKey }: { items: SendItem[]; sendKey: string }) {
     });
   }, [items, filter, sent]);
 
-  async function send(item: SendItem) {
+  // Asked in the page, not with window.confirm: inside the Quickbase frame
+  // (no allow-modals) confirm() returns false without ever showing, so the
+  // button looked dead. Same answer as the framed sign-in: keep it in-page.
+  const [confirming, setConfirming] = useState<{ item: SendItem; text: string } | null>(null);
+
+  async function send(item: SendItem, confirmed = false) {
     const to = (overrides[item.key] ?? "").trim();
     const where = to || item.email;
     const ask =
@@ -181,7 +186,11 @@ This opens the case in Quickbase (required ${money(item.awardedAmount)}) and ema
 
 Email ${where} the form link to send one that covers it?`
           : `Email the Fondo form link for ${item.caseNumber} to ${where}?`;
-    if (!window.confirm(ask)) return;
+    if (!confirmed) {
+      setConfirming({ item, text: ask });
+      return;
+    }
+    setConfirming(null);
 
     setBusy(item.key);
     setErrors((e) => ({ ...e, [item.key]: "" }));
@@ -318,6 +327,44 @@ Email ${where} the form link to send one that covers it?`
 
   return (
     <div>
+      {confirming && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm sending the Fondo link"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-navy-900/40 p-4 pt-20"
+          onClick={() => setConfirming(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-navy-200 bg-white p-5 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setConfirming(null);
+            }}
+          >
+            <h2 className="text-sm font-semibold text-navy-800">Send the Fondo link?</h2>
+            <p className="mt-2 text-sm whitespace-pre-line text-navy-700">{confirming.text}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirming(null)}
+                className="rounded-md border border-navy-200 bg-white px-3 py-1.5 text-sm font-semibold text-navy-700 hover:bg-navy-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => void send(confirming.item, true)}
+                className="rounded-md bg-navy-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-navy-800"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {filters.map(([key, label]) => (
           <TabButton key={key} small active={filter === key} onClick={() => setFilter(key)}>

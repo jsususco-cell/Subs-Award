@@ -328,6 +328,18 @@ export function fondoNoEmailReason(subName: string): string {
 }
 
 /**
+ * Who Fondo asks for a poliza: only vendors ticked "Eligible for Award" (Subs/
+ * Vendors field 182). User decision, 7 Nov 2026. The vendor record decides, not
+ * the name typed on a case, and Quickbase is where it changes: tick the box and
+ * the subcontractor is listed and chased again. Nothing already submitted or
+ * approved is affected; those stay on To review and Approved.
+ */
+export const NOT_ELIGIBLE = "Not Eligible for Award";
+export function fondoEligibleVendor(eligibleForAward: unknown): boolean {
+  return eligibleForAward === true;
+}
+
+/**
  * Subcontractors left out of Fondo chasing altogether: hidden from Send link
  * and never emailed (link, automatic link, reminders). User decision,
  * 28 Oct 2026: Mohr Construction / Mohr Construction Services; Maria Reina

@@ -14,6 +14,8 @@ import {
   normName,
   fondoNoEmailReason,
   fondoHiddenSub,
+  fondoEligibleVendor,
+  NOT_ELIGIBLE,
   fondoPoolLabel,
   fondoPoolOf,
   poFondoAmount,
@@ -37,6 +39,7 @@ const VENDOR_TABLE = "buskqh272";
 const VENDOR_ACCESS_KEY = 66;
 const VENDOR_COMPANY = 23;
 const VENDOR_EMAIL = 28;
+const VENDOR_ELIGIBLE = QB_CONFIG.fields.vendors.eligible;
 
 export interface Vendor {
   recordId: number;
@@ -263,7 +266,7 @@ export async function pendingNotices(limit = 25): Promise<{
     const vendors = vendorRecordId
       ? await queryAll({
           from: VENDOR_TABLE,
-          select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
+          select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL, VENDOR_ELIGIBLE],
           where: `{3.EX.${vendorRecordId}}`,
         })
       : [];
@@ -273,6 +276,10 @@ export async function pendingNotices(limit = 25): Promise<{
 
     if (!v) {
       unreachable.push({ recordId, caseNumber, reason: "no subcontractor on the case" });
+      continue;
+    }
+    if (!fondoEligibleVendor(val(v, VENDOR_ELIGIBLE))) {
+      unreachable.push({ recordId, caseNumber, reason: NOT_ELIGIBLE });
       continue;
     }
     if (fondoHiddenSub(str(val(v, VENDOR_COMPANY)) || str(val(r, ins.subcontractorName)))) {
@@ -690,7 +697,7 @@ export async function openAwards(): Promise<OpenAward[]> {
       select: Object.values(JOB),
       where: `{${JOB.caseId}.XEX.''}`,
     }),
-    queryAll({ from: VENDOR_TABLE, select: [3, VENDOR_COMPANY] }),
+    queryAll({ from: VENDOR_TABLE, select: [3, VENDOR_COMPANY, VENDOR_ELIGIBLE] }),
     queryAll({
       from: QB_AWARD.tables.insurance,
       select: [
@@ -708,6 +715,9 @@ export async function openAwards(): Promise<OpenAward[]> {
 
   const jobBy = new Map(jobs.map((j) => [num(val(j, JOB.recordId)), j]));
   const subName = new Map(subs.map((s) => [num(val(s, 3)), str(val(s, VENDOR_COMPANY)).trim()]));
+  const eligibleSubs = new Set(
+    subs.filter((s) => fondoEligibleVendor(val(s, VENDOR_ELIGIBLE))).map((s) => num(val(s, 3))),
+  );
 
   // One Fondo record per PO: a case tied to a PO (field 49) belongs to that PO
   // only. A case not yet tied to one (before the split) stands in for its job
@@ -734,6 +744,7 @@ export async function openAwards(): Promise<OpenAward[]> {
     const job = jobBy.get(num(val(p, PO.job)));
     const caseNumber = job ? str(val(job, JOB.caseId)).trim() : "";
     const subRecordId = num(val(p, PO.sub));
+    if (!eligibleSubs.has(subRecordId)) continue;
     const name = subName.get(subRecordId) ?? "";
     const required = poFondoAmount(num(val(p, PO.required)), num(val(p, PO_BUILDER_COST)));
     if (
@@ -836,12 +847,12 @@ export async function sendQueue(): Promise<SendItem[]> {
   rows.forEach((r) => vendorIds.add(num(val(r, ins.relatedSub))));
   awards.forEach((a) => vendorIds.add(a.subRecordId));
   vendorIds.delete(0);
-  const vendors = new Map<number, { accessKey: string; email: string; company: string }>();
+  const vendors = new Map<number, { accessKey: string; email: string; company: string; eligible: boolean }>();
   const ids = [...vendorIds];
   for (let i = 0; i < ids.length; i += 100) {
     const vrows = await queryAll({
       from: VENDOR_TABLE,
-      select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
+      select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL, VENDOR_ELIGIBLE],
       where: ids
         .slice(i, i + 100)
         .map((id) => `{3.EX.${id}}`)
@@ -852,6 +863,7 @@ export async function sendQueue(): Promise<SendItem[]> {
         accessKey: str(val(v, VENDOR_ACCESS_KEY)).trim(),
         email: str(val(v, VENDOR_EMAIL)).trim(),
         company: str(val(v, VENDOR_COMPANY)).trim(),
+        eligible: fondoEligibleVendor(val(v, VENDOR_ELIGIBLE)),
       });
     }
   }
@@ -898,6 +910,8 @@ export async function sendQueue(): Promise<SendItem[]> {
       continue;
     }
     if (rejectManualSend(status, currentFile(val(r, ins.poliza)).name !== "")) continue;
+    // A case with no vendor at all stays listed: somebody has to fix it.
+    if (vendors.get(num(val(r, ins.relatedSub)))?.eligible === false) continue;
     const item = fromCase(r, "case");
     items.set(item.key, item);
   }
@@ -1240,6 +1254,8 @@ export async function dueReminders(now = new Date()): Promise<DueReminder[]> {
       accessKey: v?.accessKey ?? "",
       blocked: !v
         ? "No subcontractor on the case"
+        : !v.eligible
+          ? NOT_ELIGIBLE
         : fondoHiddenSub(v.company || name)
           ? "Excluded from Fondo emails"
           : fondoNoEmailReason(v.company || name) ||
@@ -1280,7 +1296,7 @@ export async function caseForSend(recordId: number): Promise<{
   status: FondoStatus | "";
   hasPoliza: boolean;
   reviewNotes: string;
-  vendor: { accessKey: string; email: string; company: string } | null;
+  vendor: { accessKey: string; email: string; company: string; eligible: boolean } | null;
 } | null> {
   const ins = QB_AWARD.insurance;
   const rows = await queryAll({
@@ -1352,11 +1368,11 @@ export async function stagedFor(recordId: number): Promise<{
 /** A vendor's access key and email, for links and notifications. */
 export async function vendorById(
   recordId: number,
-): Promise<{ accessKey: string; email: string; company: string } | null> {
+): Promise<{ accessKey: string; email: string; company: string; eligible: boolean } | null> {
   if (!recordId) return null;
   const rows = await queryAll({
     from: VENDOR_TABLE,
-    select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL],
+    select: [3, VENDOR_ACCESS_KEY, VENDOR_COMPANY, VENDOR_EMAIL, VENDOR_ELIGIBLE],
     where: `{3.EX.${recordId}}`,
   });
   const v = rows[0];
@@ -1365,6 +1381,7 @@ export async function vendorById(
     accessKey: str(val(v, VENDOR_ACCESS_KEY)).trim(),
     email: str(val(v, VENDOR_EMAIL)).trim(),
     company: str(val(v, VENDOR_COMPANY)).trim(),
+    eligible: fondoEligibleVendor(val(v, VENDOR_ELIGIBLE)),
   };
 }
 

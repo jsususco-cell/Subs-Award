@@ -17,6 +17,7 @@ import {
   fondoGap,
   fondoNoEmailReason,
   fondoHiddenSub,
+  fondoEligibleVendor,
   fondoPoolOf,
   splitByShare,
   poFondoAmount,
@@ -410,6 +411,15 @@ test("Mohr is left out of Fondo chasing entirely", () => {
   assert.equal(fondoHiddenSub("MARIA REINA CONSULTAS Y PERMISOS LLC"), true);
   assert.equal(fondoHiddenSub("Avanti"), true);
   assert.equal(fondoHiddenSub("FSD CONTRACTORS INC"), false);
+});
+
+test("only a vendor ticked Eligible for Award is asked for a poliza", () => {
+  assert.equal(fondoEligibleVendor(true), true);
+  // Unticked, missing, or anything else that is not Quickbase's own true.
+  assert.equal(fondoEligibleVendor(false), false);
+  assert.equal(fondoEligibleVendor(undefined), false);
+  assert.equal(fondoEligibleVendor(null), false);
+  assert.equal(fondoEligibleVendor("true"), false);
 });
 
 test("Civil Consulting Engineers is chased as one pool", () => {

@@ -153,6 +153,12 @@ export async function POST(request: Request) {
   const short = Boolean(award && award.gap > 0);
   const refused = rejectManualSend(found.status, found.hasPoliza, short);
   if (refused) return NextResponse.json({ ok: false, error: refused }, { status: 409 });
+  if (found.vendor && !found.vendor.eligible) {
+    return NextResponse.json(
+      { ok: false, error: `${found.vendor.company || "This subcontractor"} is not ticked Eligible for Award, so Fondo does not ask them for a poliza.` },
+      { status: 409 },
+    );
+  }
   if (fondoHiddenSub(found.vendor?.company || found.subcontractor)) {
     return NextResponse.json({ ok: false, error: "This subcontractor is excluded from Fondo emails." }, { status: 409 });
   }

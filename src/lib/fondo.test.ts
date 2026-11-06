@@ -408,6 +408,7 @@ test("Mohr is left out of Fondo chasing entirely", () => {
   assert.equal(fondoHiddenSub("Mohr Construction Services"), true);
   assert.equal(fondoHiddenSub("MOHR CONSTRUCTION SERVICES, LLC"), true);
   assert.equal(fondoHiddenSub("MARIA REINA CONSULTAS Y PERMISOS LLC"), true);
+  assert.equal(fondoHiddenSub("Avanti"), true);
   assert.equal(fondoHiddenSub("FSD CONTRACTORS INC"), false);
 });
 

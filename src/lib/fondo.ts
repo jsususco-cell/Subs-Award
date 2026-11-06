@@ -331,9 +331,10 @@ export function fondoNoEmailReason(subName: string): string {
  * Subcontractors left out of Fondo chasing altogether: hidden from Send link
  * and never emailed (link, automatic link, reminders). User decision,
  * 28 Oct 2026: Mohr Construction / Mohr Construction Services; Maria Reina
- * Consultas y Permisos, a permitting agent (asked to stop receiving these).
+ * Consultas y Permisos, a permitting agent (asked to stop receiving these);
+ * Avanti, a materials supplier (Fondo does not apply, 6 Nov 2026).
  */
-const HIDDEN_SUBS = ["mohrconstruction", "mariareina"];
+const HIDDEN_SUBS = ["mohrconstruction", "mariareina", "avanti"];
 export function fondoHiddenSub(subName: string): boolean {
   const n = normName(subName);
   return HIDDEN_SUBS.some((x) => n.startsWith(x));

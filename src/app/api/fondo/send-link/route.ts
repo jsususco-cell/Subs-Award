@@ -1,3 +1,4 @@
+import { FONDO_EMAILS_PAUSED, FONDO_PAUSED_MESSAGE } from "@/lib/fondo";
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import { QB_AWARD } from "@/lib/qb-award";
@@ -81,6 +82,9 @@ export async function POST(request: Request) {
       },
       { status: 503 },
     );
+  }
+  if (FONDO_EMAILS_PAUSED) {
+    return NextResponse.json({ ok: false, error: FONDO_PAUSED_MESSAGE }, { status: 409 });
   }
   if (!isMailConfigured()) {
     return NextResponse.json({ ok: false, error: missingMailConfig() }, { status: 503 });

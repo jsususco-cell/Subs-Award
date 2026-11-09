@@ -1,3 +1,4 @@
+import { FONDO_EMAILS_PAUSED, FONDO_PAUSED_MESSAGE } from "@/lib/fondo";
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import { QB_AWARD } from "@/lib/qb-award";
@@ -90,6 +91,10 @@ export async function POST(request: Request) {
       cc: reminderCc(),
       bcc: reminderBcc(),
     });
+  }
+
+  if (FONDO_EMAILS_PAUSED) {
+    return NextResponse.json({ ok: true, paused: true, sent: 0, due: sendable.length, message: FONDO_PAUSED_MESSAGE });
   }
 
   const sent: number[] = [];

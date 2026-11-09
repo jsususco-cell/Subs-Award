@@ -1,3 +1,4 @@
+import { FONDO_EMAILS_PAUSED, FONDO_PAUSED_MESSAGE } from "@/lib/fondo";
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import {
@@ -229,7 +230,9 @@ export async function POST(request: Request) {
   let notifyError: string | null = null;
 
   const vendor = await vendorById(staged.vendorRecordId);
-  if (!vendor?.email) {
+  if (FONDO_EMAILS_PAUSED) {
+    notifyError = `The decision was saved. ${FONDO_PAUSED_MESSAGE}`;
+  } else if (!vendor?.email) {
     notifyError = "The subcontractor has no email address on file, so no notice was sent.";
   } else if (!isMailConfigured()) {
     notifyError = "Email is not configured on this deployment, so no notice was sent.";

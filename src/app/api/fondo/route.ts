@@ -1,3 +1,4 @@
+import { FONDO_EMAILS_PAUSED, FONDO_PAUSED_MESSAGE } from "@/lib/fondo";
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/quickbase";
 import {
@@ -152,7 +153,9 @@ export async function POST(request: Request) {
   let reviewerError: string | null = null;
   const to = reviewerEmail();
 
-  if (!to) {
+  if (FONDO_EMAILS_PAUSED) {
+    reviewerError = FONDO_PAUSED_MESSAGE;
+  } else if (!to) {
     reviewerError = "FONDO_REVIEWER_EMAIL is not set, so nobody was told.";
   } else if (!isMailConfigured()) {
     reviewerError = "Email is not configured on this deployment.";

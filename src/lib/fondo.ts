@@ -328,6 +328,18 @@ export function fondoNoEmailReason(subName: string): string {
 }
 
 /**
+ * Every Fondo email is OFF while this is true: the form link (automatic and
+ * the Send link button), the daily reminders, the approved/returned notice to
+ * the subcontractor and the "new submission" notice to the reviewer. Decisions
+ * and submissions are still saved. User decision, 10 Nov 2026 ("stop all
+ * notification email for fondo for now"); the two n8n schedules were also
+ * deactivated. Set to false (and reactivate n8n Wme8i78UCfAHZ0Bx and
+ * 2pyI7kw86NSmdh62) to resume.
+ */
+export const FONDO_EMAILS_PAUSED = true;
+export const FONDO_PAUSED_MESSAGE = "Fondo emails are paused for now, so nothing was sent.";
+
+/**
  * Who Fondo asks for a poliza: only vendors ticked "Eligible for Award" (Subs/
  * Vendors field 182). User decision, 7 Nov 2026. The vendor record decides, not
  * the name typed on a case, and Quickbase is where it changes: tick the box and
